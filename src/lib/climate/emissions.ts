@@ -317,7 +317,8 @@ export function buildReport(
 			flexibleSpend: round(flexibleSpend, 2),
 			fixedSpend: round(totalSpend - flexibleSpend, 2)
 		},
-		topPurchases: [...purchases].sort((a, b) => b.kg - a.kg).slice(0, 6).map((p) => ({ ...p, kg: round(p.kg) })),
+		// enough rows that filtering the list to one category still finds that category's biggest purchases
+		topPurchases: [...purchases].sort((a, b) => b.kg - a.kg).slice(0, 40).map((p) => ({ ...p, kg: round(p.kg) })),
 		nudges,
 		equivalents: {
 			// EPA: ~404 g CO2 per mile for an average passenger car

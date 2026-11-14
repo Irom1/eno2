@@ -461,6 +461,29 @@
     if (!inChat) void goto('/chat', { keepFocus: true });
   }
 
+  /**
+   * Same slide as dashboard → chat, for arriving at /chat straight from another page: the composer
+   * and gradient start up where the dashboard header would be and slide down, revealing the history.
+   */
+  function slideIntoChat(): void {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const { top, height } = composer.getBoundingClientRect();
+    const startTop = Math.min(top, 140); // roughly where the composer sits in the dashboard header
+    const y = startTop - top;
+    composerAnimation = composer.animate(
+      [{ transform: `translate(0, ${y}px)` }, { transform: 'translate(0, 0)' }],
+      slideTiming
+    );
+    chatRevealAnimation = chatResults.animate(
+      [{ clipPath: `inset(0 0 ${Math.max(0, -y)}px 0)` }, { clipPath: 'inset(0)' }],
+      slideTiming
+    );
+    gradientAnimation = gradient.animate(
+      [{ height: `${startTop + height / 2}px` }, { height: `${gradient.getBoundingClientRect().height}px` }],
+      slideTiming
+    );
+  }
+
   function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -501,12 +524,19 @@
   });
 
   onMount(() => {
-    // ClimateWise "Make a plan with Eno" links arrive as /dashboard?ask=<prompt>.
+    // Other pages (e.g. ClimateWise "Eno ideas") open Eno with /chat?ask=<prompt> or /dashboard?ask=<prompt>.
     const ask = page.url.searchParams.get('ask')?.trim();
     if (ask) {
-      // Replace the ?ask= history entry so Back doesn't re-send the prompt.
       chatPrompt = { text: ask, id: ++promptSeq };
-      void goto('/chat', { replaceState: true, keepFocus: true });
+      // Replace the ?ask= history entry so Back doesn't re-send the prompt.
+      if (inChat) {
+        void goto('/chat', { replaceState: true, keepFocus: true });
+        slideIntoChat();
+      } else {
+        // Wait for the arrival at /dashboard to finish and paint: the composer only slides down
+        // into chat when navigating dashboard → chat, not mid-way through the incoming navigation.
+        setTimeout(() => void goto('/chat', { replaceState: true, keepFocus: true }), 150);
+      }
     }
 
     try {
