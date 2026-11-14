@@ -495,7 +495,6 @@ function loansAnswer(data: unknown): string {
   if (loans.length === 0) {
     return "I don't see any active loans on this account.";
   }
-
   if (loans.length === 1) {
     const only = loanType(loans[0] ?? {});
     return `You have one active loan, the ${only}. It’s your only fixed loan payment.`;

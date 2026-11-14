@@ -63,7 +63,7 @@ describe('conversational onboarding', () => {
     const result = reconcileOnboarding(request(), { reply: 'Nice to meet you, Ada.', updates: { ...full, state: 'masachusets' }, accountChoice: 'undecided', confirmed: false });
     expect(result.answers).toEqual(full);
     expect(result.ready).toBe(false);
-    expect(onboardingStageMessage(result.message, result.stage)).toMatch(/preselected checking, savings/);
+    expect(onboardingStageMessage(result.message, result.stage)).toMatch(/preselected 360 Checking, 360 Performance Savings/);
     expect(normalizeState('massachussetts')).toBe('MA');
     expect(normalizeState('New Yrok')).toBe('NY');
     expect(normalizeState('QQ')).toBe('QQ');

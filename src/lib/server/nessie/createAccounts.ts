@@ -2,6 +2,7 @@ import type { RuntimeEnv } from '../env';
 import { NessieClient, type FetchLike } from './client';
 import { buildDemoTransactions, demoAccountTotals, seedNessieTransactions, type DemoAccountType } from './seedTransactions';
 import type { DemoCard, SpendingCategory } from '../../spending';
+import { products } from '../../products';
 import { seedNessieObligations } from './seedObligations';
 
 /** Open only the selected demo accounts and populate each with sample history. */
@@ -15,7 +16,7 @@ export async function createNessieAccounts(
   const errors: string[] = [];
   for (const type of [...new Set(types)]) {
     if (type === 'Credit Card' && !options.card) throw new Error('A matching demo card is required');
-    const nickname = type === 'Credit Card' ? options.card!.nickname : type === 'Checking' ? 'Everyday Checking' : 'My Savings';
+    const nickname = type === 'Credit Card' ? options.card!.nickname : type === 'Checking' ? products.checking.name : products.savings.name;
     const transactions = buildDemoTransactions(type, `${customerId}:${type}`, new Date(), options.categories);
     const totals = demoAccountTotals(transactions, type);
     const url = new URL(`/customers/${encodeURIComponent(customerId)}/accounts`, runtime.NESSIE_BASE_URL);

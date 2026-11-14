@@ -1,27 +1,28 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { accountProduct } from '$lib/products';
+  import { tick, type Snippet } from 'svelte';
   import { money, dateLabel } from '$lib/format';
   import {
     accountBalanceLabel,
     accountEnding,
     isCredit,
+    upcomingBills,
     type WalletAccount,
     type WalletBill,
     type WalletCustomer,
-    type WalletLoan,
     type WalletTransaction
   } from '$lib/wallet';
   import DetailSheet from './DetailSheet.svelte';
-  import CreditCardActivity from './CreditCardActivity.svelte';
 
-  type Tab = 'activity' | 'details' | 'bills' | 'loans';
+  type Tab = 'activity' | 'details' | 'bills';
   type ActivityFilter = 'all' | 'deposits' | 'withdrawals';
 
   interface Props {
     accountId: string;
-    initialTab: Tab;
+    tab: Tab;
+    heading: Snippet;
+    onTabChange: (tab: Tab) => void;
     focusTransactionId?: string;
-    cardActivity?: boolean;
     onAccountDeleted: (accountId: string) => void;
   }
 
@@ -30,24 +31,21 @@
     customer?: WalletCustomer;
     transactions?: WalletTransaction[];
     bills?: WalletBill[];
-    loans?: WalletLoan[];
   }
 
-  let { accountId, initialTab, focusTransactionId, cardActivity = false, onAccountDeleted }: Props = $props();
+  let { accountId, tab, heading, onTabChange, focusTransactionId, onAccountDeleted }: Props = $props();
 
-  let tab = $state<Tab>('activity');
+  let query = $state('');
   let filter = $state<ActivityFilter>('all');
   let account = $state<WalletAccount | null>(null);
   let customer = $state<WalletCustomer | null>(null);
   let transactions = $state<WalletTransaction[]>([]);
   let bills = $state<WalletBill[]>([]);
-  let loans = $state<WalletLoan[]>([]);
   let loading = $state(true);
   let error = $state('');
   let requestSeq = 0;
   let selectedTransaction = $state<WalletTransaction | null>(null);
   let selectedBill = $state<WalletBill | null>(null);
-  let selectedLoan = $state<WalletLoan | null>(null);
   let highlightId = $state('');
   let deleteDialog: HTMLDialogElement;
   let cancelDeleteButton: HTMLButtonElement;
@@ -55,25 +53,17 @@
   let deleteError = $state('');
 
   let credit = $derived(isCredit(account?.type ?? ''));
-  let heroKind = $derived(
-    account
-      ? isCredit(account.type)
-        ? 'credit'
-        : account.type.toLowerCase().includes('savings')
-          ? 'savings'
-          : 'checking'
-      : 'checking'
-  );
-  let filteredTransactions = $derived(
-    transactions.filter((transaction) =>
-      filter === 'all'
-        ? true
-        : filter === 'deposits'
-          ? transaction.kind === 'deposit'
-          : transaction.kind === 'withdrawal'
-    )
-  );
+  let product = $derived(accountProduct(account?.type, account?.nickname));
+  let productName = $derived(product?.name ?? (account?.nickname || account?.type || 'Account'));
+  let searchTerm = $derived(query.trim().toLowerCase());
+  let filteredTransactions = $derived(transactions.filter((transaction) =>
+    transaction.description.toLowerCase().includes(searchTerm) &&
+    (filter === 'all' || transaction.kind === (filter === 'deposits' ? 'deposit' : 'withdrawal'))
+  ));
   let groupedTransactions = $derived(groupByDate(filteredTransactions));
+  let scheduledPayments = $derived(credit && filter !== 'withdrawals'
+    ? upcomingBills(bills).filter((bill) => `${bill.payee} ${bill.nickname}`.toLowerCase().includes(searchTerm))
+    : []);
   let customerAddress = $derived(formatAddress(customer));
   let balanceText = $derived(account ? money(account.balance, { decimals: 2 }) : '');
   let ending = $derived(account ? accountEnding(account) : '');
@@ -145,7 +135,6 @@
       customer = payload.customer ?? null;
       transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
       bills = Array.isArray(payload.bills) ? payload.bills : [];
-      loans = Array.isArray(payload.loans) ? payload.loans : [];
     } catch {
       if (seq === requestSeq) error = "We couldn't load this account.";
     } finally {
@@ -155,15 +144,21 @@
 
   $effect(() => {
     const id = accountId;
-    const startTab = initialTab;
     if (!id) return;
-    tab = startTab;
+    query = '';
     filter = 'all';
     selectedTransaction = null;
     selectedBill = null;
-    selectedLoan = null;
     highlightId = '';
     void load(id);
+  });
+
+  $effect(() => {
+    highlightId = '';
+    if (focusTransactionId) {
+      query = '';
+      filter = 'all';
+    }
   });
 
   $effect(() => {
@@ -192,31 +187,13 @@
   });
 </script>
 
-{#if cardActivity && account && tab === 'activity'}
-  <CreditCardActivity
-    {account} {customer} {transactions} {bills} {highlightId} {focusTransactionId}
-    onDetails={() => (tab = 'details')}
-    onBills={() => (tab = 'bills')}
-    onTransaction={(transaction) => (selectedTransaction = transaction)}
-    onBill={(bill) => (selectedBill = bill)}
-  />
-{:else}
-<div class:inset={cardActivity}>
-{#if loading && !account}
-  <section class="state-card" aria-live="polite">
-    <p>Loading account…</p>
-  </section>
-{:else if error && !account}
-  <section class="state-card" aria-live="polite">
-    <p>{error}</p>
-    <button class="primary" onclick={() => void load(accountId)}>Retry</button>
-  </section>
-{:else if account}
-  <section class="hero {heroKind}" aria-label={`${account.nickname || account.type} account`}>
+<header class="hero" class:pending={!account} data-full-width style:--product-gradient={product?.gradient} style:--product-ink={product?.ink}>
+  {@render heading()}
+  {#if account}
     <div class="hero-top">
       <div>
         <p class="hero-kicker">{account.type}</p>
-        <h2>{account.nickname || account.type}</h2>
+        <h2>{productName}</h2>
         <p class="hero-ending">•••• {ending}</p>
       </div>
       {#if credit || account.rewards > 0}
@@ -227,33 +204,54 @@
       <small>{accountBalanceLabel(account.type)}</small>
       <strong>{balanceText}</strong>
     </div>
-  </section>
+  {/if}
+</header>
 
+{#if loading && !account}
+  <section class="state-card" aria-live="polite">
+    <p>Loading account…</p>
+  </section>
+{:else if error && !account}
+  <section class="state-card" aria-live="polite">
+    <p>{error}</p>
+    <button class="primary" onclick={() => void load(accountId)}>Retry</button>
+  </section>
+{:else if account}
   <div class="tabs" aria-label="Account sections">
-    <button class="tab" aria-pressed={tab === 'activity'} onclick={() => (tab = 'activity')}>
+    <button class="tab" aria-pressed={tab === 'activity'} onclick={() => onTabChange('activity')}>
       Activity <span>{transactions.length}</span>
     </button>
-    <button class="tab" aria-pressed={tab === 'details'} onclick={() => (tab = 'details')}>
+    <button class="tab" aria-pressed={tab === 'details'} onclick={() => onTabChange('details')}>
       Details
     </button>
-    <button class="tab" aria-pressed={tab === 'bills'} onclick={() => (tab = 'bills')}>
+    <button class="tab" aria-pressed={tab === 'bills'} onclick={() => onTabChange('bills')}>
       Bills <span>{bills.length}</span>
-    </button>
-    <button class="tab" aria-pressed={tab === 'loans'} onclick={() => (tab = 'loans')}>
-      Loans <span>{loans.length}</span>
     </button>
   </div>
 
   {#if tab === 'activity'}
     <section class="tab-panel" aria-label="Activity">
-      <div class="filters" aria-label="Filter transactions">
-        <button aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>All</button>
-        <button aria-pressed={filter === 'deposits'} onclick={() => (filter = 'deposits')}>{credit ? 'Payments' : 'Deposits'}</button>
-        <button aria-pressed={filter === 'withdrawals'} onclick={() => (filter = 'withdrawals')}>{credit ? 'Purchases' : 'Withdrawals'}</button>
+      <div class="activity-controls">
+        <input type="search" bind:value={query} aria-label="Search transactions" placeholder="Search transactions" />
+        <div class="filters" aria-label="Filter transactions">
+          <button aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>All</button>
+          <button aria-pressed={filter === 'deposits'} onclick={() => (filter = 'deposits')}>{credit ? 'Payments' : 'Deposits'}</button>
+          <button aria-pressed={filter === 'withdrawals'} onclick={() => (filter = 'withdrawals')}>{credit ? 'Purchases' : 'Withdrawals'}</button>
+        </div>
       </div>
 
-      {#if groupedTransactions.length === 0}
-        <p class="empty">No transactions to show.</p>
+      {#if scheduledPayments.length}
+        <section class="date-group" aria-label="Scheduled payments">
+          <h3>Scheduled payments</h3>
+          <div class="rows">
+            {#each scheduledPayments as bill (bill.id)}
+              {@render billRow(bill)}
+            {/each}
+          </div>
+        </section>
+      {/if}
+      {#if groupedTransactions.length === 0 && scheduledPayments.length === 0}
+        <p class="empty">{searchTerm ? 'No matching transactions.' : 'No transactions to show.'}</p>
       {:else}
         {#each groupedTransactions as [date, rows] (date)}
           <section class="date-group">
@@ -288,15 +286,12 @@
     <section class="tab-panel" aria-label="Details">
       <dl class="detail-list">
         <div><dt>Account type</dt><dd>{label(account.type)}</dd></div>
-        <div><dt>Nickname</dt><dd>{label(account.nickname)}</dd></div>
+        <div><dt>Product</dt><dd>{productName}</dd></div>
         <div><dt>Account number</dt><dd>•••• {ending}</dd></div>
-        <div><dt>{accountBalanceLabel(account.type)}</dt><dd>{balanceText}</dd></div>
-        {#if credit || account.rewards > 0}<div><dt>Rewards points</dt><dd>{account.rewards.toLocaleString('en-US')}</dd></div>{/if}
         <div><dt>Account holder</dt><dd>{customer ? `${customer.firstName} ${customer.lastName}`.trim() : '—'}</dd></div>
         <div><dt>Address</dt><dd>{customerAddress}</dd></div>
       </dl>
       <div class="account-settings">
-        <h3>Account settings</h3>
         <button class="danger-button" onclick={confirmAccountDeletion}>Delete account</button>
       </div>
     </section>
@@ -307,37 +302,7 @@
       {:else}
         <div class="rows">
           {#each bills as bill (bill.id)}
-            <button class="list-row" onclick={() => (selectedBill = bill)}>
-              <span class="list-main">
-                <strong>{bill.payee || bill.nickname || 'Bill'}</strong>
-                <small>{label(bill.nickname)} · Due {dateLabel(bill.upcomingDate)}</small>
-              </span>
-              <span class="list-side">
-                <strong>{money(bill.amount, { decimals: 2 })}</strong>
-                <small>{label(bill.status)}</small>
-              </span>
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </section>
-  {:else}
-    <section class="tab-panel" aria-label="Loans">
-      {#if loans.length === 0}
-        <p class="empty">No loans for this account.</p>
-      {:else}
-        <div class="rows">
-          {#each loans as loan (loan.id)}
-            <button class="list-row" onclick={() => (selectedLoan = loan)}>
-              <span class="list-main">
-                <strong>{label(loan.type)}</strong>
-                <small>{label(loan.description)}</small>
-              </span>
-              <span class="list-side">
-                <strong>{money(loan.amount, { decimals: 2 })}</strong>
-                <small>{money(loan.monthlyPayment, { decimals: 2 })}/mo · {label(loan.status)}</small>
-              </span>
-            </button>
+            {@render billRow(bill)}
           {/each}
         </div>
       {/if}
@@ -345,8 +310,18 @@
   {/if}
 {/if}
 
-</div>
-{/if}
+{#snippet billRow(bill: WalletBill)}
+  <button class="list-row" onclick={() => (selectedBill = bill)}>
+    <span class="list-main">
+      <strong>{bill.payee || bill.nickname || 'Bill'}</strong>
+      <small>{label(bill.nickname)} · Due {dateLabel(bill.upcomingDate)}</small>
+    </span>
+    <span class="list-side">
+      <strong>{money(bill.amount, { decimals: 2 })}</strong>
+      <small>{label(bill.status)}</small>
+    </span>
+  </button>
+{/snippet}
 
 <dialog
   class="delete-dialog"
@@ -358,7 +333,7 @@
 >
   <h2 id="delete-account-title">Delete account?</h2>
   <p id="delete-account-description">
-    Delete <strong>{account?.nickname || account?.type}</strong> ending in {ending}?
+    Delete <strong>{productName}</strong> ending in {ending}?
     This permanently removes the demo account. You can’t undo it.
   </p>
   {#if deleteError}<p role="alert">{deleteError}</p>{/if}
@@ -404,21 +379,6 @@
   </DetailSheet>
 {/if}
 
-{#if selectedLoan}
-  <DetailSheet title="Loan" onClose={() => (selectedLoan = null)}>
-    <dl class="detail-list">
-      <div><dt>Type</dt><dd>{label(selectedLoan.type)}</dd></div>
-      <div><dt>Amount</dt><dd>{money(selectedLoan.amount, { decimals: 2 })}</dd></div>
-      <div><dt>Monthly payment</dt><dd>{money(selectedLoan.monthlyPayment, { decimals: 2 })}</dd></div>
-      <div><dt>Credit score</dt><dd>{label(selectedLoan.creditScore)}</dd></div>
-      <div><dt>Status</dt><dd>{label(selectedLoan.status)}</dd></div>
-      <div><dt>Description</dt><dd>{label(selectedLoan.description)}</dd></div>
-      <div><dt>Creation date</dt><dd>{label(selectedLoan.creationDate)}</dd></div>
-      <div><dt>Account ID</dt><dd class="mono">{label(selectedLoan.accountId)}</dd></div>
-    </dl>
-  </DetailSheet>
-{/if}
-
 <style>
   .account-settings {
     display: grid;
@@ -428,7 +388,7 @@
     padding-top: 16px;
     border-top: 1px solid var(--border);
   }
-  .account-settings h3, .delete-dialog h2 { font-size: 17px; }
+  .delete-dialog h2 { font-size: 17px; }
   .delete-dialog {
     width: min(440px, calc(100% - 32px));
     margin: auto;
@@ -438,7 +398,7 @@
     background: var(--surface);
     color: var(--ink);
   }
-  .delete-dialog::backdrop { background: #0b182399; }
+  .delete-dialog::backdrop { background: var(--dark, #0009) var(--light, #0b182399); }
   .delete-dialog p { margin-top: 12px; }
   .delete-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }
   .danger-button, .cancel-button {
@@ -449,15 +409,11 @@
   .danger-button { border: 1px solid transparent; background: #a22731; color: white; }
   .cancel-button { border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
   .delete-actions button:disabled { opacity: 0.65; cursor: default; }
-  .inset {
-    width: min(1000px, 100%);
-    margin-inline: auto;
-    padding: 24px 20px 48px;
-  }
   .state-card {
     display: grid;
     gap: 12px;
     justify-items: start;
+    margin-top: 18px;
     padding: 24px;
     border: 1px solid var(--border);
     border-radius: 16px;
@@ -465,15 +421,18 @@
   }
   .hero {
     display: grid;
-    gap: 24px;
-    padding: 22px;
-    border-radius: 18px;
-    color: #fff;
-    background: linear-gradient(118deg, #062f4c, #126379);
+    grid-template-columns: subgrid;
+    row-gap: 24px;
+    padding-block: clamp(20px, 4vw, 32px);
+    color: var(--product-ink, #fff);
+    background: var(--product-gradient, linear-gradient(115deg, #252525, #484848));
     box-shadow: var(--shadow);
   }
-  .hero.savings { background: linear-gradient(118deg, #202c47, #485875); }
-  .hero.credit { background: linear-gradient(118deg, #5b2a24, #a74829); }
+  .hero.pending {
+    color: var(--ink);
+    background: var(--surface);
+  }
+  .hero-top, .hero-balance { grid-column: content; }
   .hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .hero-kicker {
     margin: 0 0 4px;
@@ -486,7 +445,7 @@
   .hero h2 { margin: 0; font-size: 22px; line-height: 1.25; }
   .hero-ending { margin: 3px 0 0; font-size: 12px; opacity: .78; }
   .tx-main .impact-label { color: var(--muted); font-size: 10px; }.tx-main .green-impact { color: var(--dark, #9eddb3) var(--light, #286b41); }
-  .hero-rewards { margin: 0; font-size: 13px; font-weight: 650; }
+  .hero-rewards { margin: 0; padding: 6px 10px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 999px; font-size: 12px; font-weight: 650; text-align: right; }
   .hero-balance { display: grid; gap: 2px; }
   .hero-balance small { font-size: 12px; opacity: .78; }
   .hero-balance strong { font-size: clamp(28px, 5vw, 38px); line-height: 1; font-weight: 450; letter-spacing: -.04em; }
@@ -520,6 +479,20 @@
   .tab span { font-size: 11px; font-weight: 500; }
   .tab[aria-pressed='true'] { background: var(--banner); color: var(--ink); }
   .tab-panel { margin-top: 18px; display: grid; gap: 14px; }
+  .activity-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+  .activity-controls input {
+    flex: 1 1 220px;
+    min-width: 0;
+    max-width: 360px;
+    min-height: 42px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+  }
+  .activity-controls input::placeholder { color: var(--muted); }
   .filters { display: flex; gap: 6px; flex-wrap: wrap; }
   .filters button {
     padding: 6px 11px;
@@ -558,7 +531,7 @@
   .tx-row:hover, .list-row:hover { background: var(--page); }
   .tx-row.highlight,
   .tx-row.highlight:hover {
-    background: color-mix(in srgb, var(--link) 22%, transparent);
+    background: var(--dark, var(--banner)) var(--light, color-mix(in srgb, var(--link) 22%, transparent));
   }
   .tx-main, .list-main, .tx-amount, .list-side { display: grid; gap: 2px; min-width: 0; }
   .tx-main strong, .list-main strong { font-size: 14px; font-weight: 600; }
@@ -608,7 +581,7 @@
     font-weight: 650;
   }
   @media (max-width: 570px) {
-    .hero { padding: 18px; }
+    .hero { padding-block: 18px; }
     .hero-top { flex-direction: column; gap: 6px; }
     .tab { font-size: 12px; padding-inline: 8px; }
     .detail-list > div { grid-template-columns: 1fr; gap: 2px; }

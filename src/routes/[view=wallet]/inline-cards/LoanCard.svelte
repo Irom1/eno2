@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { loanProduct } from '$lib/products';
   import { money, titleCase } from '$lib/format.js';
-  import { accountHref, type LoanEntityCard } from '$lib/chat/entityCards.js';
+  import type { LoanEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
   import MoneyText from './primitives/MoneyText.svelte';
-  import OpenIcon from './OpenIcon.svelte';
   import StatusChip from './StatusChip.svelte';
 
   interface Props {
@@ -13,51 +13,32 @@
   let { card }: Props = $props();
 
   const payload = $derived(card.payload);
-  const typeText = $derived(titleCase(payload.type));
+  const product = $derived(loanProduct(payload.type));
+  const typeText = $derived(product?.name ?? titleCase(payload.type));
   const balanceText = $derived(
     payload.balance === null ? '' : money(payload.balance, { decimals: 2 })
   );
-  const href = $derived(accountHref(payload.customerId, payload.accountId));
   const label = $derived(`Loan, ${typeText}${balanceText ? `, ${balanceText}` : ''}`);
 </script>
 
-{#snippet content(linked: boolean)}
-  <div class="loan-head">
-    <span class="type">{typeText}</span>
-    <span class="side">
-      {#if payload.status}
-        <StatusChip status={payload.status} />
-      {/if}
-      {#if linked}
-        <OpenIcon />
-      {/if}
-    </span>
-  </div>
-  <div class="loan-figures">
-    {#if payload.balance !== null}
-      <span class="balance"><MoneyText amount={payload.balance} decimals={2} /></span>
-    {/if}
-    {#if payload.monthlyPayment !== null}
-      <span class="payment"><MoneyText amount={payload.monthlyPayment} decimals={2} />/mo</span>
-    {/if}
-  </div>
-{/snippet}
-
 <CardFrame {label}>
-  <div class="loan-card" data-kind="loan">
-    {#if href}
-      <a
-        class="loan-link"
-        {href}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`Open ${typeText} loan in your account`}
-      >
-        {@render content(true)}
-      </a>
-    {:else}
-      {@render content(false)}
-    {/if}
+  <div class="loan-card" class:product={product} data-kind="loan" style:--product-gradient={product?.gradient} style:--product-ink={product?.ink}>
+    <div class="loan-head">
+      <span class="type">{typeText}</span>
+      <span class="side">
+        {#if payload.status}
+          <StatusChip status={payload.status} />
+        {/if}
+      </span>
+    </div>
+    <div class="loan-figures">
+      {#if payload.balance !== null}
+        <span class="balance"><MoneyText amount={payload.balance} decimals={2} /></span>
+      {/if}
+      {#if payload.monthlyPayment !== null}
+        <span class="payment"><MoneyText amount={payload.monthlyPayment} decimals={2} />/mo</span>
+      {/if}
+    </div>
   </div>
 </CardFrame>
 
@@ -65,11 +46,12 @@
   .loan-card {
     min-width: 0;
   }
-  .loan-link {
-    display: block;
-    min-width: 0;
-    color: inherit;
-    text-decoration: none;
+  .product {
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--product-gradient);
+    --ink: var(--product-ink);
+    --muted: var(--product-ink);
   }
   .loan-head {
     display: flex;
@@ -84,11 +66,6 @@
     line-height: 1.35;
     color: var(--ink);
     overflow-wrap: anywhere;
-    transition: color 140ms ease;
-  }
-  a.loan-link:hover .type,
-  a.loan-link:focus-visible .type {
-    color: var(--link);
   }
   .side {
     display: inline-flex;

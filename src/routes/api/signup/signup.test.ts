@@ -23,7 +23,7 @@ it('includes only the related demo credit card after spending preferences are re
   expect(createNessieCustomer).not.toHaveBeenCalled();
   expect((await POST(event(crypto.randomUUID(), { status: 'personalize', categories: ['travel', 'dining'] }))).status).toBe(201);
   expect(vi.mocked(createNessieAccounts).mock.calls[0][1]).toEqual(['Checking', 'Savings', 'Credit Card']);
-  expect(vi.mocked(createNessieAccounts).mock.calls[0][4]).toMatchObject({ card: { id: 'venture', nickname: 'Venture · Eno demo' }, categories: ['travel', 'dining'] });
+  expect(vi.mocked(createNessieAccounts).mock.calls[0][4]).toMatchObject({ card: { id: 'venture', nickname: 'Venture Rewards · Eno demo' }, categories: ['travel', 'dining'] });
 });
 
 it('blocks all Nessie writes if the address does not match or needs correction', async () => {

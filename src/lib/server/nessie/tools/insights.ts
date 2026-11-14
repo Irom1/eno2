@@ -1,3 +1,4 @@
+import { accountProduct } from '../../../products';
 /**
  * Deterministic insight tools. All arithmetic happens here in TypeScript so
  * every dollar the model narrates can be traced to a tested calculation.
@@ -975,7 +976,7 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         accounts: accounts.map((account) => ({
           _id: account._id,
           type: account.type,
-          nickname: account.nickname,
+          nickname: accountProduct(account.type, account.nickname)?.name ?? account.nickname,
           balance: toMoney(accountBalance(account)),
           rewards: num(account.rewards),
           accountNumber: maskAccountNumber(account.account_number),

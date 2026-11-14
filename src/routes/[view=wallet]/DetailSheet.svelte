@@ -51,7 +51,7 @@
     position: absolute;
     inset: 0;
     border: 0;
-    background: #0b182399;
+    background: var(--dark, #0009) var(--light, #0b182399);
   }
   .sheet-card {
     position: relative;
@@ -67,11 +67,18 @@
     box-shadow: 0 24px 60px #0b18234d;
   }
   .sheet-header {
+    --page: var(--dark, #10191f) var(--light, #f4f6f8);
+    --surface: var(--dark, #18252d) var(--light, #fff);
+    --border: var(--dark, #31444f) var(--light, #dae3e8);
+    --ink: var(--dark, #ecf3f6) var(--light, #142632);
+    --muted: var(--dark, #b1c3cc) var(--light, #50636e);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 14px 18px;
+    background: var(--surface);
+    color: var(--ink);
     border-bottom: 1px solid var(--border);
   }
   .sheet-header h2 {

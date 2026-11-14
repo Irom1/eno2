@@ -5,10 +5,11 @@
   import CapitalOneLogo from '../[view=wallet]/CapitalOneLogo.svelte';
   import SignupChoices from '$lib/components/SignupChoices.svelte';
   import Eno from '$lib/components/Eno.svelte';
-  import { emptySpending, spendingPreferencesSchema, spendingComplete, recommendDemoCard, categoryLabels, type SpendingPreferences, type DemoCard } from '$lib/spending';
+  import { emptySpending, spendingPreferencesSchema, spendingComplete, brandedCardName, recommendDemoCard, categoryLabels, type SpendingPreferences, type DemoCard } from '$lib/spending';
   import AddressAutocomplete from '$lib/components/AddressAutocomplete.svelte';
   import { type AddressCandidate, type AddressCheck, type MailingAddress } from '$lib/address';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
+  import { accountProduct, products } from '$lib/products';
   import { accountChoiceSchema, accountTypesFor, emptyAnswers, SIGNUP_FIELDS, customerCreateSchema, customerFromAnswers, type AccountChoice, type SignupAnswers, type AccountSelection, type SignupStage } from '$lib/signup';
 
   interface ChoiceInput { selectedSpending?: SpendingPreferences['categories']; selectedAccounts?: AccountSelection }
@@ -221,7 +222,7 @@
     if (choices?.selectedSpending) {
       void sendText(`My top spending categories are ${choices.selectedSpending.map((category) => categoryLabels[category]).join(', ')}.`, undefined, choices);
     } else if (choices?.selectedAccounts && message.selection) {
-      const selected = [message.selection.checking ? 'checking' : '', message.selection.savings ? 'savings' : '', message.selection.creditCard ? `Capital One ${message.recommendedCard?.name ?? 'Quicksilver'} credit card` : ''].filter(Boolean);
+      const selected = [message.selection.checking ? products.checking.name : '', message.selection.savings ? products.savings.name : '', message.selection.creditCard ? `${brandedCardName(message.recommendedCard)} credit card` : ''].filter(Boolean);
       void sendText(selected.length ? `I'd like ${selected.join(', ')}.` : 'No accounts yet, please.', undefined, choices);
     }
   }
@@ -303,10 +304,10 @@
                     {#each [{ label: 'First name', value: message.review.first_name }, { label: 'Last name', value: message.review.last_name }, { label: 'Street address', value: `${message.review.street_number} ${message.review.street_name}` }, { label: 'City', value: message.review.city }, { label: 'State', value: message.review.state }, { label: 'ZIP', value: message.review.zip }] as row}
                       <div><span>{row.label}</span><strong>{row.value}</strong>{#if message.id === latestReviewId && readyToCreate && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit(row.label)} aria-label={`Edit ${row.label.toLowerCase()}`}>Edit</button>{/if}</div>
                     {/each}
-                    <div><span>Accounts</span><strong>{message.accountChoice === 'none' ? message.card ? 'No checking or savings' : 'None yet — a fresh dashboard' : accountTypesFor(message.accountChoice ?? 'none').join(' + ') + ' · 100 sample transactions each'}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('account choice')} aria-label="Edit account choice">Edit</button>{/if}</div>
+                    <div><span>Accounts</span><strong>{message.accountChoice === 'none' ? message.card ? 'No checking or savings' : 'None yet — a fresh dashboard' : accountTypesFor(message.accountChoice ?? 'none').map((type) => accountProduct(type, '')?.name ?? type).join(' + ') + ' · 100 sample transactions each'}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('account choice')} aria-label="Edit account choice">Edit</button>{/if}</div>
                     <div><span>Spending</span><strong>{message.spending?.status === 'skip' ? 'No category preference' : message.spending?.categories.map((category) => categoryLabels[category]).join(' · ')}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('spending priorities and demo credit card')} aria-label="Edit spending priorities">Edit</button>{/if}</div>
                   </div>
-                  {#if message.card}<div class="card-match"><span class="card-demo-label">YOUR MATCH · DEMO CREDIT CARD</span><strong>Capital One {message.card.name}</strong><p>{message.card.reason}</p><small>100 fictional transactions · balance owed = purchases − payments · 1 demo point per $1 spent</small></div>{/if}
+                  {#if message.card}<div class="card-match" style:--product-gradient={products[message.card.id].gradient} style:--product-ink={products[message.card.id].ink}><span class="card-demo-label">YOUR MATCH · DEMO CREDIT CARD</span><strong>{brandedCardName(message.card)}</strong><p>{message.card.reason}</p><small>100 fictional transactions · balance owed = purchases − payments · 1 demo point per $1 spent</small></div>{/if}
                   {#if message.id === latestReviewId && readyToCreate && !recovery}<button class="confirm" disabled={busy} onclick={confirm}>Looks good. Let’s go {@render arrow()}</button>{/if}
                 {/if}
                 {#if message.retry && !recovery}<button class="confirm" disabled={busy} onclick={() => message.retry === 'turn' ? retryTurn(message.retryText || '', message.selectedAddress, message.retryChoices) : confirm()}>Try again {@render arrow()}</button>{/if}
@@ -333,7 +334,7 @@
 <style>
   :global(body:has(.signup-chat)) { margin: 0; }
   :global(html:has(.signup-chat)) { overflow: hidden; }
-  .signup-chat { --dark: ; --light: initial; --page: var(--dark, #10191f) var(--light, #f4f6f8); --surface: var(--dark, #18252d) var(--light, #fff); --ink: var(--dark, #ecf3f6) var(--light, #142632); --muted: var(--dark, #b1c3cc) var(--light, #50636e); --border: var(--dark, #31444f) var(--light, #dae3e8); --link: var(--dark, #9fdbf0) var(--light, #075e80); --button: var(--dark, #bde7f5) var(--light, #123f56); --button-text: var(--dark, #142632) var(--light, #fff); --glow: var(--dark, #21475f) var(--light, #c6e5fc); --reply: var(--dark, #1b3e50) var(--light, #dfeef6); height: 100dvh; display: flex; flex-direction: column; color: var(--ink); background: radial-gradient(ellipse 70% 80% at 50% 100%, color-mix(in srgb, var(--glow) 40%, transparent), transparent 100%), var(--page); color-scheme: var(--dark, dark) var(--light, light); font: 15px/1.65 Inter, system-ui, sans-serif; }
+  .signup-chat { --dark: ; --light: initial; --page: var(--dark, #171717) var(--light, #f4f6f8); --surface: var(--dark, #242424) var(--light, #fff); --ink: var(--dark, #f2f2f2) var(--light, #142632); --muted: var(--dark, #bdbdbd) var(--light, #50636e); --border: var(--dark, #414141) var(--light, #dae3e8); --link: var(--dark, #9fdbf0) var(--light, #075e80); --button: var(--dark, #e5e5e5) var(--light, #123f56); --button-text: var(--dark, #202020) var(--light, #fff); --glow: var(--dark, #393939) var(--light, #c6e5fc); --reply: var(--dark, #333333) var(--light, #dfeef6); height: 100dvh; display: flex; flex-direction: column; color: var(--ink); background: radial-gradient(ellipse 70% 80% at 50% 100%, color-mix(in srgb, var(--glow) 40%, transparent), transparent 100%), var(--page); color-scheme: var(--dark, dark) var(--light, light); font: 15px/1.65 Inter, system-ui, sans-serif; }
   .signup-chat[data-theme='dark'] { --dark: initial; --light: ; }
   @media (prefers-color-scheme: dark) { .signup-chat[data-theme='system'] { --dark: initial; --light: ; } }
   .signup-chat * { box-sizing: border-box; }
@@ -344,7 +345,13 @@
   a { color: inherit; text-decoration: none; }
   :is(button, a):focus-visible { outline: 2px solid var(--link); outline-offset: 4px; }
   svg { width: 20px; height: 20px; flex: none; }
-  header { width: min(1200px, calc(100% - 72px)); display: flex; align-items: center; justify-content: space-between; margin: 0 auto; padding: 24px 0; flex: none; }
+  header {
+    --surface: var(--dark, #18252d) var(--light, #fff);
+    --border: var(--dark, #31444f) var(--light, #dae3e8);
+    --ink: var(--dark, #ecf3f6) var(--light, #142632);
+    --muted: var(--dark, #b1c3cc) var(--light, #50636e);
+    color: var(--ink);
+    width: min(1200px, calc(100% - 72px)); display: flex; align-items: center; justify-content: space-between; margin: 0 auto; padding: 24px 0; flex: none; }
   .brand { display: flex; align-items: center; gap: 16px; color: var(--dark, #fff) var(--light, #013d5b); }
   .brand :global(svg) { width: 110px; height: 40px; }
   .exit { display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; width: 38px; height: 38px; color: var(--muted); }
@@ -370,8 +377,8 @@
   .from-you { align-self: flex-end; max-width: 80%; }
   .from-you .sender { justify-content: flex-end; margin-right: 3px; }
   .from-you .bubble { border-color: transparent; border-radius: 20px 4px 20px 20px; background: var(--reply); padding-block: 12px; }
-  .card-match { display: grid; gap: 8px; margin-top: 18px; padding: 18px; border-radius: 14px; color: #fff; background: linear-gradient(130deg, #0b405c, #22627b); }
-  .card-demo-label { font-size: 9px; letter-spacing: .1em; color: #c4e2ef; }.card-match > strong { font-size: 23px; font-weight: 600; }.card-match > p { margin: 0; font-size: 12px; }.card-match > small { color: #d1e6ef; font-size: 10px; }
+  .card-match { display: grid; gap: 8px; margin-top: 18px; padding: 18px; border-radius: 14px; color: var(--product-ink); background: var(--product-gradient); }
+  .card-demo-label { font-size: 9px; letter-spacing: .1em; }.card-match > strong { font-size: 23px; font-weight: 600; }.card-match > p { margin: 0; font-size: 12px; }.card-match > small { font-size: 10px; }
   .address-matched { margin: 14px 0 0; color: var(--link); font-size: 11px; }
   .address-choices { display: grid; gap: 8px; margin-top: 14px; }
   .address-choices button { text-align: left; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--reply); font-size: 12px; }
@@ -397,7 +404,13 @@
     .voice-toggle { width: 38px; height: 38px; padding: 0; flex: none; }.voice-toggle span { display: none; }
     .header-actions { gap: 10px; }
     main { flex: 1; }
-    header { width: calc(100% - 36px); padding: 18px 0; }
+    header {
+    --surface: var(--dark, #18252d) var(--light, #fff);
+    --border: var(--dark, #31444f) var(--light, #dae3e8);
+    --ink: var(--dark, #ecf3f6) var(--light, #142632);
+    --muted: var(--dark, #b1c3cc) var(--light, #50636e);
+    color: var(--ink);
+    width: calc(100% - 36px); padding: 18px 0; }
     .brand { gap: 10px; }.brand :global(svg) { width: 94px; height: 34px; }
     .messages { padding: 18px 16px 28px; gap: 22px; }.message { max-width: 96%; gap: 8px; }
     .bubble { padding: 14px; font-size: 14px; }.from-you { max-width: 85%; }
