@@ -51,6 +51,7 @@
     onClose: () => void;
     canSend: boolean;
     variant?: EnoVariant;
+    accounts?: Array<{ id?: string; nickname?: string; type?: string }>;
   }
 
   interface ChatMessage {
@@ -69,7 +70,8 @@
     initialPrompt,
     onClose,
     canSend = $bindable(),
-    variant = 'light'
+    variant = 'light',
+    accounts = []
   }: Props = $props();
 
   let ready = $state(false);
@@ -108,7 +110,7 @@
     if (!last || last.pending) return [];
     const cards = last.inlineCards ?? [];
     if (!last.text && cards.length === 0) return [];
-    return followUpsFor(cards, last.prompt ?? '').slice(0, 3);
+    return followUpsFor(cards, last.prompt ?? '', last.text, accounts).slice(0, 3);
   });
 
   function scrollLog(): void {

@@ -117,6 +117,8 @@
         return {
           id: account.id,
           name: account.nickname || account.type,
+          nickname: account.nickname || account.type,
+          type: account.type,
           ending: accountEnding(account),
           balance: formatAmount(account.balance),
           kind: accountKind(account.type),
@@ -616,6 +618,7 @@
             initialPrompt={chatPrompt}
             bind:canSend
             variant={isDark ? 'dark' : 'light'}
+            accounts={displayAccounts}
             onClose={() => void goto('/dashboard')}
           />
         </main>

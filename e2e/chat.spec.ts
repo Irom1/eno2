@@ -1340,6 +1340,97 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('a clarification question produces one-click answers from loaded accounts', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Which account would you like to analyze?'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Help me look at my spending');
+
+    await expect(page.locator('.follow-up').first()).toBeVisible({ timeout: 20_000 });
+    const labels = (await page.locator('.follow-up').allInnerTexts()).map((label) =>
+      label.trim()
+    );
+    expect(
+      labels.some((label) => label.includes('Everyday Checking')),
+      `expected an account clarification answer, got ${JSON.stringify(labels)}`
+    ).toBe(true);
+    expectNoErrors(errors);
+  });
+
+  test('a merchant answer offers transactions at the rendered merchant', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_top_merchants',
+          accountId: 'acct-checking',
+          payload: {
+            count: 1,
+            months: 3,
+            items: [
+              {
+                _id: 'merchant:whole-foods',
+                name: 'Whole Foods',
+                category: 'groceries',
+                transactionCount: 9,
+                total: 540
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: { type: 'text', delta: 'Whole Foods comes up most often.' }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    await askChat(page, 'Where do I shop most?');
+
+    await expect(page.locator('.merchant-card')).toHaveCount(1, { timeout: 20_000 });
+    await expect(page.locator('.merchant-card').first()).toContainText('Whole Foods');
+    await waitForChatSettled(page);
+
+    await expect(page.locator('.follow-up').first()).toBeVisible({ timeout: 20_000 });
+    const labels = (await page.locator('.follow-up').allInnerTexts()).map((label) =>
+      label.trim()
+    );
+    expect(
+      labels,
+      `expected a merchant-specific follow-up, got ${JSON.stringify(labels)}`
+    ).toContain('Show my transactions at Whole Foods');
+    expectNoErrors(errors);
+  });
+
   test('"Show me my bills" renders one primitive bill card and no duplicated totals', async ({
     page
   }) => {
@@ -1372,6 +1463,14 @@ test.describe('chat prompts', () => {
     );
     expect(prose, 'prose has no Tip label').not.toContain('Tip:');
     expect(prose, 'prose has no Insight label').not.toContain('Insight:');
+    await expect(page.locator('.follow-up').first()).toBeVisible({ timeout: 20_000 });
+    const billFollowups = (await page.locator('.follow-up').allInnerTexts()).map((label) =>
+      label.trim()
+    );
+    expect(
+      billFollowups.some((label) => /Can I cover my .+ bill\?/.test(label)),
+      `expected a bill-specific follow-up, got ${JSON.stringify(billFollowups)}`
+    ).toBe(true);
     expectNoErrors(errors);
   });
 
