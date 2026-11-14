@@ -319,7 +319,7 @@ function accountsAnswer(data: unknown): string {
   return `You have ${accounts.length} accounts: ${names}.${rewardsLine}`;
 }
 
-function composeAnswer(name: string, data: unknown, now: Date, message: string): string {
+export function composeAnswer(name: string, data: unknown, now: Date, message: string): string {
   switch (name) {
     case "insight_upcoming_bills":
       return billsAnswer(data);
@@ -342,6 +342,38 @@ function composeAnswer(name: string, data: unknown, now: Date, message: string):
     default:
       return overviewAnswer(data);
   }
+}
+
+/**
+ * Grounded narration for the single-tool fast path. Bills deliberately avoids
+ * repeating the dollar totals already shown on the card, matching the product
+ * rule that prose must not duplicate card values.
+ */
+function billsFastAnswer(data: unknown): string {
+  const payload = rec(data);
+  const bills = Array.isArray(payload.bills) ? payload.bills.map(rec) : [];
+  if (bills.length === 0 || num(payload.count) === 0) {
+    return "I don't see any bills due in the next 30 days for this customer.";
+  }
+  const largest = [...bills].sort((a, b) => num(b.amount) - num(a.amount))[0] ?? {};
+  const coverage =
+    num(payload.shortfall) > 0
+      ? "Your checking balance is slightly short of covering them all, but savings can cover the difference."
+      : "Your checking balance covers them.";
+  return `You have ${num(payload.count)} bills due in the next 30 days. ${coverage} The largest is ${String(
+    largest.payee ?? "a bill"
+  )}, due ${String(largest.dueDate ?? "soon")}.`;
+}
+
+/** Deterministic answer used when a known single-tool intent is answered locally. */
+export function composeFastAnswer(
+  name: string,
+  data: unknown,
+  now: Date,
+  message: string
+): string {
+  if (name === "insight_upcoming_bills") return billsFastAnswer(data);
+  return composeAnswer(name, data, now, message);
 }
 
 /** A short leading sentence that invites the card without restating its values. */

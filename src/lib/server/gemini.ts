@@ -12,6 +12,12 @@ import type { Content, ContentPart } from './session';
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const TEMPERATURE = 0.35;
 const MAX_OUTPUT_TOKENS = 2048;
+/**
+ * Hidden thinking adds several seconds between the last tool result and the
+ * first visible token. Zero budget keeps the answer immediate; if a provider
+ * rejects the field we retry once without it (see `postWithThinkingFallback`).
+ */
+const THINKING_BUDGET = 0;
 
 /** Local shape matching the Gemini function declaration wire format. */
 export interface GeminiFunctionDeclaration {
@@ -65,7 +71,15 @@ export function geminiModel(runtime: RuntimeEnv): string {
   return runtime.GEMINI_MODEL;
 }
 
-function requestBody(params: StreamParams | GenerateParams): Record<string, unknown> {
+function requestBody(
+  params: StreamParams | GenerateParams,
+  withThinking = true
+): Record<string, unknown> {
+  const generationConfig: Record<string, unknown> = {
+    temperature: TEMPERATURE,
+    maxOutputTokens: MAX_OUTPUT_TOKENS
+  };
+  if (withThinking) generationConfig.thinkingConfig = { thinkingBudget: THINKING_BUDGET };
   return {
     contents: params.contents,
     systemInstruction: { role: 'user', parts: [{ text: params.systemInstruction }] },
@@ -73,7 +87,7 @@ function requestBody(params: StreamParams | GenerateParams): Record<string, unkn
       tools: [{ functionDeclarations: params.declarations }],
       toolConfig: { functionCallingConfig: { mode: 'AUTO' } }
     }),
-    generationConfig: { temperature: TEMPERATURE, maxOutputTokens: MAX_OUTPUT_TOKENS }
+    generationConfig
   };
 }
 
@@ -113,7 +127,8 @@ function partText(parts: readonly ContentPart[]): string {
   return parts.map(textual).join('');
 }
 
-async function throwProviderError(response: Response, model: string): Promise<never> {
+/** Read a provider error body and return a message safe to log (no key). */
+async function errorDetail(response: Response): Promise<string> {
   let detail = response.statusText || 'request failed';
   try {
     const raw = await response.text();
@@ -128,8 +143,21 @@ async function throwProviderError(response: Response, model: string): Promise<ne
   } catch {
     // keep status text
   }
-  // Never include the key: only the HTTP status and provider message.
-  throw new Error(`Gemini request failed (${response.status} ${model}): ${detail}`);
+  return detail;
+}
+
+/** Never include the key: only the HTTP status and provider message. */
+function providerError(status: number, model: string, detail: string): Error {
+  return new Error(`Gemini request failed (${status} ${model}): ${detail}`);
+}
+
+async function throwProviderError(response: Response, model: string): Promise<never> {
+  throw providerError(response.status, model, await errorDetail(response));
+}
+
+/** Whether a 400 is specifically rejecting the thinking config. */
+function isThinkingConfigRejection(status: number, detail: string): boolean {
+  return status === 400 && /thinking/i.test(detail);
 }
 
 function endpoint(runtime: RuntimeEnv, method: 'streamGenerateContent' | 'generateContent'): string {
@@ -138,15 +166,47 @@ function endpoint(runtime: RuntimeEnv, method: 'streamGenerateContent' | 'genera
   return `${BASE_URL}/${model}:${method}${query}${encodeURIComponent(runtime.GEMINI_API_KEY)}`;
 }
 
+/**
+ * POST a generation request with the thinking config. If the provider rejects
+ * that field with a 400, retry exactly once without it so an unsupported
+ * thinking option never forces the deterministic fallback path.
+ */
+async function postWithThinkingFallback(
+  runtime: RuntimeEnv,
+  method: 'streamGenerateContent' | 'generateContent',
+  accept: string,
+  params: StreamParams | GenerateParams
+): Promise<Response> {
+  const url = endpoint(runtime, method);
+  const send = (withThinking: boolean): Promise<Response> =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept },
+      body: JSON.stringify(requestBody(params, withThinking))
+    });
+
+  const response = await send(true);
+  if (response.ok) return response;
+
+  const detail = await errorDetail(response);
+  if (!isThinkingConfigRejection(response.status, detail)) {
+    throw providerError(response.status, runtime.GEMINI_MODEL, detail);
+  }
+
+  const retry = await send(false);
+  if (retry.ok) return retry;
+  throw providerError(retry.status, runtime.GEMINI_MODEL, await errorDetail(retry));
+}
+
 /** POST the request and parse an SSE body, invoking `onText` per text delta. */
 export async function streamGemini(runtime: RuntimeEnv, params: StreamParams): Promise<RoundResult> {
-  const response = await fetch(endpoint(runtime, 'streamGenerateContent'), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
-    body: JSON.stringify(requestBody(params))
-  });
+  const response = await postWithThinkingFallback(
+    runtime,
+    'streamGenerateContent',
+    'text/event-stream',
+    params
+  );
 
-  if (!response.ok) await throwProviderError(response, runtime.GEMINI_MODEL);
   if (!response.body) throw new Error('Gemini streaming response had no body');
 
   const reader = response.body.getReader();
@@ -219,13 +279,12 @@ export async function generateGemini(
   runtime: RuntimeEnv,
   params: GenerateParams
 ): Promise<RoundResult> {
-  const response = await fetch(endpoint(runtime, 'generateContent'), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify(requestBody(params))
-  });
-
-  if (!response.ok) await throwProviderError(response, runtime.GEMINI_MODEL);
+  const response = await postWithThinkingFallback(
+    runtime,
+    'generateContent',
+    'application/json',
+    params
+  );
 
   const payload = (await response.json()) as GeminiChunk;
   const parts = collectParts(payload);

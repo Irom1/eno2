@@ -13,7 +13,7 @@
     type EntityCard,
     type TransactionListEntityCard
   } from '$lib/chat/entityCards.js';
-  import { inlineBlocks } from '$lib/chat/inline.js';
+  import { inlineBlocks, revealInlineCards } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
   import { STARTER_PROMPTS } from '$lib/chat/starters.js';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
@@ -21,6 +21,7 @@
     friendlyToolLabel,
     initialThinking,
     pushThinkingStep,
+    THINKING_COMPOSING,
     type ThinkingState
   } from '$lib/chat/thinking.js';
   import { visibleCards } from '$lib/chat/relevance.js';
@@ -252,6 +253,11 @@
           }
           case 'insight': {
             if (typeof data.kind !== 'string') break;
+            // Cards are about to render; the model still owes us prose. Surface
+            // that phase so the wait between the card and the answer is legible.
+            if (message.pending && !message.text.trim()) {
+              thinking = pushThinkingStep(thinking, THINKING_COMPOSING);
+            }
             const payload = data.payload;
             const accountId = typeof data.accountId === 'string' ? data.accountId : '';
             const fingerprint = `${data.kind}:${JSON.stringify(payload)}`;
@@ -269,7 +275,8 @@
               kind: chatCardKind(data.kind),
               tool: data.kind,
               payload,
-              afterText: message.text.length
+              afterText:
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER
             });
             if (data.kind === 'insight_anomalies') {
               // If the tool result arrives before any prose, anchor the cards at
@@ -413,9 +420,21 @@
         <div class="bubble user">{message.text}</div>
       {:else}
         {@const arrangedCards = anchorTransactionCards(message.text, message.inlineCards ?? [])}
-        {@const blocks = inlineBlocks(message.text, arrangedCards)}
+        {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
+        {@const blocks = inlineBlocks(message.text, readyCards)}
         {@const hasBlocks = blocks.length > 0}
         {@const isThinking = message.pending && !hasBlocks}
+        {@const inlineTransactionTurn =
+          hasBlocks &&
+          blocks.some(
+            (block) =>
+              block.type === 'cards' && block.cards.some((card) => card.kind === 'transaction')
+          ) &&
+          !blocks.some(
+            (block) =>
+              block.type === 'cards' &&
+              block.cards.some((card) => card.kind === 'transaction-list')
+          )}
         {#if hasBlocks || message.pending}
           <div class="assistant-turn" class:intro={message.intro}>
             <EnoThinking {variant} active={message.pending} size={40} />
@@ -438,28 +457,52 @@
                   </div>
                 </div>
               {/if}
-              {#each blocks as block, index (block.type + index)}
-                {#if block.type === 'text'}
-                  {#if block.text.trim()}
-                    <div class="bubble assistant">
-                      <div class="richtext">{@html renderMarkdown(block.text)}</div>
-                    </div>
-                  {/if}
-                {:else}
-                  {#each block.cards as card (card.id)}
-                    {#if card.kind === 'transaction'}
-                      <TransactionCard {card} />
-                    {:else if card.kind === 'transaction-list'}
-                      <TransactionListCard {card} />
+              {#if inlineTransactionTurn}
+                <div class="bubble assistant inline-transactions">
+                  {#each blocks as block, index (block.type + index)}
+                    {#if block.type === 'text'}
+                      {#if block.text.trim()}
+                        <div class="richtext">{@html renderMarkdown(block.text)}</div>
+                      {/if}
+                    {:else}
+                      {#each block.cards as card (card.id)}
+                        {#if card.kind === 'transaction'}
+                          <TransactionCard {card} inline />
+                        {/if}
+                      {/each}
                     {/if}
                   {/each}
-                {/if}
-              {/each}
-              {#if message.pending && hasBlocks}
-                <div class="loading-line status-line">
-                  <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                  <span>{thinking.current || 'Still working…'}</span>
+                  {#if message.pending}
+                    <div class="loading-line status-line">
+                      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span>{thinking.current || 'Still working…'}</span>
+                    </div>
+                  {/if}
                 </div>
+              {:else}
+                {#each blocks as block, index (block.type + index)}
+                  {#if block.type === 'text'}
+                    {#if block.text.trim()}
+                      <div class="bubble assistant">
+                        <div class="richtext">{@html renderMarkdown(block.text)}</div>
+                      </div>
+                    {/if}
+                  {:else}
+                    {#each block.cards as card (card.id)}
+                      {#if card.kind === 'transaction'}
+                        <TransactionCard {card} />
+                      {:else if card.kind === 'transaction-list'}
+                        <TransactionListCard {card} />
+                      {/if}
+                    {/each}
+                  {/if}
+                {/each}
+                {#if message.pending && hasBlocks}
+                  <div class="loading-line status-line">
+                    <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span>{thinking.current || 'Still working…'}</span>
+                  </div>
+                {/if}
               {/if}
               {#if message.intro && (booting || !ready)}
                 <p class="status-line intro-status">{status || 'Connecting…'}</p>

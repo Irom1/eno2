@@ -686,6 +686,90 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('buffers inline cards until the prose reaches their merchant', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'tool_start',
+        data: { type: 'tool_start', name: 'insight_anomalies', label: '' }
+      },
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_anomalies',
+          accountId: 'acct-checking',
+          payload: {
+            count: 1,
+            findings: [
+              {
+                _id: 'txn-apple-buffered',
+                type: 'outlier',
+                description: 'APPLE STORE',
+                amount: 1299,
+                date: '2026-11-03'
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: { type: 'text', delta: 'I checked your recent activity.' }
+      },
+      {
+        delay: 2500,
+        event: 'text',
+        data: { type: 'text', delta: ' There is a large charge at APPLE STORE.' }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Any suspicious transactions?');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await composer.press('Enter');
+
+    const turn = page.locator('.assistant-turn').last();
+    const prose = turn.locator('.bubble.assistant .richtext');
+
+    // The insight has arrived and text is streaming, but the card's merchant
+    // mention has not been streamed yet, so nothing renders above the prose.
+    await expect(prose).toContainText('checked your recent activity', { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.transaction-card')).toHaveCount(0);
+    await expect(page.locator('.loading-line')).toBeVisible();
+    await expect(prose).toBeVisible();
+
+    // Once the prose reaches the merchant, the buffered card appears inline
+    // while the turn is still pending.
+    await expect(turn.locator('.transaction-card')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.transaction-card')).toContainText('APPLE STORE');
+    expect(
+      await turn
+        .locator('.transaction-card')
+        .first()
+        .evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the buffered transaction renders inside the assistant bubble'
+    ).toBe(true);
+    expect(await prose.count(), 'prose is visible while the turn streams').toBeGreaterThan(0);
+
+    await waitForChatSettled(page);
+    await expect(turn.locator('.transaction-card')).toHaveCount(1);
+    expectNoErrors(errors);
+  });
+
   test('"Show me my bills" renders one Bills card and no duplicated totals', async ({ page }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my bills');
@@ -808,6 +892,14 @@ test.describe('chat prompts', () => {
     expect(listText, 'rows show descriptions').toContain('Payroll');
     expect(listText, 'rows show dates').toMatch(/Nov \d/);
     expect(listText, 'rows show amounts').toContain('1,250');
+
+    // The list card stays a standalone card, outside the prose bubble.
+    expect(
+      await lists
+        .first()
+        .evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'transaction-list cards are not folded into the assistant bubble'
+    ).toBe(false);
 
     // No legacy chrome, title, badge, or reason chip.
     await expect(page.locator('.chat-card')).toHaveCount(0);
@@ -1037,6 +1129,19 @@ test.describe('chat prompts', () => {
       expect.stringMatching(/txn=txn-netflix$/)
     ]);
 
+    // Single transaction rows render inside the assistant bubble, not as
+    // standalone CardFrame cards.
+    const insideBubble = await cards.evaluateAll((elements) =>
+      elements.map((element) => Boolean(element.closest('.bubble.assistant')))
+    );
+    expect(insideBubble.every(Boolean), 'every transaction card sits inside a bubble').toBe(true);
+    await expect(page.locator('.bubble.assistant .transaction-card a.transaction-link')).toHaveCount(
+      count
+    );
+    await expect(page.locator('.chat-card .transaction-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .transaction-card')).toHaveCount(0);
+    await expect(page.locator('.bubble.assistant .transaction-card .open-icon')).toHaveCount(count);
+
     // Exactly one assistant turn owns the cards; no archived card chrome.
     await expect(
       page.locator('.assistant-turn').filter({ has: page.locator('.transaction-card') })
@@ -1050,9 +1155,12 @@ test.describe('chat prompts', () => {
     expect(prose).toMatch(/duplicate|large|suspicious/i);
 
     const order = await page.locator('.assistant-turn').last().evaluate((turn) => {
-      const content = turn.querySelector('.assistant-content');
+      const bubble = turn.querySelector('.bubble.assistant.inline-transactions');
+      const content = bubble ?? turn.querySelector('.assistant-content');
       if (!content) return [];
       return Array.from(content.children).flatMap((child) => {
+        if (child.classList.contains('richtext')) return ['text'];
+        if (child.classList.contains('transaction-card')) return ['card'];
         if (child.querySelector('.transaction-card')) return ['card'];
         if (child.querySelector('.bubble.assistant .richtext')) return ['text'];
         return [];

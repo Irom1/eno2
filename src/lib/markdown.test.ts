@@ -56,4 +56,16 @@ describe("renderMarkdown", () => {
     expect(html).not.toContain("<a");
     expect(html).toContain("[click](javascript:alert(1))");
   });
+
+  it("removes unmatched bold markers from split blocks", () => {
+    expect(renderMarkdown("**NETFLIX.COM")).toBe("<p>NETFLIX.COM</p>");
+    expect(renderMarkdown("**.")).toBe("<p>.</p>");
+  });
+
+  it("keeps matched bold and surrounding sentences intact", () => {
+    expect(renderMarkdown("**NETFLIX.COM**")).toBe("<p><strong>NETFLIX.COM</strong></p>");
+    expect(renderMarkdown("A duplicate at **NETFLIX.COM** today.")).toBe(
+      "<p>A duplicate at <strong>NETFLIX.COM</strong> today.</p>"
+    );
+  });
 });
