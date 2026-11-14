@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import CapitalOneLogo from './CapitalOneLogo.svelte';
 
   type Theme = 'light' | 'dark' | 'system';
 
@@ -20,12 +21,27 @@
   ];
 
   let theme = $state<Theme>('system');
+  let profileOpen = $state(false);
+  let profileButton: HTMLButtonElement;
+  let closeProfileButton: HTMLButtonElement;
+
+  async function toggleProfile() {
+    profileOpen = !profileOpen;
+    await tick();
+    (profileOpen ? closeProfileButton : profileButton).focus();
+  }
+
+  function handleEscape(event: KeyboardEvent) {
+    if (event.key === 'Escape' && profileOpen && !event.defaultPrevented && !dialog?.open) {
+      void toggleProfile();
+    }
+  }
   let hidden = $state<Record<string, boolean>>({});
   const shortcuts = [
-    { label: 'Virtual cards', keywords: ['virtual', 'digital card'], detail: 'Choose an eligible credit card to manage your virtual cards.', link: signIn, linkText: 'Manage virtual cards' },
-    { label: 'Referral bonuses', keywords: ['refer', 'bonus', 'friend'], detail: referral, link: signIn, linkText: 'Refer a friend' },
-    { label: 'Shopping offers', keywords: ['shop', 'offer', 'cash back', ...offers.map((offer) => offer.store.toLowerCase())], detail: offers.map((offer) => `${offer.store}: ${offer.amount}`).join(' · '), link: signIn, linkText: 'View offers' },
-    { label: 'ATM finder', keywords: ['atm', 'branch', 'location', 'near me'], detail: 'Find a Capital One branch, Café or ATM near you.', link: 'https://locations.capitalone.com/', linkText: 'Find a location' }
+    { label: 'Virtual cards', prompt: 'Show me my virtual cards', icon: 'card', keywords: ['virtual', 'digital card'], detail: 'Choose an eligible credit card to manage your virtual cards.', link: signIn, linkText: 'Manage virtual cards' },
+    { label: 'Referral bonuses', prompt: 'How do referral bonuses work?', icon: 'gift', keywords: ['refer', 'bonus', 'friend'], detail: referral, link: signIn, linkText: 'Refer a friend' },
+    { label: 'Shopping offers', prompt: 'Find cash-back shopping offers', icon: 'tag', keywords: ['shop', 'offer', 'cash back', ...offers.map((offer) => offer.store.toLowerCase())], detail: offers.map((offer) => `${offer.store}: ${offer.amount}`).join(' · '), link: signIn, linkText: 'View offers' },
+    { label: 'ATM finder', prompt: 'Find an ATM near me', icon: 'pin', keywords: ['atm', 'branch', 'location', 'near me'], detail: 'Find a Capital One branch, Café or ATM near you.', link: 'https://locations.capitalone.com/', linkText: 'Find a location' }
   ];
 
   let query = $state('');
@@ -91,130 +107,165 @@
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M8 6h10v10"/></svg>
 {/snippet}
 
-<div class="dashboard" data-theme={theme}>
-  <header class="header">
-    <div class="container header-inner">
-      <a class="brand" href="/dashboard"><img src="https://upload.wikimedia.org/wikipedia/commons/9/98/Capital_One_logo.svg" width="122" height="44" alt="Capital One dashboard" /></a>
-      <div class="header-actions">
-        <label class="theme-picker">
-          <span>Appearance</span>
-          <select aria-label="Appearance" value={theme} onchange={changeTheme}>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-            <option value="system">System</option>
-          </select>
-        </label>
-        <button class="quiet help" onclick={() => show('Need help?', 'Find account support and ways to reach Capital One.', helpCenter, 'Open help center')}>Need help?</button>
-        <button class="quiet profile" onclick={() => show('Mori', 'Manage your profile and preferences on Capital One.', signIn)}><span class="avatar" aria-hidden="true">M</span> Mori <span aria-hidden="true">⌄</span></button>
-      </div>
-    </div>
-  </header>
+<svelte:window onkeydown={handleEscape} />
 
-  <main class="container content" aria-label="Account overview">
-    <section class="wallet" aria-labelledby="wallet-title">
-      <h1 id="wallet-title">Search your wallet</h1>
-      <form class="composer" onsubmit={search}>
-        <textarea bind:value={query} rows="2" aria-label="Search your wallet" placeholder="What do you want to find in your wallet?"></textarea>
-        <button class="primary send" aria-label="Search" disabled={!query.trim()}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
-        </button>
-      </form>
-      <div class="shortcuts" aria-label="Wallet shortcuts">
-        {#each shortcuts as shortcut}
-          <button class="chip" onclick={() => show(shortcut.label, shortcut.detail, shortcut.link, shortcut.linkText)}>{shortcut.label}</button>
-        {/each}
-      </div>
-      {#if request}
-        <div class="search-results" aria-live="polite">
-          <div class="search-heading"><h2>Results</h2><button class="quiet" onclick={() => { request = ''; query = ''; }}>Clear</button></div>
-          {#each matchingShortcuts as shortcut}
-            <p><a class="link" href={shortcut.link}>{shortcut.label} {@render arrowIcon()}</a> · {shortcut.detail}</p>
-          {/each}
-          {#each matchingAccounts as account}
-            <p><a class="link" href={'#account-' + account.ending}>{account.name} •• {account.ending}</a>{#if !hidden[account.ending]} · ${account.balance}{/if}</p>
-          {/each}
-          {#if !matchingShortcuts.length && !matchingAccounts.length}
-            <p>Try an account name or a shortcut such as “virtual cards” or “ATM.”</p>
-          {/if}
-        </div>
-      {/if}
-    </section>
-
-    <section class="stack" aria-labelledby="accounts-title">
-      <h2 id="accounts-title" class="section-title">Your accounts</h2>
-      {#each accounts as account (account.ending)}
-        {@const [dollars, cents] = account.balance.split('.')}
-        <article class="account {account.tint}" id={'account-' + account.ending}>
-          <div class="account-top">
-            <h2>{account.name} <span>•• {account.ending}</span></h2>
-          </div>
-          <div class="balance-label">
-            {account.kind}
-            <button class="visibility" aria-label={`${hidden[account.ending] ? 'Show' : 'Hide'} ${account.name} balance`} onclick={() => (hidden[account.ending] = !hidden[account.ending])}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-                <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>
-                {#if !hidden[account.ending]}<path d="m4 20 16-16"/>{/if}
-              </svg>
+<div class="dashboard" class:profile-open={profileOpen} data-theme={theme}>
+  <div class="dashboard-body">
+    <div class="wallet-band">
+      <header class="header">
+        <div class="container header-inner">
+          <a class="brand" href="/dashboard"><CapitalOneLogo label="Capital One dashboard" /></a>
+          <button class="profile" bind:this={profileButton} aria-label="Mori profile" aria-expanded={profileOpen} aria-controls="profile-panel" onclick={toggleProfile}>
+            <span class="avatar" aria-hidden="true">M</span>
+            <span class="profile-name">Mori</span>
+          </button>
+          <form class="composer" onsubmit={search}>
+            <div class="composer-field" data-value={query}>
+              <textarea bind:value={query} rows="1" aria-label="Search your wallet" placeholder="What do you want to find in your wallet?"></textarea>
+            </div>
+            <button class="primary send" aria-label="Search" disabled={!query.trim()}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/></svg>
             </button>
+          </form>
+        </div>
+      </header>
+      <section class="container wallet" aria-label="Wallet shortcuts">
+        <div class="shortcuts" role="group" aria-label="Wallet shortcuts">
+          {#each shortcuts as shortcut}
+            <button class="prompt" onclick={() => { query = shortcut.prompt; request = shortcut.prompt; }}>
+              {#if shortcut.icon === 'card'}
+                {@render cardIcon()}
+              {:else}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  {#if shortcut.icon === 'gift'}
+                    <path d="M4 11h16v9H4zm-1-4h18v4H3zm9 0v13m0-13H8.5A2.5 2.5 0 1 1 11 4.5zm0 0h3.5A2.5 2.5 0 1 0 13 4.5z"/>
+                  {:else if shortcut.icon === 'tag'}
+                    <path d="M3 4h8l10 10-7 7L3 10z"/><circle cx="7.5" cy="8.5" r="1"/>
+                  {:else}
+                    <path d="M19 10c0 5-7 10-7 10s-7-5-7-10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2"/>
+                  {/if}
+                </svg>
+              {/if}
+              {shortcut.prompt}
+            </button>
+          {/each}
+        </div>
+        {#if request}
+          <div class="search-results" aria-live="polite">
+            <div class="search-heading"><h2>Results</h2><button class="quiet" onclick={() => { request = ''; query = ''; }}>Clear</button></div>
+            {#each matchingShortcuts as shortcut}
+              <p><button class="link" onclick={() => show(shortcut.label, shortcut.detail, shortcut.link, shortcut.linkText)}>{shortcut.label} {@render arrowIcon()}</button> · {shortcut.detail}</p>
+            {/each}
+            {#each matchingAccounts as account}
+              <p><a class="link" href={'#account-' + account.ending}>{account.name} •• {account.ending}</a>{#if !hidden[account.ending]} · ${account.balance}{/if}</p>
+            {/each}
+            {#if !matchingShortcuts.length && !matchingAccounts.length}
+              <p>Try an account name or a shortcut such as “virtual cards” or “ATM.”</p>
+            {/if}
           </div>
-          <div class="balance" aria-live="polite">
-            {#if hidden[account.ending]}<span aria-label="Balance hidden">••••</span>{:else}${dollars}<span class="cents">.{cents}</span>{/if}
-          </div>
-          <div class="card-actions">
-            <button class="pill" onclick={() => openAccount(account, account.action)}>{@render arrowIcon()} {account.action}</button>
-            <button class="pill" onclick={() => openAccount(account, account.card)}>{@render cardIcon()} {account.card}</button>
-          </div>
-          {#if account.scheduled}
-            <p class="account-note">{account.scheduled}</p>
-          {:else if account.ending === '1423'}
-            <p class="account-note"><button class="link" onclick={() => show('Transfer credit line', 'Move available credit from an eligible Discover card to Savor.', signIn)}>Transfer a credit line from an eligible Discover card</button></p>
-          {/if}
-        </article>
-      {/each}
-    </section>
+        {/if}
+      </section>
+    </div>
 
-    <section class="stack" aria-label="Rewards and products">
-      <article class="panel feature reward">
-        <div class="feature-main">
-          <div><h2>Explore rewards and benefits</h2><p class="reward-amount">$276.24</p><p class="muted">Rewards cash</p></div>
-          <button class="primary" onclick={() => show('Your rewards', 'You have $276.24 in rewards cash.', signIn)}>View rewards</button>
-        </div>
-        <div class="panel-footer">
-          <a class="link" href="https://travel.capitalone.com/">Travel {@render arrowIcon()}</a>
-          <a class="link" href="https://capitalone.com/entertainment/">Entertainment {@render arrowIcon()}</a>
-        </div>
-      </article>
-      <article class="panel feature products">
-        <div class="feature-main">
-          <div><h2>Explore other products</h2><p class="muted">Find an account that’s right for you.</p></div>
-          <a class="primary" href="https://www.capitalone.com/">Open a new account</a>
-        </div>
-      </article>
-    </section>
+    <main aria-label="Account overview">
+      <div class="container content">
+        <section class="stack" aria-labelledby="accounts-title">
+          <h2 id="accounts-title" class="section-title">Your accounts</h2>
+          {#each accounts as account (account.ending)}
+            {@const [dollars, cents] = account.balance.split('.')}
+            <article class="account {account.tint}" id={'account-' + account.ending}>
+              <div class="account-top">
+                <h2>{account.name} <span>•• {account.ending}</span></h2>
+                {#if account.scheduled}
+                  <p class="account-note">{account.scheduled}</p>
+                {:else if account.ending === '1423'}
+                  <p class="account-note"><button class="link" onclick={() => show('Transfer credit line', 'Move available credit from an eligible Discover card to Savor.', signIn)}>Transfer a credit line from an eligible Discover card</button></p>
+                {/if}
+              </div>
+              <div class="account-balance">
+                <div class="balance-label">
+                  {account.kind}
+                  <button class="visibility" aria-label={`${hidden[account.ending] ? 'Show' : 'Hide'} ${account.name} balance`} onclick={() => (hidden[account.ending] = !hidden[account.ending])}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+                      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>
+                      {#if !hidden[account.ending]}<path d="m4 20 16-16"/>{/if}
+                    </svg>
+                  </button>
+                </div>
+                <div class="balance" aria-live="polite">
+                  {#if hidden[account.ending]}<span aria-label="Balance hidden">••••</span>{:else}${dollars}<span class="cents">.{cents}</span>{/if}
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="pill" onclick={() => openAccount(account, account.action)}>{@render arrowIcon()} {account.action}</button>
+                <button class="pill" onclick={() => openAccount(account, account.card)}>{@render cardIcon()} {account.card}</button>
+              </div>
+            </article>
+          {/each}
+        </section>
 
-    <section aria-label="Credit tools">
-      <article class="panel utility">
-        <h2>CreditWise</h2>
-        <div class="credit">
-          <div class="gauge"><div><strong>762</strong><small>Very good</small></div></div>
-          <div><p>Review your credit report for signs of error, theft or fraud.</p><small class="muted">Updated Nov 13, 2026</small></div>
-        </div>
-        <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
-      </article>
-    </section>
+        <section class="stack" aria-label="Rewards and products">
+          <article class="panel feature reward">
+            <div class="feature-main">
+              <div><h2>Explore rewards and benefits</h2><p class="reward-amount">$276.24</p><p class="muted">Rewards cash</p></div>
+              <button class="primary" onclick={() => show('Your rewards', 'You have $276.24 in rewards cash.', signIn)}>View rewards</button>
+            </div>
+            <div class="panel-footer">
+              <a class="link" href="https://travel.capitalone.com/">Travel {@render arrowIcon()}</a>
+              <a class="link" href="https://capitalone.com/entertainment/">Entertainment {@render arrowIcon()}</a>
+            </div>
+          </article>
+          <article class="panel feature products">
+            <div class="feature-main">
+              <div><h2>Explore other products</h2><p class="muted">Find an account that’s right for you.</p></div>
+              <a class="primary" href="https://www.capitalone.com/">Open a new account</a>
+            </div>
+          </article>
+        </section>
 
-    <footer>
-      <nav aria-label="Footer">
-        <a href="https://www.capitalone.com/">Products</a>
-        <a href="https://www.capitalone.com/about/">About us</a>
-        <a href={helpCenter}>Help</a>
-        <a href="https://www.capitalone.com/privacy/">Privacy</a>
-        <a href="https://www.capitalone.com/digital/security/">Security</a>
-        <a href="https://www.capitalone.com/accessibility/">Accessibility</a>
-      </nav>
-      <p>Products and services are offered by Capital One, N.A., Member FDIC.</p>
-    </footer>
-  </main>
+        <section aria-label="Credit tools">
+          <article class="panel utility">
+            <h2>CreditWise</h2>
+            <div class="credit">
+              <div class="gauge"><div><strong>762</strong><small>Very good</small></div></div>
+              <div><p>Review your credit report for signs of error, theft or fraud.</p><small class="muted">Updated Nov 13, 2026</small></div>
+            </div>
+            <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
+          </article>
+        </section>
+
+        <footer>
+          <nav aria-label="Footer">
+            <a href="https://www.capitalone.com/">Products</a>
+            <a href="https://www.capitalone.com/about/">About us</a>
+            <a href={helpCenter}>Help</a>
+            <a href="https://www.capitalone.com/privacy/">Privacy</a>
+            <a href="https://www.capitalone.com/digital/security/">Security</a>
+            <a href="https://www.capitalone.com/accessibility/">Accessibility</a>
+          </nav>
+          <p>Products and services are offered by Capital One, N.A., Member FDIC.</p>
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <aside class="profile-panel" id="profile-panel" aria-labelledby="profile-title" inert={!profileOpen}>
+    <div class="profile-panel-content">
+      <div class="profile-panel-heading">
+        <h2 id="profile-title">Mori</h2>
+        <button class="panel-close quiet" bind:this={closeProfileButton} aria-label="Close profile panel" onclick={toggleProfile}>×</button>
+      </div>
+      <label class="theme-picker">
+        Appearance
+        <select value={theme} onchange={changeTheme}>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="system">System</option>
+        </select>
+      </label>
+      <a class="link" href={signIn}>Manage your profile {@render arrowIcon()}</a>
+    </div>
+  </aside>
 
   <dialog bind:this={dialog} aria-labelledby="dialog-title">
     {#if selected}
@@ -239,9 +290,12 @@
     --link: var(--dark, #9fdbf0) var(--light, #075e80);
     --button: var(--dark, #bde7f5) var(--light, #123f56);
     --button-text: var(--dark, #142632) var(--light, #fff);
+    --page: var(--dark, #10191f) var(--light, #f4f6f8);
+    --glow: var(--dark, #21475f) var(--light, #c6e5fc);
+    --glow-edge: var(--dark, #182e44) var(--light, #e2efff);
     --banner: var(--dark, #1b313b) var(--light, #ecf4f7);
     min-height: 100vh;
-    background: var(--dark, #10191f) var(--light, #f4f6f8);
+    background: var(--page);
     color: var(--ink);
     color-scheme: var(--dark, dark) var(--light, light);
     font: 15px/1.45 Inter, system-ui, sans-serif;
@@ -250,8 +304,46 @@
   @media (prefers-color-scheme: dark) {
     .dashboard[data-theme='system'] { --dark: initial; --light: ; }
   }
+  .dashboard {
+    --profile-width: min(17rem, 36vw);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 0px;
+    transition: grid-template-columns 240ms ease;
+  }
+  .dashboard.profile-open { grid-template-columns: minmax(0, 1fr) var(--profile-width); }
+  .dashboard-body { container-type: inline-size; }
+  .profile-panel {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow: clip;
+    background: var(--surface);
+  }
+  .profile-panel-content {
+    width: var(--profile-width);
+    height: 100%;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    padding: 18px;
+  }
+  .profile-panel-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .panel-close { width: 36px; height: 36px; font-size: 23px; }
+  .theme-picker { display: grid; gap: 6px; margin-bottom: 18px; font-weight: 650; }
+  .theme-picker select {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: var(--page);
+  }
   .dashboard * { box-sizing: border-box; }
-  h1, h2, p { margin: 0; }
+  h2, p { margin: 0; }
   h2 { font-size: 17px; line-height: 1.35; letter-spacing: -.025em; }
   button, select { font: inherit; color: inherit; }
   button, select, a { -webkit-tap-highlight-color: transparent; }
@@ -260,29 +352,98 @@
   :is(a, button, select):focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
   svg { width: 17px; height: 17px; flex: none; vertical-align: middle; }
   .container { width: min(1136px, calc(100% - 64px)); margin-inline: auto; }
-  .header { background: var(--surface); border-bottom: 1px solid var(--border); }
-  .header-inner, .header-actions { display: flex; align-items: center; gap: 16px; }
-  .header-inner { min-height: 73px; justify-content: space-between; }
-  .brand { display: inline-flex; flex: none; padding: 3px 8px; margin-left: -8px; border-radius: 5px; background: #fff; }
-  .brand img { display: block; width: 122px; height: 44px; object-fit: contain; }
+  .header-inner {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 720px) 130px;
+    justify-content: space-between;
+    align-items: start;
+    gap: 16px;
+    padding-block: 28px 14px;
+  }
+  .header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-top: 4px; }
+  .header-inner .composer { grid-column: 2; grid-row: 1; }
+  .brand { display: inline-flex; flex: none; padding: 3px 8px; margin-left: -8px; border-radius: 8px; color: var(--dark, #fff) var(--light, #013d5b); }
+  .brand :global(svg) { display: block; width: 122px; height: 44px; }
   .quiet, .link, .visibility { background: transparent; border: 0; padding: 0; }
   .quiet { color: var(--muted); }
   .quiet:hover, .link:hover, footer a:hover { text-decoration: underline; }
-  .profile, .theme-picker { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-  .theme-picker { color: var(--muted); font-size: 13px; }
-  select { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 9px; padding: 7px; }
-  .avatar { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 50%; background: var(--banner); color: var(--link); font-weight: 700; }
-  .wallet { width: min(740px, 100%); margin: 15px auto 20px; }
-  h1 { font-size: clamp(25px, 4vw, 34px); font-weight: 650; letter-spacing: -.035em; text-align: center; margin-bottom: 14px; }
-  .composer { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); }
-  .composer:focus-within { outline: 2px solid var(--link); outline-offset: 2px; }
-  .composer textarea { display: block; resize: vertical; width: 100%; min-height: 128px; padding: 18px 66px 45px 18px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+  .profile {
+    grid-column: 3;
+    grid-row: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 12px 0 5px;
+    justify-self: end;
+    margin-top: 8px;
+    background: var(--page);
+    font-size: 13px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .profile:hover { background: var(--surface); }
+  .avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--banner); color: var(--link); }
+  .wallet-band {
+    background:
+      radial-gradient(ellipse 60% 90% at 50% 38%, var(--glow), transparent 100%),
+      radial-gradient(ellipse 75% 115% at 52% 22%, var(--glow-edge), transparent 100%),
+      linear-gradient(var(--surface), var(--page));
+    border-bottom: 1px solid var(--border);
+  }
+  .wallet { width: min(720px, calc(100% - 36px)); padding-block: 0 28px; }
+  .composer { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 8px 24px #102b421c; }
+  .composer:focus-within {
+    border-color: color-mix(in srgb, var(--link) 65%, var(--border));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 15%, transparent), 0 8px 24px #102b421c;
+  }
+  .composer-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    margin-right: 52px;
+  }
+  .composer-field::after, .composer textarea {
+    grid-area: 1 / 1;
+    min-width: 0;
+    max-height: 152px;
+    padding: 16px 8px 16px 20px;
+    font: inherit;
+    line-height: 24px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .composer-field::after {
+    content: attr(data-value) " " / "";
+    visibility: hidden;
+  }
+  .composer textarea {
+    width: 100%;
+    resize: none;
+    overflow-y: auto;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+  }
   .composer textarea::placeholder { color: var(--muted); }
-  .send { position: absolute; right: 12px; bottom: 12px; width: 38px; padding: 0; }
-  .send:disabled { opacity: .45; cursor: default; }
-  .shortcuts { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .chip { background: var(--surface); color: var(--link); border: 1px solid var(--border); border-radius: 99px; padding: 7px 13px; font-size: 13px; font-weight: 650; }
-  .chip:hover { border-color: var(--link); }
+  .composer .send { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; padding: 0; }
+  .send:disabled { opacity: .55; cursor: default; }
+  .shortcuts { display: grid; gap: 2px; margin-inline: 8px; }
+  .prompt {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 40px;
+    padding: 7px 13px;
+    background: transparent;
+    border: 0;
+    border-radius: 12px;
+    text-align: left;
+  }
+  .prompt svg { color: var(--link); }
+  .prompt:hover { background: color-mix(in srgb, var(--surface) 65%, transparent); }
   .search-results { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-top: 14px; padding: 15px; }
   .search-heading { display: flex; justify-content: space-between; }
   .search-results p { margin-top: 8px; }
@@ -295,37 +456,38 @@
   .account, .panel { border: 1px solid var(--border); box-shadow: var(--shadow); }
   .account {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: 'title actions' 'balance actions' 'label actions' 'note note';
-    gap: 5px 16px;
-    padding: 20px 23px;
+    grid-template-columns: minmax(0, 1fr) minmax(140px, .55fr) auto;
+    align-items: center;
+    gap: 8px 20px;
+    padding: 14px 20px;
     border-radius: 15px;
     color: #fff;
-    background: var(--account-color);
+    background:
+      radial-gradient(ellipse at 90% 0%, #ffffff13, transparent 65%),
+      linear-gradient(112deg, var(--account-start), var(--account-end));
     scroll-margin-top: 18px;
   }
-  .aqua { --account-color: #063f5a; }
-  .slate { --account-color: #465363; }
-  .peach { --account-color: #a83e23; }
-  .rose { --account-color: #913a31; }
-  .account-top { grid-area: title; }
+  .aqua { --account-start: #062f4c; --account-end: #126379; }
+  .slate { --account-start: #28354d; --account-end: #505f78; }
+  .peach { --account-start: #752d27; --account-end: #a74829; }
+  .rose { --account-start: #54253b; --account-end: #924536; }
   .account-top h2 { font-size: 21px; font-weight: 550; }
   .account-top h2 span { font-size: 12px; margin-left: 4px; white-space: nowrap; }
-  .balance-label { grid-area: label; display: flex; gap: 5px; align-items: center; font-size: 12px; text-transform: uppercase; }
+  .balance-label { display: flex; gap: 5px; align-items: center; font-size: 12px; }
   .visibility { display: grid; place-items: center; border-radius: 50%; width: 29px; height: 29px; }
   .visibility:hover { background: #ffffff25; }
   .account :is(a, button):focus-visible { outline-color: #fff; }
   .balance, .reward-amount { font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.055em; }
-  .balance { grid-area: balance; font-size: clamp(35px, 5vw, 48px); line-height: 1; font-weight: 450; }
+  .balance { font-size: clamp(26px, 4vw, 36px); line-height: 1; font-weight: 450; }
   .cents { color: #ffffffe0; font-size: .69em; letter-spacing: -.03em; }
   .card-actions, .panel-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .card-actions { grid-area: actions; align-self: center; justify-content: flex-end; }
+  .card-actions { justify-content: flex-end; }
   .pill, .primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 13px; min-height: 38px; font-size: 13px; font-weight: 650; }
   .pill { background: transparent; border: 1px solid #ffffffcb; border-radius: 5px; }
   .pill:hover { background: #ffffff25; }
   .primary { background: var(--button); border: 1px solid transparent; color: var(--button-text); border-radius: 10px; text-align: center; }
   .primary:hover { opacity: .88; }
-  .account-note { grid-area: note; margin-top: 5px; font-size: 12px; }
+  .account-note { margin-top: 4px; font-size: 12px; }
   .account-note .link { color: inherit; text-decoration: underline; }
 
   .panel { background: var(--surface); border-radius: 16px; overflow: hidden; }
@@ -346,8 +508,9 @@
   .gauge strong { font-size: 24px; line-height: 1; }
   .gauge small { font-size: 10px; color: var(--muted); }
   footer { margin-top: 8px; padding-top: 17px; border-top: 1px solid var(--border); font-size: 13px; }
-  footer nav { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 8px; }
+  footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 8px; }
   footer a { font-weight: 650; }
+  footer p { text-align: center; }
 
   dialog { width: min(440px, calc(100% - 32px)); background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
   dialog::backdrop { background: #0b182380; }
@@ -355,17 +518,46 @@
   dialog p { margin-block: 10px 16px; }
   .close { position: absolute; right: 13px; top: 9px; width: 32px; height: 32px; font-size: 23px; }
 
-  @media (max-width: 850px) {
+  @container (max-width: 850px) {
     .container { width: calc(100% - 36px); }
+    .header-inner {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 18px 12px;
+    }
+    .header-inner .brand, .profile { margin-top: 0; }
+    .profile { grid-column: 2; }
+    .header-inner .composer { grid-column: 1 / -1; grid-row: 2; width: min(720px, 100%); justify-self: center; }
+    .account { grid-template-columns: minmax(0, 1fr) auto; }
+    .account-balance { text-align: right; }
+    .balance-label { justify-content: flex-end; }
+    .card-actions { grid-column: 1 / -1; justify-content: flex-start; }
   }
-  @media (max-width: 570px) {
+  @container (max-width: 570px) {
     .container { width: calc(100% - 28px); }
-    .header-inner { min-height: 62px; }
-    .header-actions { gap: 9px; }
-    .theme-picker span, .help { display: none; }
-    .content { padding-top: 14px; gap: 12px; }
-    .account { grid-template-columns: 1fr; grid-template-areas: 'title' 'balance' 'label' 'actions' 'note'; padding-inline: 17px; }
-    .card-actions { justify-content: flex-start; margin-top: 4px; }
+    .header-inner { padding-block-start: 20px; }
+    .brand :global(svg) { width: 94px; height: 36px; }
+    .wallet { padding-bottom: 20px; }
+    .content { padding-top: 18px; gap: 12px; }
+    .account { padding-inline: 14px; column-gap: 9px; }
+    .account-top h2 { font-size: 18px; }
     .feature-main { padding-inline: 17px; }
+  }
+  @media (max-width: 640px) {
+    .dashboard { --profile-width: min(17rem, 85vw); }
+    .dashboard.profile-open { grid-template-columns: minmax(0, 1fr) 0px; }
+    .profile-panel {
+      position: fixed;
+      right: 0;
+      z-index: 2;
+      width: var(--profile-width);
+      transform: translateX(100%);
+      visibility: hidden;
+      transition: transform 240ms ease, visibility 240ms;
+    }
+    .profile-open .profile-panel { transform: translateX(0); visibility: visible; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dashboard, .profile-panel { transition: none; }
   }
 </style>
