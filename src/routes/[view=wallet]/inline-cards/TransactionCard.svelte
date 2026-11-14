@@ -1,5 +1,7 @@
 <script lang="ts">
   import { money } from '$lib/format.js';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
+  import { prefetchTransactionContext } from '$lib/walletCache';
   import { transactionHref, type TransactionEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
   import DateText from './primitives/DateText.svelte';
@@ -24,6 +26,11 @@
   const label = $derived(
     `Transaction at ${payload.description}${amountText ? `, ${amountText}` : ''}`
   );
+
+  function warmContext(): void {
+    if (!href || payload.customerId === GUEST_CUSTOMER_ID) return;
+    void prefetchTransactionContext(payload.customerId, payload.accountId);
+  }
 </script>
 
 {#snippet content(linked: boolean)}
@@ -51,6 +58,9 @@
       {href}
       target="_blank"
       rel="noopener noreferrer"
+      data-sveltekit-preload-data="hover"
+      onpointerenter={warmContext}
+      onfocus={warmContext}
       aria-label={`Open ${payload.description} in your account`}
     >
       {@render content(true)}
@@ -69,6 +79,9 @@
           {href}
           target="_blank"
           rel="noopener noreferrer"
+          data-sveltekit-preload-data="hover"
+          onpointerenter={warmContext}
+          onfocus={warmContext}
           aria-label={`Open ${payload.description} in your account`}
         >
           {@render content(true)}

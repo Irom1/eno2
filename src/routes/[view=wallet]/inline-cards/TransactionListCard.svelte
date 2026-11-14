@@ -1,5 +1,7 @@
 <script lang="ts">
   import { titleCase } from '$lib/format.js';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
+  import { prefetchTransactionContext } from '$lib/walletCache';
   import {
     transactionHref,
     type TransactionListEntityCard,
@@ -25,6 +27,11 @@
 
   function hrefFor(row: TransactionRow): string | undefined {
     return transactionHref(row.customerId, row.accountId, row.id);
+  }
+
+  function warmRow(row: TransactionRow): void {
+    if (!hrefFor(row) || row.customerId === GUEST_CUSTOMER_ID) return;
+    void prefetchTransactionContext(row.customerId, row.accountId);
   }
 </script>
 
@@ -62,6 +69,9 @@
               {href}
               target="_blank"
               rel="noopener noreferrer"
+              data-sveltekit-preload-data="hover"
+              onpointerenter={() => warmRow(row)}
+              onfocus={() => warmRow(row)}
               aria-label={`Open ${row.description} in your account`}
             >
               {@render content(row, true)}

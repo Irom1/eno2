@@ -20,6 +20,13 @@
     type WalletCustomer,
     type WalletTransaction
   } from '$lib/wallet';
+  import {
+    FRESH_MS,
+    STALE_MS,
+    readWalletCache,
+    snapshotCacheKey,
+    writeWalletCache
+  } from '$lib/walletCache';
   import AccountDetailView from './AccountDetailView.svelte';
   import ViewShell from './ViewShell.svelte';
   import ChatPanel from './ChatPanel.svelte';
@@ -279,11 +286,37 @@
     else void loadCustomers();
   }
 
+  /** Apply a validated snapshot to the dashboard state. */
+  function applySnapshot(snapshot: AccountsSnapshot, customerId: string): boolean {
+    if (snapshot.customer?.id && snapshot.customer.id !== customerId) return false;
+    liveCustomer = snapshot.customer ?? null;
+    liveAccounts = Array.isArray(snapshot.accounts) ? snapshot.accounts : [];
+    liveBills = Array.isArray(snapshot.bills) ? snapshot.bills : [];
+    recentActivity = Array.isArray(snapshot.recentActivity) ? snapshot.recentActivity : [];
+    snapshotCustomerId = customerId;
+    snapshotVersion++;
+    return true;
+  }
+
   async function loadSnapshot(customerId: string): Promise<void> {
     if (!customerId) return;
     const seq = ++snapshotSeq;
-    snapshotLoading = true;
     snapshotError = '';
+    const key = snapshotCacheKey(customerId);
+
+    // A fresh cache renders without any network call. This is the fast path for
+    // a transaction card opened in a new tab moments after the insight arrived.
+    const fresh = readWalletCache<AccountsSnapshot>(key, FRESH_MS);
+    if (fresh && applySnapshot(fresh, customerId)) {
+      snapshotLoading = false;
+      return;
+    }
+
+    // A stale cache paints immediately, then revalidates in the background.
+    const stale = readWalletCache<AccountsSnapshot>(key, STALE_MS);
+    const showingCache = Boolean(stale && applySnapshot(stale, customerId));
+    snapshotLoading = !showingCache;
+
     try {
       const sessionResponse = await fetch('/api/session', {
         method: 'POST',
@@ -303,15 +336,12 @@
         throw new Error('Account data belongs to a different customer.');
       }
 
-      liveCustomer = snapshot.customer ?? null;
-      liveAccounts = Array.isArray(snapshot.accounts) ? snapshot.accounts : [];
-      liveBills = Array.isArray(snapshot.bills) ? snapshot.bills : [];
-      recentActivity = Array.isArray(snapshot.recentActivity) ? snapshot.recentActivity : [];
-      snapshotCustomerId = customerId;
-      snapshotVersion++;
+      applySnapshot(snapshot, customerId);
+      writeWalletCache(key, snapshot);
     } catch {
       if (seq !== snapshotSeq) return;
-      snapshotError = "We couldn't load your accounts.";
+      // Keep a cached view rather than replacing it with an error state.
+      if (!showingCache) snapshotError = "We couldn't load your accounts.";
     } finally {
       if (seq === snapshotSeq) snapshotLoading = false;
     }

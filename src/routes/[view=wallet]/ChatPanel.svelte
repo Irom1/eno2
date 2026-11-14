@@ -31,6 +31,11 @@
   import { STARTER_PROMPTS } from '$lib/chat/starters.js';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
   import {
+    prefetchAccountDetail,
+    prefetchSnapshot,
+    prefetchTransactionContext
+  } from '$lib/walletCache';
+  import {
     friendlyToolLabel,
     initialThinking,
     pushThinkingStep,
@@ -321,6 +326,43 @@
             const payload = data.payload;
             const accountId = typeof data.accountId === 'string' ? data.accountId : '';
             const intents = classifyIntents(message.prompt ?? '');
+            if (customerId !== GUEST_CUSTOMER_ID) {
+              // Warm the deep-link payloads while the customer reads the answer.
+              // These are fire-and-forget so streaming and card rendering never wait.
+              const record =
+                payload && typeof payload === 'object' && !Array.isArray(payload)
+                  ? (payload as Record<string, unknown>)
+                  : {};
+              if (
+                data.kind === 'nessie_list_account_deposits' ||
+                data.kind === 'nessie_list_account_withdrawals' ||
+                data.kind === 'nessie_list_account_transactions' ||
+                data.kind === 'insight_top_transactions' ||
+                data.kind === 'insight_top_merchants'
+              ) {
+                if (accountId) void prefetchTransactionContext(customerId, accountId);
+              }
+              if (data.kind === 'insight_anomalies') {
+                const findings = Array.isArray(record.findings)
+                  ? (record.findings as Array<Record<string, unknown>>)
+                  : [];
+                const ids = new Set<string>();
+                if (accountId) ids.add(accountId);
+                for (const finding of findings) {
+                  if (
+                    finding &&
+                    typeof finding === 'object' &&
+                    typeof finding.accountId === 'string' &&
+                    finding.accountId
+                  ) {
+                    ids.add(finding.accountId);
+                  }
+                  if (ids.size >= 4) break;
+                }
+                for (const id of ids) void prefetchAccountDetail(id);
+                void prefetchSnapshot(customerId);
+              }
+            }
             if (data.kind === 'insight_anomalies') {
               // If the tool result arrives before any prose, anchor the cards at
               // the end of the text so the answer reads first and the cited

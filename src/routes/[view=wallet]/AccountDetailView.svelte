@@ -12,6 +12,13 @@
     type WalletCustomer,
     type WalletTransaction
   } from '$lib/wallet';
+  import {
+    FRESH_MS,
+    STALE_MS,
+    accountCacheKey,
+    readWalletCache,
+    writeWalletCache
+  } from '$lib/walletCache';
   import DetailSheet from './DetailSheet.svelte';
 
   type Tab = 'activity' | 'details' | 'bills';
@@ -122,21 +129,41 @@
     }
   }
 
+  /** Apply a validated detail payload to the account view. */
+  function applyDetail(payload: DetailPayload, id: string): boolean {
+    if (payload.account?.id && payload.account.id !== id) return false;
+    account = payload.account ?? null;
+    customer = payload.customer ?? null;
+    transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
+    bills = Array.isArray(payload.bills) ? payload.bills : [];
+    return true;
+  }
+
   async function load(id: string): Promise<void> {
     const seq = ++requestSeq;
-    loading = true;
     error = '';
+    const key = accountCacheKey(id);
+
+    // A fresh cache is enough for the deep link: apply it and skip the fetch.
+    const fresh = readWalletCache<DetailPayload>(key, FRESH_MS);
+    if (fresh && applyDetail(fresh, id)) {
+      loading = false;
+      return;
+    }
+
+    // A stale cache paints immediately; revalidate in the background.
+    const stale = readWalletCache<DetailPayload>(key, STALE_MS);
+    const showingCache = Boolean(stale && applyDetail(stale, id));
+    loading = !showingCache;
+
     try {
       const response = await fetch(`/api/accounts/${encodeURIComponent(id)}`);
       if (!response.ok) throw new Error('Account request failed');
       const payload = (await response.json()) as DetailPayload;
       if (seq !== requestSeq) return;
-      account = payload.account ?? null;
-      customer = payload.customer ?? null;
-      transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
-      bills = Array.isArray(payload.bills) ? payload.bills : [];
+      if (applyDetail(payload, id)) writeWalletCache(key, payload);
     } catch {
-      if (seq === requestSeq) error = "We couldn't load this account.";
+      if (seq === requestSeq && !showingCache) error = "We couldn't load this account.";
     } finally {
       if (seq === requestSeq) loading = false;
     }
