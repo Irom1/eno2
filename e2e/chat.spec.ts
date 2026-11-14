@@ -36,6 +36,50 @@ async function runPrompt(page: Page, prompt: string): Promise<void> {
   await askChat(page, prompt);
 }
 
+interface StreamChunk {
+  delay: number;
+  event: string;
+  data: unknown;
+}
+
+/**
+ * Replace `/api/chat` in the page with a chunked SSE stream so tests can hold a
+ * turn pending long enough to observe its loading state.
+ */
+async function mockChatStream(page: Page, chunks: StreamChunk[]): Promise<void> {
+  await page.addInitScript((streamChunks: StreamChunk[]) => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : String(input);
+      if (!url.includes('/api/chat')) return originalFetch(input, init);
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          for (const chunk of streamChunks) {
+            await new Promise((resolve) => setTimeout(resolve, chunk.delay));
+            controller.enqueue(
+              encoder.encode(`event: ${chunk.event}\ndata: ${JSON.stringify(chunk.data)}\n\n`)
+            );
+          }
+          controller.close();
+        }
+      });
+      return Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      );
+    }) as typeof window.fetch;
+  }, chunks);
+}
+
 /** Every title must be one of the supplied product labels. */
 function expectTitlesWithin(titles: string[], allowed: string[]): void {
   for (const title of titles) {
@@ -659,22 +703,145 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Show me my recent transactions" renders a transactions card', async ({ page }) => {
+  test('"Show me my recent transactions" renders one inline transaction list', async ({
+    page
+  }) => {
     const errors = collectErrors(page);
-    await runPrompt(page, 'Show me my recent transactions');
+    await loadChat(page);
 
-    await expectCardCount(page, { min: 1 });
-    const titles = await cardTitles(page);
-    expect(
-      titles.some((title) =>
-        ['Transactions', 'Transaction', 'Deposits', 'Withdrawals'].includes(title)
-      ),
-      `expected a transactions-style card, got ${JSON.stringify(titles)}`
-    ).toBe(true);
-    expect(titles).not.toContain('Overview');
-    await expect(page.locator('.chat-card .badge')).toHaveCount(0);
+    const deposits = {
+      type: 'insight',
+      kind: 'nessie_list_account_deposits',
+      payload: {
+        count: 3,
+        items: [
+          {
+            _id: 'dep-1',
+            description: 'Payroll',
+            amount: 1250,
+            transactionDate: '2026-11-01',
+            status: 'posted'
+          },
+          {
+            _id: 'dep-2',
+            description: 'Refund',
+            amount: 20,
+            transactionDate: '2026-11-02',
+            status: 'posted'
+          },
+          {
+            _id: 'dep-3',
+            description: 'Interest',
+            amount: 2.5,
+            transactionDate: '2026-11-03',
+            status: 'posted'
+          }
+        ]
+      }
+    };
+    const withdrawals = {
+      type: 'insight',
+      kind: 'nessie_list_account_withdrawals',
+      payload: {
+        count: 3,
+        items: [
+          {
+            _id: 'wd-1',
+            description: 'Coffee',
+            amount: 4.5,
+            transactionDate: '2026-11-04',
+            status: 'posted'
+          },
+          {
+            _id: 'wd-2',
+            description: 'Groceries',
+            amount: 62.3,
+            transactionDate: '2026-11-05',
+            status: 'posted'
+          },
+          {
+            _id: 'wd-3',
+            description: 'Rent',
+            amount: 1800,
+            transactionDate: '2026-11-06',
+            status: 'posted'
+          }
+        ]
+      }
+    };
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here are your recent transactions: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify(deposits)}`,
+      `event: insight\ndata: ${JSON.stringify(withdrawals)}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Most recent first.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
 
-    await expectCardStyle(page);
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my recent transactions');
+
+    const lists = page.locator('.transaction-list-card');
+    await expect(lists).toHaveCount(1, { timeout: 20_000 });
+    await expect(lists.first()).toBeVisible();
+
+    const rows = lists.locator('.transaction-row');
+    const rowCount = await rows.count();
+    expect(rowCount, 'show multiple rows').toBeGreaterThanOrEqual(2);
+    expect(rowCount, 'visible rows are capped at 8').toBeLessThanOrEqual(8);
+
+    const listText = await lists.first().innerText();
+    expect(listText, 'rows show descriptions').toContain('Payroll');
+    expect(listText, 'rows show dates').toMatch(/Nov \d/);
+    expect(listText, 'rows show amounts').toContain('1,250');
+
+    // No legacy chrome, title, badge, or reason chip.
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.transaction-list-card .card-head')).toHaveCount(0);
+    await expect(page.locator('.transaction-list-card .badge')).toHaveCount(0);
+    await expect(page.locator('.transaction-list-card .flag, .flag')).toHaveCount(0);
+
+    // The prose introduces the list; the card follows that intro inside the turn.
+    const prose = (
+      await page
+        .locator('.assistant-turn')
+        .last()
+        .locator('.bubble.assistant .richtext')
+        .allInnerTexts()
+    )
+      .join('\n')
+      .trim();
+    expect(prose.length, 'assistant prose introduces the list').toBeGreaterThan(0);
+
+    const placement = await page.locator('.assistant-turn').last().evaluate((turn) => {
+      const content = turn.querySelector('.assistant-content');
+      const list = turn.querySelector('.transaction-list-card');
+      const intro = turn.querySelector('.bubble.assistant .richtext');
+      const follows = (first: Element | null, second: Element | null): boolean =>
+        Boolean(
+          first &&
+            second &&
+            first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+      return {
+        inContent: Boolean(content && list && content.contains(list)),
+        afterIntro: follows(intro, list)
+      };
+    });
+    expect(placement).toEqual({ inContent: true, afterIntro: true });
+
     expectNoErrors(errors);
   });
 
@@ -756,7 +923,56 @@ test.describe('chat prompts', () => {
     page
   }) => {
     const errors = collectErrors(page);
-    await runPrompt(page, 'Any suspicious transactions?');
+    await loadChat(page);
+
+    const insight = {
+      type: 'insight',
+      kind: 'insight_anomalies',
+      payload: {
+        count: 2,
+        findings: [
+          {
+            type: 'outlier',
+            description: 'APPLE STORE',
+            amount: 1299,
+            date: '2026-11-03'
+          },
+          {
+            type: 'duplicate',
+            description: 'NETFLIX.COM',
+            amount: 15.49,
+            date: '2026-11-02',
+            duplicateOf: '2026-11-01'
+          }
+        ]
+      }
+    };
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'You have a suspiciously large transaction at APPLE: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify(insight)}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: ' and a duplicate transaction at NETFLIX: '
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'both posted this week.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Any suspicious transactions?');
 
     const cards = page.locator('.transaction-card');
     await expect(cards.first()).toBeVisible({ timeout: 20_000 });
@@ -769,8 +985,15 @@ test.describe('chat prompts', () => {
       await expect(cards.nth(index)).toHaveAttribute('data-kind', 'transaction');
     }
 
+    // Cards show only the transaction: merchant and amount, never a reason chip.
     const cardsText = (await cards.allInnerTexts()).join('\n');
-    expect(cardsText).toMatch(/Possible duplicate|Unusual amount/);
+    expect(cardsText, 'cards name the merchant').toContain('APPLE STORE');
+    expect(cardsText, 'cards name the merchant').toContain('NETFLIX.COM');
+    expect(cardsText, 'cards show the amount').toContain('1,299');
+    expect(cardsText).not.toContain('Possible duplicate');
+    expect(cardsText).not.toContain('Unusual amount');
+    await expect(page.locator('.transaction-card .flag, .flag')).toHaveCount(0);
+    await expect(page.locator('.transaction-card[data-flag]')).toHaveCount(0);
 
     // Exactly one assistant turn owns the cards; no archived card chrome.
     await expect(
@@ -779,14 +1002,27 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(page.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
 
-    // The response leads with prose, then cites the flagged charges.
-    const prose = page.locator('.assistant-turn .bubble.assistant .richtext').last();
-    await expect(prose).toBeVisible();
-    const proseBox = await prose.boundingBox();
-    const cardBox = await cards.first().boundingBox();
-    expect(proseBox, 'assistant prose should be laid out').not.toBeNull();
-    expect(cardBox, 'transaction card should be laid out').not.toBeNull();
-    expect(cardBox!.y, 'cards should follow the prose').toBeGreaterThanOrEqual(proseBox!.y);
+    // Prose carries the explanation; cards sit after their merchant mention.
+    const prose = (await assistantText(page)).trim();
+    expect(prose.length, 'assistant prose explains the finding').toBeGreaterThan(0);
+    expect(prose).toMatch(/duplicate|large|suspicious/i);
+
+    const order = await page.locator('.assistant-turn').last().evaluate((turn) => {
+      const content = turn.querySelector('.assistant-content');
+      if (!content) return [];
+      return Array.from(content.children).flatMap((child) => {
+        if (child.querySelector('.transaction-card')) return ['card'];
+        if (child.querySelector('.bubble.assistant .richtext')) return ['text'];
+        return [];
+      });
+    });
+    expect(order, 'text → card → text → card → text ordering').toEqual([
+      'text',
+      'card',
+      'text',
+      'card',
+      'text'
+    ]);
 
     const combined = `${cardsText}\n${await assistantText(page)}`;
     expect(combined).not.toMatch(/outlier|median|\bmad\b|threshold|findings/i);
@@ -940,13 +1176,52 @@ test.describe('Eno mascot', () => {
     page
   }) => {
     const errors = collectErrors(page);
-    await loadChat(page);
 
-    // Slow the chat request so the initial (pre-tool) step is observable.
-    await page.route('**/api/chat', async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      await route.continue();
-    });
+    // Chunked SSE keeps the turn pending after the card and prose arrive so
+    // the compact loading line is observable for the whole turn.
+    await mockChatStream(page, [
+      {
+        delay: 250,
+        event: 'tool_start',
+        data: { type: 'tool_start', name: 'insight_anomalies', label: '' }
+      },
+      {
+        delay: 250,
+        event: 'text',
+        data: { type: 'text', delta: 'You have a suspiciously large transaction at APPLE: ' }
+      },
+      {
+        delay: 250,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_anomalies',
+          payload: {
+            count: 1,
+            findings: [
+              {
+                type: 'outlier',
+                description: 'APPLE STORE',
+                amount: 1299,
+                date: '2026-11-03'
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 250,
+        event: 'text',
+        data: { type: 'text', delta: 'That charge stands out.' }
+      },
+      {
+        delay: 1500,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    await loadChat(page);
 
     await page.evaluate(() => {
       const target = window as unknown as { __thinkingSteps?: string[] };
@@ -981,11 +1256,16 @@ test.describe('Eno mascot', () => {
     await expect(steps).toBeVisible({ timeout: 20_000 });
     await expect(steps.locator('li.current')).toHaveText('Understanding your question');
 
-    // The regression: once a card is visible the pending row must go away and
-    // must not keep the prose hidden behind the old status line.
-    await expect(page.locator('.chat-card').first()).toBeVisible({ timeout: 20_000 });
+    // The regression: once a card is visible the checklist may clear, but the
+    // compact loading line must stay until the turn finishes and the streamed
+    // prose must not be held back behind it.
+    await expect(page.locator('.transaction-card').first()).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('.thinking-row')).toHaveCount(0);
-    await expect(page.locator('.chat-log .status-line')).toHaveCount(0);
+    await expect(page.locator('.loading-line')).toBeVisible();
+    await expect(page.locator('.chat-log .status-line')).not.toHaveCount(0);
+    await expect(page.locator('.bubble.assistant .richtext').last()).toContainText(
+      'suspiciously large'
+    );
 
     const response = await chatResponse;
     expect(response.status(), 'chat request should succeed').toBeLessThan(400);
@@ -1006,6 +1286,7 @@ test.describe('Eno mascot', () => {
     }
 
     await expect(page.locator('.thinking-row')).toHaveCount(0);
+    await expect(page.locator('.loading-line')).toHaveCount(0);
     expectNoErrors(errors);
   });
 

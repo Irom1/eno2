@@ -44,6 +44,22 @@ describe("buildSystemInstruction", () => {
       'Cards already show account names, balances, amounts, dates, statuses, and rows. Do NOT restate any value, name, date, or row visible in a card.'
     );
     expect(instruction).toContain(
+      'Exception: when an inline single-entity card introduces a merchant or payee, name that merchant or payee in the sentence that introduces its card; still do not restate its amount, date, status, or row.'
+    );
+    expect(instruction).toContain(
+      'Every answer must include at least one explanation or insight sentence.'
+    );
+    expect(instruction).toContain(
+      'Never return only a card or a bare tool result.'
+    );
+    expect(instruction).toContain(
+      'You have a suspiciously large transaction at APPLE and a possible duplicate transaction at Netflix.'
+    );
+    expect(instruction).toContain(
+      'The transaction card shows only the transaction; put the reason in the prose.'
+    );
+    expect(instruction).not.toContain('or no prose.');
+    expect(instruction).toContain(
       'Bad: "Your Venture card has a $50 balance." (the card shows both)'
     );
     expect(instruction).toContain(
@@ -57,6 +73,9 @@ describe("buildSystemInstruction", () => {
     );
     expect(instruction).toContain(
       'Do not repeat card values, names, dates, or rows.'
+    );
+    expect(instruction).toContain(
+      'A transaction list card may be used for multi-transaction answers; introduce it in one short sentence without repeating the row amounts or dates.'
     );
     expect(instruction).toContain("Capital One's virtual assistant");
     expect(instruction).toContain("Use the category breakdown as returned.");

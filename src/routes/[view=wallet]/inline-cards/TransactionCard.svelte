@@ -10,30 +10,21 @@
   let { card }: Props = $props();
 
   const payload = $derived(card.payload);
-  const isDuplicate = $derived(payload.flag === 'duplicate');
-  const flagLabel = $derived(isDuplicate ? 'Possible duplicate' : 'Unusual amount');
   const dateText = $derived(payload.date ? dateLabel(payload.date) : '');
-  const alsoText = $derived(
-    isDuplicate && payload.duplicateOf ? `also ${dateLabel(payload.duplicateOf)}` : ''
-  );
-  const metaText = $derived(
-    dateText && alsoText ? `${dateText} · ${alsoText}` : dateText || alsoText
-  );
   const amountText = $derived(
     payload.amount === null ? '' : money(payload.amount, { decimals: 2 })
   );
   const label = $derived(
-    `${flagLabel}: ${payload.description}${amountText ? ` ${amountText}` : ''}`
+    `Transaction at ${payload.description}${amountText ? `, ${amountText}` : ''}`
   );
 </script>
 
 <CardFrame {label}>
-  <div class="transaction-card" data-kind="transaction" data-flag={payload.flag}>
+  <div class="transaction-card" data-kind="transaction">
     <div class="details">
-      <span class="flag">{flagLabel}</span>
       <span class="description">{payload.description}</span>
-      {#if metaText}
-        <span class="meta">{metaText}</span>
+      {#if dateText}
+        <span class="meta">{dateText}</span>
       {/if}
     </div>
     {#if amountText}
@@ -54,17 +45,6 @@
     display: grid;
     gap: 3px;
     min-width: 0;
-  }
-  .flag {
-    width: fit-content;
-    padding: 1px 8px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--border));
-    background: var(--banner);
-    color: var(--muted);
-    font-size: 10.5px;
-    font-weight: 650;
-    white-space: nowrap;
   }
   .description {
     font-size: 13.5px;

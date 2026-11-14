@@ -127,6 +127,13 @@ Acceptance: flag off = identical to Phase 0; flag v2 = events emitted but render
 **Phase 2 — first three cards.**
 `TransactionCard`, `BillCard`, `AccountCard` and `InlineCardRenderer`/`CardFrame`. Wire block rendering.
 First slice shipped: `CardFrame` + `TransactionCard` render `insight_anomalies` findings as 1–2 single-transaction cards via `entityCards.ts` + the generic `inlineBlocks<T>`. `BillCard` and `AccountCard` remain next.
+
+Slice refinements:
+
+- Cards carry no reason/flag tags: they show only the merchant, date, and amount. The prose names the entity and explains why it stands out, and the payload keeps `flag`/`duplicateOf` only for inference.
+- Merchant-mention inference (`anchorTransactionCards`) re-anchors each card after the merchant's mention in the prose (including a trailing colon/comma), falling back to the existing end-of-text offset when no mention exists. This is a client-side fallback; the future `present_card` tool remains the precise mechanism.
+- A compact loading line stays visible for the whole pending turn, including after prose and cards have started streaming. The full thinking checklist still clears once blocks render.
+- Exception to "lists stay prose": a multi-transaction answer may render one `TransactionListCard` with row data (description, date, status, amount). Deposits and withdrawals in the same turn merge into that single card. Rows are capped at 8 visible, with a "N more" hint; the prose introduces the list without repeating row amounts or dates.
 Acceptance: single-entity cards appear inline between prose segments; at most 2 per turn; no fallback. Rollback: flag off.
 
 Placement rule for this slice: if a card arrives before any prose (no intro yet), anchor it at end-of-text so the answer reads first and the source card(s) follow the claim; if prose precedes the insight, anchor inline at that offset.

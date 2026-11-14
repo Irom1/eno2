@@ -4,9 +4,14 @@
   import { createSseParser } from '$lib/sse.js';
   import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
   import {
+    anchorTransactionCards,
+    anomalyExplanation,
     anomalyTransactionCards,
     mergeEntityCards,
-    type EntityCard
+    mergeTransactionListCards,
+    transactionListCard,
+    type EntityCard,
+    type TransactionListEntityCard
   } from '$lib/chat/entityCards.js';
   import { inlineBlocks } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
@@ -22,6 +27,7 @@
   import EnoThinking from '$lib/components/EnoThinking.svelte';
   import FollowUps from './FollowUps.svelte';
   import TransactionCard from './inline-cards/TransactionCard.svelte';
+  import TransactionListCard from './inline-cards/TransactionListCard.svelte';
 
   interface Props {
     open: boolean;
@@ -171,6 +177,17 @@
     return messages.find((message) => message.id === id);
   }
 
+  /** Fill empty assistant prose with a deterministic explanation for its cards. */
+  function ensureExplanation(message: ChatMessage): void {
+    const cards = message.inlineCards ?? [];
+    if (message.text.trim() || cards.length === 0) return;
+    if (cards.some((card) => card.kind === 'transaction-list')) {
+      message.text = 'Here are your recent transactions, with the most recent first.';
+      return;
+    }
+    message.text = anomalyExplanation(cards);
+  }
+
   function markError(id: number): void {
     const message = findMessage(id);
     if (!message) return;
@@ -260,6 +277,25 @@
               cardSeq += incoming.length;
               message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
             }
+            if (chatCardKind(data.kind) === 'transactions') {
+              // Deposits and withdrawals in one turn share a single merged list.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = transactionListCard(payload, anchor, cardSeq + 1);
+              if (incoming) {
+                const existing = message.inlineCards?.find(
+                  (card): card is TransactionListEntityCard =>
+                    card.kind === 'transaction-list'
+                );
+                const merged = mergeTransactionListCards(existing, incoming);
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'transaction-list' ? merged : card
+                    )
+                  : [...(message.inlineCards ?? []), merged];
+                cardSeq = Math.max(cardSeq, merged.id);
+              }
+            }
             scrollLog();
             break;
           }
@@ -267,6 +303,7 @@
             markError(assistantId);
             break;
           case 'done':
+            ensureExplanation(message);
             message.pending = false;
             streaming = false;
             status = '';
@@ -289,7 +326,10 @@
       markError(assistantId);
     } finally {
       const message = findMessage(assistantId);
-      if (message) message.pending = false;
+      if (message) {
+        ensureExplanation(message);
+        message.pending = false;
+      }
       if (requestId === requestSeq) {
         streaming = false;
         status = '';
@@ -361,7 +401,8 @@
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const blocks = inlineBlocks(message.text, message.inlineCards ?? [])}
+        {@const arrangedCards = anchorTransactionCards(message.text, message.inlineCards ?? [])}
+        {@const blocks = inlineBlocks(message.text, arrangedCards)}
         {@const hasBlocks = blocks.length > 0}
         {@const isThinking = message.pending && !hasBlocks}
         {#if hasBlocks || message.pending}
@@ -397,10 +438,18 @@
                   {#each block.cards as card (card.id)}
                     {#if card.kind === 'transaction'}
                       <TransactionCard {card} />
+                    {:else if card.kind === 'transaction-list'}
+                      <TransactionListCard {card} />
                     {/if}
                   {/each}
                 {/if}
               {/each}
+              {#if message.pending && hasBlocks}
+                <div class="loading-line status-line">
+                  <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span>{thinking.current || 'Still working…'}</span>
+                </div>
+              {/if}
               {#if message.intro && (booting || !ready)}
                 <p class="status-line intro-status">{status || 'Connecting…'}</p>
               {/if}
@@ -498,6 +547,45 @@
     margin-top: 0;
   }
   .status-line { color: var(--muted); font-size: 14px; }
+  .loading-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 12.5px;
+    line-height: 1.35;
+  }
+  .loading-dots {
+    display: inline-flex;
+    gap: 4px;
+    flex: none;
+  }
+  .loading-dots i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--link);
+    animation: loading-pulse 1s ease-in-out infinite;
+  }
+  .loading-dots i:nth-child(2) { animation-delay: 0.15s; }
+  .loading-dots i:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes loading-pulse {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .loading-dots i {
+      animation: none;
+      opacity: 0.75;
+    }
+  }
   .thinking-row { display: flex; align-items: flex-start; gap: 10px; }
   .thinking-steps {
     list-style: none;
