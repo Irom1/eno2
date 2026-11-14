@@ -122,11 +122,15 @@ describe("mockAgent", () => {
     expect(text).not.toContain("Rent");
     expect(text).not.toContain("1,650");
     expect(text).not.toContain("2026-11-20");
-    expect(text).toContain("Tip:");
-    const tip = text.slice(text.indexOf("Tip:"));
-    expect(tip).not.toContain("4,283.59");
-    expect(tip).not.toContain("4,218");
-    expect(tip).not.toContain("65.59");
+    const nextStep =
+      "If you want to cover the shortfall, you can move money to checking before the due dates.";
+    expect(text).toContain(nextStep);
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
+    const advice = text.slice(text.indexOf(nextStep));
+    expect(advice).not.toContain("4,283.59");
+    expect(advice).not.toContain("4,218");
+    expect(advice).not.toContain("65.59");
     expect(text).not.toContain("not financial advice");
     expect(text).not.toContain("read-only");
   });
@@ -141,7 +145,11 @@ describe("mockAgent", () => {
 
     expect(text).toContain("largest payment");
     expect(text).toContain("within the next week");
-    expect(text).toContain("Tip:");
+    expect(text).toContain(
+      "If you want to cover the shortfall, you can move money to checking before the due dates."
+    );
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
     expect(text).not.toContain("Rent");
     expect(text).not.toContain("1,650");
     expect(text).not.toContain("2026-11-20");
@@ -158,10 +166,13 @@ describe("mockAgent", () => {
     expect(text).toContain("shopping");
     expect(text).toContain("$1,800");
     expect(text).toContain("20 transactions");
-    expect(text).toContain("Tip:");
-    const tip = text.slice(text.indexOf("Tip:"));
-    expect(tip).not.toContain("$2,470");
-    expect(tip).not.toContain("$1,800");
+    const nextStep = "You can open a category in Activity to see the transactions behind it.";
+    expect(text).toContain(nextStep);
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
+    const advice = text.slice(text.indexOf(nextStep));
+    expect(advice).not.toContain("$2,470");
+    expect(advice).not.toContain("$1,800");
     expect(text).not.toContain("estimated");
     expect(text).not.toContain("descriptions");
     expect(text).not.toContain("November 2026");
@@ -192,10 +203,13 @@ describe("mockAgent", () => {
 
     expect(text).toContain("possible duplicate");
     expect(text).toContain("unusually large purchase");
-    expect(text).toContain("Tip:");
-    const tip = text.slice(text.indexOf("Tip:"));
-    expect(tip).not.toContain("15.99");
-    expect(tip).not.toContain("1,200");
+    const nextStep = "If you don’t recognize a charge, you can review and dispute it in the app.";
+    expect(text).toContain(nextStep);
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
+    const advice = text.slice(text.indexOf(nextStep));
+    expect(advice).not.toContain("15.99");
+    expect(advice).not.toContain("1,200");
     expect(text).not.toMatch(/outlier|median|MAD|threshold|findings/i);
 
     const insight = events.find(
@@ -244,7 +258,9 @@ describe("mockAgent", () => {
     expect(text).not.toContain('near "Cambridge');
     expect(text).not.toContain("near Cambridge");
     expect(text).not.toContain("closest option is");
-    expect(text).toContain("Tip:");
+    expect(text).toContain("Open the map on OpenStreetMap for directions.");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
     expect(text).toContain("Here are the closest ATMs I found:");
   });
 
@@ -268,7 +284,9 @@ describe("mockAgent", () => {
 
     expect(text).toContain('I found 2 ATMs near "Arlington, VA"');
     expect(text).not.toContain("demo ATM data only includes Arlington");
-    expect(text).toContain("Tip:");
+    expect(text).toContain("Open the map on OpenStreetMap for directions.");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
   });
 
   it("mentions Arlington-only coverage when no ATMs are returned", async () => {
@@ -284,7 +302,9 @@ describe("mockAgent", () => {
 
     expect(text).toContain("couldn't find any ATMs");
     expect(text).toContain("demo ATM data only includes Arlington, VA");
-    expect(text).toContain("Tip:");
+    expect(text).toContain("Open the map on OpenStreetMap for directions.");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
   });
 
   it("treats a distant nearest result as outside demo coverage when unresolved", async () => {
@@ -315,7 +335,9 @@ describe("mockAgent", () => {
     expect(text).toContain("I found 2 ATMs near");
     expect(text).not.toContain("couldn't find any ATMs");
     expect(text).not.toContain("within 25 miles of");
-    expect(text).toContain("Tip:");
+    expect(text).toContain("Open the map on OpenStreetMap for directions.");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
   });
 
   it("passes in/around/at locations through to the ATM and branch tools", () => {

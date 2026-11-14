@@ -1292,7 +1292,11 @@ test.describe('chat prompts', () => {
     expect(prose, 'prose uses relative timing').toMatch(
       /largest payment is due (within the next three weeks|in the coming weeks)/
     );
-    expect(prose).toContain('Tip:');
+    expect(prose, 'prose has a natural next step without labels').toMatch(
+      /you can|consider|worth|move money|review|check/i
+    );
+    expect(prose, 'prose has no Tip label').not.toContain('Tip:');
+    expect(prose, 'prose has no Insight label').not.toContain('Insight:');
     expectNoErrors(errors);
   });
 
@@ -1444,6 +1448,8 @@ test.describe('chat prompts', () => {
       .join('\n')
       .trim();
     expect(prose.length, 'assistant prose introduces the list').toBeGreaterThan(0);
+    expect(prose, 'prose has no Tip label').not.toContain('Tip:');
+    expect(prose, 'prose has no Insight label').not.toContain('Insight:');
 
     const placement = await page.locator('.assistant-turn').last().evaluate((turn) => {
       const content = turn.querySelector('.assistant-content');
@@ -1572,10 +1578,14 @@ test.describe('chat prompts', () => {
     expect(cardText).not.toMatch(/top category|biggest|you spent|recommend|tip:/);
     await expect(pie.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
 
-    // The prose carries the insight and tip, without dumping the chart values.
+    // The prose carries the takeaway and next step, without dumping the chart values.
     const prose = (await assistantText(page)).trim();
     expect(prose.length, 'assistant prose introduces the chart').toBeGreaterThan(0);
-    expect(prose).toMatch(/tip|insight|you can|worth|compare|watch/i);
+    expect(prose, 'prose has a natural next step without labels').toMatch(
+      /you can|consider|worth|move money|review|check|open a category/i
+    );
+    expect(prose, 'prose has no Tip label').not.toContain('Tip:');
+    expect(prose, 'prose has no Insight label').not.toContain('Insight:');
 
     const frame = page.locator('.entity-card').filter({ has: pie });
     await expect(frame).toHaveCount(1);
