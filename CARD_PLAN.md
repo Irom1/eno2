@@ -43,7 +43,8 @@ Next:
 - **Card budget.** Anomaly findings get one inline `TransactionCard` each, capped at 8 per turn for layout/performance; every flagged transaction with valid fields gets a card. Other primitive cards remain at 1–2 per turn. The previous 1–2 cap was a layout budget, not a limit on how many transactions could be flagged. Lists use their matching card when one exists; transaction lists use the transaction-list card; lists with no card kind stay brief in prose.
 - **Inline placement.** Intended rhythm: one short intro sentence → card → takeaway. Cards are buffered until the streamed prose reaches their anchor.
 - **Inline single cards, standalone series cards.** Single-entity cards (`transaction`, `bill`, `account`, `loan`, `location` branches, `recurring`, `reward`, `goal`, `cashflow`, `merchant`, `profile`) render inline inside the assistant prose bubble (`.bubble.assistant`), using the shared `CardFrame` DOM restyled by the bubble: 1px border, no lift shadow, no top accent, width capped by the bubble. Multi/series cards (`transaction-list`, `spending-pie`) stay standalone: high-contrast `CardFrame` (surface, border, lift shadow — no top accent strip), left-aligned and capped at the Eno chat bubble max width (88% of the assistant content column). The **ATM locator** (`location` with `payload.type === 'atm'`) is the one single-entity exception: its map card renders standalone (not in the bubble), and its Apple/Google actions sit below that card, outside both the card surface and the bubble, as two equal half-width buttons on an 88%-wide row; the buttons are text-only (no icons), at least 44px tall, and highlight with a link-tinted background on hover/focus rather than an underline.
-- **No duplicated data.** Prose does not restate values, names, dates, statuses, or rows visible in a card. It adds meaning or a next step.
+- **Every card is explained.** Each rendered card must be explained in the prose: say what it supports or why it matters. A card is evidence for the insight, not a standalone list item. When several cards share a reason, explain the pattern once and name the merchants.
+- **No duplicated data.** Prose does not restate values, names, dates, statuses, or rows visible in a card. It adds meaning or a next step. Anomaly prose names each flagged merchant and explains the pattern (`possible duplicate` or `unusually large purchase`) without restating card amounts, dates, statuses, or rows.
 
 Examples:
 
@@ -245,7 +246,7 @@ Inference:
 
 Phase 2 slice refinements already shipped:
 
-- Cards carry no reason/flag tags. The prose names the entity and explains why it matters.
+- Cards carry no reason/flag tags. The prose explains every card and names each flagged merchant, explaining the pattern without restating card values.
 - Merchant-mention inference re-anchors each transaction card after the mention, including a trailing colon/comma.
 - A compact loading line remains visible for the whole pending turn.
 - Deposit and withdrawal results merge into one list card, capped at 8 visible rows with “N more”.

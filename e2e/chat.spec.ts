@@ -1742,20 +1742,20 @@ test.describe('chat prompts', () => {
     const events = [
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'You have a suspiciously large transaction at APPLE: '
+        delta: 'APPLE STORE is an unusually large purchase: '
       })}`,
       `event: insight\ndata: ${JSON.stringify(insight)}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: ' and a duplicate transaction at NETFLIX: '
+        delta: ' NETFLIX.COM looks like a possible duplicate: '
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: ' and another duplicate at SPOTIFY: '
+        delta: ' SPOTIFY also looks like a possible duplicate: '
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'all three posted this week.'
+        delta: 'If you don’t recognize any of these, you can review and dispute them in the app.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -1836,6 +1836,17 @@ test.describe('chat prompts', () => {
     const prose = (await assistantText(page)).trim();
     expect(prose.length, 'assistant prose explains the finding').toBeGreaterThan(0);
     expect(prose).toMatch(/duplicate|large|suspicious/i);
+    expect(prose).toContain('APPLE STORE');
+    expect(prose).toContain('NETFLIX.COM');
+    expect(prose).toContain('SPOTIFY');
+    expect(prose).toContain('possible duplicate');
+    expect(prose).toContain('unusually large');
+    expect(prose).not.toContain('1,299');
+    expect(prose).not.toContain('15.49');
+    expect(prose).not.toContain('9.99');
+    expect(prose).not.toContain('2026-11');
+    expect(prose).not.toContain('Tip:');
+    expect(prose).not.toContain('Insight:');
 
     const order = await page.locator('.assistant-turn').last().evaluate((turn) => {
       const bubble = turn.querySelector('.bubble.assistant.inline-entities');
@@ -1861,6 +1872,136 @@ test.describe('chat prompts', () => {
 
     const combined = `${cardsText}\n${await assistantText(page)}`;
     expect(combined).not.toMatch(/outlier|median|\bmad\b|threshold|findings/i);
+
+    expectNoErrors(errors);
+  });
+
+  test('"Any suspicious transactions?" explains all five anomaly cards in prose', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const names = [
+      'NETFLIX',
+      'LOCAL BOOKSTORE',
+      'APPLE ELECTRONICS PURCHASE',
+      'OVERSEAS ELECTRONICS PURCHASE',
+      'EXPRESS AIR FREIGHT'
+    ];
+    const insight = {
+      type: 'insight',
+      kind: 'insight_anomalies',
+      accountId: 'acct-checking',
+      payload: {
+        count: 5,
+        findings: [
+          {
+            _id: 'txn-netflix',
+            type: 'duplicate',
+            description: 'NETFLIX',
+            amount: 19,
+            date: '2026-10-28',
+            duplicateOf: '2026-10-27'
+          },
+          {
+            _id: 'txn-bookstore',
+            type: 'duplicate',
+            description: 'LOCAL BOOKSTORE',
+            amount: 47,
+            date: '2026-11-05',
+            duplicateOf: '2026-11-04'
+          },
+          {
+            _id: 'txn-apple',
+            type: 'outlier',
+            description: 'APPLE ELECTRONICS PURCHASE',
+            amount: 1800,
+            date: '2026-10-13'
+          },
+          {
+            _id: 'txn-overseas',
+            type: 'outlier',
+            description: 'OVERSEAS ELECTRONICS PURCHASE',
+            amount: 1250,
+            date: '2026-10-21'
+          },
+          {
+            _id: 'txn-freight',
+            type: 'outlier',
+            description: 'EXPRESS AIR FREIGHT',
+            amount: 925,
+            date: '2026-09-21'
+          }
+        ]
+      }
+    };
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is what stood out: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify(insight)}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta:
+          'A few charges need a closer look. NETFLIX and LOCAL BOOKSTORE each look like possible duplicates, and APPLE ELECTRONICS PURCHASE, OVERSEAS ELECTRONICS PURCHASE, and EXPRESS AIR FREIGHT are unusually large purchases. If you don’t recognize a charge, you can review and dispute it in the app.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Any suspicious transactions?');
+
+    const cards = page.locator('.transaction-card');
+    await expect(cards.first()).toBeVisible({ timeout: 20_000 });
+    await expect(cards).toHaveCount(5);
+
+    const cardsText = (await cards.allInnerTexts()).join('\n');
+    for (const name of names) {
+      expect(cardsText).toContain(name);
+    }
+
+    const prose = (await assistantText(page)).trim();
+    expect(prose).toContain('A few charges need a closer look.');
+    expect(prose).toContain('NETFLIX and LOCAL BOOKSTORE each look like possible duplicates.');
+    expect(prose).toContain(
+      'APPLE ELECTRONICS PURCHASE, OVERSEAS ELECTRONICS PURCHASE, and EXPRESS AIR FREIGHT are unusually large purchases.'
+    );
+    for (const name of names) {
+      expect(prose).toContain(name);
+    }
+    expect(prose).toContain('possible duplicate');
+    expect(prose).toContain('unusually large');
+    for (const amount of ['19', '47', '1,800', '1,250', '925']) {
+      expect(prose).not.toContain(`$${amount}`);
+    }
+    for (const date of [
+      '2026-10-28',
+      '2026-10-27',
+      '2026-11-05',
+      '2026-11-04',
+      '2026-10-13',
+      '2026-10-21',
+      '2026-09-21'
+    ]) {
+      expect(prose).not.toContain(date);
+    }
+    expect(prose).not.toContain('Tip:');
+    expect(prose).not.toContain('Insight:');
+
+    const insideBubble = await cards.evaluateAll((elements) =>
+      elements.map((element) => Boolean(element.closest('.bubble.assistant')))
+    );
+    expect(insideBubble.every(Boolean), 'every transaction card sits inside a bubble').toBe(true);
+    await expect(page.locator('.chat-card .transaction-card')).toHaveCount(0);
 
     expectNoErrors(errors);
   });

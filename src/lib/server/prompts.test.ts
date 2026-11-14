@@ -100,10 +100,22 @@ describe("buildSystemInstruction", () => {
       'Do not repeat information already visible in a card: amounts, balances, dates, names, statuses, or rows.'
     );
     expect(instruction).toContain(
-      'You have a suspiciously large transaction at APPLE and a possible duplicate transaction at Netflix.'
+      'the transaction cards are your evidence: name each flagged merchant and explain why it stands out'
     );
     expect(instruction).toContain(
-      'Put the reason in the prose; the transaction card shows only the transaction details.'
+      "Do not restate the card's amount, date, status, or row."
+    );
+    expect(instruction).toContain(
+      'Every card must be explained in the prose: say what it supports or why it matters.'
+    );
+    expect(instruction).toContain(
+      'A card is evidence for your insight, not a standalone list item.'
+    );
+    expect(instruction).toContain(
+      'Bad: "There\'s a possible duplicate NETFLIX charge for $19 on 2026-10-28, earlier on 2026-10-27."'
+    );
+    expect(instruction).toContain(
+      'Good: "NETFLIX and LOCAL BOOKSTORE each look like possible duplicates, and APPLE ELECTRONICS PURCHASE, OVERSEAS ELECTRONICS PURCHASE, and EXPRESS AIR FREIGHT are unusually large purchases."'
     );
     expect(instruction).toContain(
       'call present_card({kind,id}) before the sentence that mentions it. Call it at most twice per turn, only for single entities, never for lists or when the id is unknown. For several transactions, use the deposit and withdrawal tools so the transaction list card renders instead of calling present_card for each row. Do not describe the card or repeat its data.'

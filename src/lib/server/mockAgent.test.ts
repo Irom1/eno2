@@ -178,10 +178,83 @@ describe("mockAgent", () => {
     expect(text).not.toContain("November 2026");
   });
 
-  it("describes anomalies in plain language", async () => {
+  it("explains every anomaly card without restating card data", async () => {
+    const findings = [
+      {
+        type: "duplicate",
+        description: "NETFLIX",
+        amount: 19,
+        date: "2026-10-28",
+        duplicateOf: "2026-10-27"
+      },
+      {
+        type: "duplicate",
+        description: "LOCAL BOOKSTORE",
+        amount: 47,
+        date: "2026-11-05",
+        duplicateOf: "2026-11-04"
+      },
+      {
+        type: "outlier",
+        description: "APPLE ELECTRONICS PURCHASE",
+        amount: 1800,
+        date: "2026-10-13"
+      },
+      {
+        type: "outlier",
+        description: "OVERSEAS ELECTRONICS PURCHASE",
+        amount: 1250,
+        date: "2026-10-21"
+      },
+      {
+        type: "outlier",
+        description: "EXPRESS AIR FREIGHT",
+        amount: 925,
+        date: "2026-09-21"
+      }
+    ];
     const { events, text } = await run("Anything weird in my transactions?", async (name) => {
       expect(name).toBe("insight_anomalies");
-      return ok({
+      return ok({ count: findings.length, findings });
+    });
+
+    expect(text).toContain("A few charges need a closer look.");
+    expect(text).toContain("NETFLIX and LOCAL BOOKSTORE each look like possible duplicates.");
+    expect(text).toContain(
+      "APPLE ELECTRONICS PURCHASE, OVERSEAS ELECTRONICS PURCHASE, and EXPRESS AIR FREIGHT are unusually large purchases."
+    );
+    for (const finding of findings) {
+      expect(text).toContain(finding.description);
+    }
+    for (const amount of ["$19", "$47", "$1,800", "$1,250", "$925"]) {
+      expect(text).not.toContain(amount);
+    }
+    for (const date of [
+      "2026-10-28",
+      "2026-10-27",
+      "2026-11-05",
+      "2026-11-04",
+      "2026-10-13",
+      "2026-10-21",
+      "2026-09-21"
+    ]) {
+      expect(text).not.toContain(date);
+    }
+    const nextStep = "If you don’t recognize a charge, you can review and dispute it in the app.";
+    expect(text).toContain(nextStep);
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
+    expect(text).not.toMatch(/outlier|median|MAD|threshold|findings/i);
+
+    const insight = events.find(
+      (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
+    );
+    expect(insight?.accountId).toBe("acct-1");
+  });
+
+  it("explains a single duplicate and a single outlier", async () => {
+    const { text } = await run("Anything weird?", async () =>
+      ok({
         count: 2,
         findings: [
           {
@@ -198,24 +271,25 @@ describe("mockAgent", () => {
             date: "2026-10-12"
           }
         ]
-      });
-    });
+      })
+    );
 
-    expect(text).toContain("possible duplicate");
-    expect(text).toContain("unusually large purchase");
-    const nextStep = "If you don’t recognize a charge, you can review and dispute it in the app.";
-    expect(text).toContain(nextStep);
+    expect(text).toContain("NETFLIX looks like a possible duplicate.");
+    expect(text).toContain("APPLE STORE is an unusually large purchase.");
+    expect(text).not.toContain("$15");
+    expect(text).not.toContain("$1,200");
+    expect(text).not.toContain("2026-10-02");
+    expect(text).not.toContain("2026-09-30");
+    expect(text).not.toContain("2026-10-12");
+  });
+
+  it("reports an empty anomaly result without a dispute next step", async () => {
+    const { text } = await run("Anything weird?", async () => ok({ count: 0, findings: [] }));
+
+    expect(text).toContain("Nothing unusual stood out in this account.");
+    expect(text).not.toContain("review and dispute");
     expect(text).not.toContain("Tip:");
     expect(text).not.toContain("Insight:");
-    const advice = text.slice(text.indexOf(nextStep));
-    expect(advice).not.toContain("15.99");
-    expect(advice).not.toContain("1,200");
-    expect(text).not.toMatch(/outlier|median|MAD|threshold|findings/i);
-
-    const insight = events.find(
-      (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
-    );
-    expect(insight?.accountId).toBe("acct-1");
   });
 
   it("degrades gracefully when a tool fails", async () => {
@@ -403,6 +477,10 @@ describe("mockAgent", () => {
     );
     expect(routeIntent("Anything weird in my transactions?").tool).toBe("insight_anomalies");
     expect(routeIntent("Any suspicious transactions?").tool).toBe("insight_anomalies");
+    expect(routeIntent("Are there any unusual purchases?").tool).toBe("insight_anomalies");
+    expect(routeIntent("Anything strange?").tool).toBe("insight_anomalies");
+    expect(routeIntent("Any odd charges?").tool).toBe("insight_anomalies");
+    expect(routeIntent("Did I get double charged?").tool).toBe("insight_anomalies");
   });
 
   it("composes a loans answer from live loan rows", async () => {

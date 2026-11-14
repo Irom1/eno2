@@ -106,6 +106,7 @@ const DEFAULT_NEXT_STEP = "You can review the related details in your account ac
  */
 function withNextStep(name: string, text: string): string {
   if (typeof text !== "string" || text.trim().length === 0) return text;
+  if (name === "insight_anomalies" && /^Nothing unusual/i.test(text)) return text;
   const nextStep = INTENT_NEXT_STEPS[name] ?? DEFAULT_NEXT_STEP;
   if (text.includes(nextStep)) return text;
   return `${text} ${nextStep}`;
@@ -146,7 +147,7 @@ export function routeIntent(message: string): {
       args: (session) => ({ accountId: checkingAccountId(session) })
     };
   }
-  if (/\bweird|anomal|duplicate|suspicious|charge/.test(text)) {
+  if (/\b(?:weird|anomal\w*|duplicate|suspicious|charg\w*|unusual|strange|odd|double)\b/.test(text)) {
     return {
       tool: "insight_anomalies",
       args: (session) => ({ accountId: checkingAccountId(session) })
@@ -246,33 +247,75 @@ function spendingAnswer(data: unknown, now: Date): string {
   return `In ${monthLabel(latest.month)} you spent ${money(monthTotal)}. ${categoryLine} ${countLine}`;
 }
 
+/** Join merchant names into a natural list: A; A and B; A, B, and C. */
+function joinNames(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+/** Unique, non-empty merchant names in finding order. */
+function findingNames(findings: AnyRecord[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const finding of findings) {
+    const name = String(finding.description ?? "").trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  return names;
+}
+
 function anomaliesAnswer(data: unknown): string {
   const payload = rec(data);
   const findings = Array.isArray(payload.findings) ? payload.findings.map(rec) : [];
   if (findings.length === 0) {
-    return "Nothing unusual found on this account.";
+    return "Nothing unusual stood out in this account.";
   }
-  const duplicate = findings.find(
-    (finding) =>
-      finding.type === "duplicate" && String(finding.description ?? "").toUpperCase().includes("NETFLIX")
+
+  // Match the client's anomaly-card cap so every merchant named in prose has a
+  // card backing it.
+  const visible = findings.slice(0, 8);
+  const duplicates = visible.filter((finding) => finding.type === "duplicate");
+  const outliers = visible.filter((finding) => finding.type === "outlier");
+  const others = visible.filter(
+    (finding) => finding.type !== "duplicate" && finding.type !== "outlier"
   );
-  const parts: string[] = [`I found ${num(payload.count)} alerts worth a look.`];
-  if (duplicate) {
+
+  const parts: string[] = [
+    visible.length === 1 ? "One charge needs a closer look." : "A few charges need a closer look."
+  ];
+
+  const duplicateNames = findingNames(duplicates);
+  if (duplicateNames.length > 0) {
     parts.push(
-      `There's a possible duplicate ${String(duplicate.description)} charge for ${money(
-        duplicate.amount
-      )} on ${String(duplicate.date)}, earlier on ${String(duplicate.duplicateOf)}.`
+      duplicateNames.length === 1
+        ? `${duplicateNames[0]} looks like a possible duplicate.`
+        : `${joinNames(duplicateNames)} each look like possible duplicates.`
     );
   }
-  const largePurchases = findings.filter((finding) => finding.type === "outlier");
-  if (largePurchases.length > 0) {
-    const first = largePurchases[0] ?? {};
+
+  const outlierNames = findingNames(outliers);
+  if (outlierNames.length > 0) {
     parts.push(
-      `There's an unusually large purchase: ${String(first.description ?? "a charge")} for ${money(
-        first.amount
-      )} on ${String(first.date ?? "an unknown date")}.`
+      outlierNames.length === 1
+        ? `${outlierNames[0]} is an unusually large purchase.`
+        : `${joinNames(outlierNames)} are unusually large purchases.`
     );
   }
+
+  const otherNames = findingNames(others);
+  if (otherNames.length > 0) {
+    parts.push(
+      otherNames.length === 1
+        ? `${otherNames[0]} also looks unusual.`
+        : `${joinNames(otherNames)} also look unusual.`
+    );
+  }
+
   return parts.join(" ");
 }
 
