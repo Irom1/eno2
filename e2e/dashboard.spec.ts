@@ -13,6 +13,95 @@ async function loadDashboard(page: Page): Promise<void> {
 }
 
 test.describe('dashboard', () => {
+  test('closes a profile without accounts from Your tools', async ({ page }) => {
+    const customer = { id: 'demo-customer', firstName: 'Demo', lastName: 'Customer' };
+    let closed = false;
+    let requests = 0;
+    await page.route('**/api/customers', (route) =>
+      route.fulfill({ json: { customers: closed ? [] : [customer] } }));
+    await page.route('**/api/session', (route) => route.fulfill({ json: { customer } }));
+    await page.route('**/api/accounts', (route) => route.fulfill({ json: { customer, accounts: [] } }));
+    await page.route('**/api/overview', (route) => route.fulfill({ json: {} }));
+    await page.route('**/api/profile', (route) => {
+      expect(route.request().method()).toBe('DELETE');
+      expect(route.request().postDataJSON()).toEqual({ customerId: customer.id });
+      requests++;
+      if (requests === 1) return route.fulfill({ status: 502, json: { error: 'Could not confirm closure.' } });
+      closed = true;
+      return route.fulfill({ status: 204 });
+    });
+
+    await page.goto('/dashboard');
+    const tools = page.getByRole('region', { name: 'Your tools' });
+    const close = tools.getByRole('button', { name: 'Close profile' });
+    const dialog = page.getByRole('dialog', { name: 'Close profile?' });
+    await close.click();
+    await expect(dialog).toContainText('Demo Customer');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toBeHidden();
+    expect(requests).toBe(0);
+
+    await close.click();
+    await dialog.getByRole('button', { name: 'Close profile' }).click();
+    await expect(dialog.getByRole('alert')).toHaveText('Could not confirm closure.');
+    await dialog.getByRole('button', { name: 'Close profile' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    expect(requests).toBe(2);
+  });
+
+  test('deletes only the confirmed account from settings', async ({ page }) => {
+    const customer = { id: 'demo-customer', firstName: 'Demo', lastName: 'Customer' };
+    const checking = { id: 'checking', customerId: customer.id, nickname: 'Demo Checking', type: 'Checking', accountNumber: '1234', balance: 10, rewards: 0 };
+    const savings = { ...checking, id: 'savings', nickname: 'Demo Savings', type: 'Savings', accountNumber: '5678' };
+    let deletes = 0;
+    let deleted = false;
+
+    await page.route('**/api/customers', (route) => route.fulfill({ json: { customers: [customer] } }));
+    await page.route('**/api/session', (route) => route.fulfill({ json: { customer } }));
+    await page.route('**/api/overview', (route) => route.fulfill({ json: {} }));
+    await page.route('**/api/accounts', (route) => route.fulfill({
+      json: { customer, accounts: deleted ? [savings] : [checking, savings] }
+    }));
+    await page.route('**/api/accounts/checking', (route) => {
+      if (route.request().method() === 'DELETE') {
+        deletes++;
+        if (deletes === 1) return route.fulfill({ status: 502, json: { error: 'Unavailable' } });
+        deleted = true;
+        return route.fulfill({ status: 204 });
+      }
+      return route.fulfill({ json: { account: checking, customer } });
+    });
+
+    await page.goto('/dashboard');
+    const card = page.locator('article.account', { hasText: checking.nickname });
+    await card.getByRole('button', { name: 'Account settings' }).click();
+    const settings = page.getByRole('dialog', { name: 'Account settings' });
+    const openDelete = settings.getByRole('button', { name: 'Delete account', exact: true });
+    const confirmation = page.getByRole('dialog', { name: 'Delete account?' });
+
+    await openDelete.click();
+    await expect(confirmation).toContainText('Demo Checking ending in 1234');
+    await expect(confirmation.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(confirmation).toBeHidden();
+    await expect(openDelete).toBeFocused();
+    expect(deletes).toBe(0);
+
+    await openDelete.click();
+    await confirmation.getByRole('button', { name: 'Delete account', exact: true }).click();
+    await expect(confirmation.getByRole('alert')).toContainText("couldn't confirm");
+    await confirmation.getByRole('button', { name: 'Cancel' }).click();
+    await expect(settings).toBeVisible();
+
+    await openDelete.click();
+    await confirmation.getByRole('button', { name: 'Delete account', exact: true }).click();
+    await expect(settings).toBeHidden();
+    await expect(page.getByRole('status')).toHaveText('Account deleted.');
+    await expect(card).toHaveCount(0);
+    await expect(page.locator('article.account', { hasText: savings.nickname })).toBeVisible();
+    expect(deletes).toBe(2);
+  });
+
   test('loads live accounts with no errors', async ({ page }) => {
     const errors = collectErrors(page);
     await loadDashboard(page);

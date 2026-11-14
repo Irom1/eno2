@@ -26,3 +26,7 @@ blob-report/
 *.log
 .DS_Store
 Thumbs.db
+
+# Vite temporary config files
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*

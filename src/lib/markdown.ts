@@ -26,6 +26,9 @@ function renderInline(value: string): string {
 
   text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  // Remove unmatched bold markers left if a text block boundary split a span.
+  // Only runs after matched bold pairs are converted, so real bold survives.
+  text = text.replace(/\*\*/g, "");
   text = text.replace(/\u0000(\d+)\u0000/g, (_match, index: string) => `<code>${code[Number(index)] ?? ""}</code>`);
   return text;
 }

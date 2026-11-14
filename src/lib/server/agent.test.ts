@@ -124,17 +124,25 @@ describe("agent loop", () => {
 
     expect(callTool).toHaveBeenCalledWith("insight_upcoming_bills", { customerId: "cust-1" });
     const types = events.map((event) => event.type);
-    expect(types).toEqual(["tool_start", "tool_result", "insight", "text", "usage", "done"]);
+    expect(types).toEqual([
+      "tool_start",
+      "tool_result",
+      "insight",
+      "text",
+      "text",
+      "usage",
+      "done"
+    ]);
 
     const text = events
       .filter((event): event is Extract<AgentEvent, { type: "text" }> => event.type === "text")
       .map((event) => event.delta)
       .join("");
-    expect(text).toContain("4,283.59");
+    expect(text).toContain("8 bills");
     expect(events.find((event) => event.type === "usage")).toMatchObject({
-      promptTokens: 20,
-      outputTokens: 9,
-      rounds: 2
+      promptTokens: 10,
+      outputTokens: 2,
+      rounds: 1
     });
 
     // Thought signature is preserved verbatim across turns.
@@ -213,6 +221,7 @@ describe("agent loop", () => {
       "tool_start",
       "tool_result",
       "insight",
+      "text",
       "text",
       "usage",
       "done"

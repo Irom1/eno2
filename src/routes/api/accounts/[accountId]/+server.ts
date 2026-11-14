@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestEvent } from './$types';
+import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
 import {
   mergeTransactions,
   normalizeAccount,
@@ -65,5 +66,40 @@ export async function GET({ cookies, params, platform }: RequestEvent): Promise<
     });
   } catch {
     return json({ error: 'Failed to load account' }, { status: 502 });
+  }
+}
+
+export async function DELETE({ request, url, cookies, params, platform }: RequestEvent): Promise<Response> {
+  if (request.headers.get('origin') !== url.origin) {
+    return json({ error: 'Invalid request origin' }, { status: 403 });
+  }
+
+  const session = getSession(cookies.get(SESSION_COOKIE));
+  if (!session) return json({ error: 'No active session' }, { status: 401 });
+  if (session.customer.id === GUEST_CUSTOMER_ID) {
+    return json({ error: 'Select a customer to manage accounts' }, { status: 403 });
+  }
+
+  const { accountId } = params;
+  if (!/^[a-zA-Z0-9_-]+$/.test(accountId) || !session.accounts.some((account) => account.id === accountId)) {
+    return json({ error: 'Account not found' }, { status: 404 });
+  }
+
+  try {
+    const runtime = resolveEnv(platform);
+    if (!runtime.NESSIE_API_KEY) throw new Error('Nessie API key is missing');
+    const endpoint = new URL(`/accounts/${accountId}`, runtime.NESSIE_BASE_URL);
+    endpoint.searchParams.set('key', runtime.NESSIE_API_KEY);
+    const response = await fetch(endpoint, {
+      method: 'DELETE',
+      redirect: 'error',
+      signal: AbortSignal.timeout(8_000)
+    });
+    if (!response.ok) throw new Error('Nessie deletion failed');
+
+    session.accounts = session.accounts.filter((account) => account.id !== accountId);
+    return new Response(null, { status: 204 });
+  } catch {
+    return json({ error: "We couldn't confirm the account was deleted. Check your dashboard before trying again." }, { status: 502 });
   }
 }

@@ -3,6 +3,7 @@ import type { RequestEvent } from './$types';
 import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
 import { resolveEnv } from '$lib/server/env';
 import { callTool, withMcp } from '$lib/server/mcp';
+import { isClosedProfile } from '$lib/server/nessie/closeProfile';
 import {
   createSession,
   destroySession,
@@ -19,6 +20,7 @@ interface RawCustomer {
   _id?: string;
   firstName?: string;
   lastName?: string;
+  address?: { zip?: string };
 }
 
 interface RawAccount {
@@ -70,7 +72,7 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
     return await withMcp(runtime, async (mcp) => {
       const customerResult = await callTool(mcp, 'nessie_get_customer', { customerId });
       const match = customerResult.data as RawCustomer | null;
-      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId) {
+      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId || isClosedProfile(match)) {
         return json({ error: 'Unknown customerId' }, { status: 404 });
       }
 
