@@ -15,6 +15,14 @@ import {
 
 const OVERVIEW_KINDS = ['Overview', 'Accounts', 'Rewards', 'Cashflow'];
 
+const STARTER_PROMPTS = [
+  'Give me a snapshot of my finances',
+  'Where did my money go last month?',
+  "What's due in the next 30 days?",
+  'Anything weird in my transactions?',
+  'Find an ATM near Arlington'
+];
+
 async function loadChat(page: Page): Promise<void> {
   await page.goto('/chat');
   await expect(page.locator('textarea[aria-label="Ask Capital One"]')).toBeVisible({
@@ -33,6 +41,59 @@ function expectTitlesWithin(titles: string[], allowed: string[]): void {
   for (const title of titles) {
     expect(allowed, `unexpected card title "${title}"`).toContain(title);
   }
+}
+
+/** Follow-ups start at the assistant content edge and span the bubble max width. */
+async function expectFollowupsMatchBubble(page: Page): Promise<void> {
+  const followups = page.locator('.chat-followups');
+  const content = page.locator('.assistant-turn .assistant-content').last();
+  await expect(followups).toBeVisible();
+  await expect(content).toBeVisible();
+  const [followBox, contentBox] = await Promise.all([
+    followups.boundingBox(),
+    content.boundingBox()
+  ]);
+  expect(followBox, 'follow-up block should be laid out').not.toBeNull();
+  expect(contentBox, 'assistant content should be laid out').not.toBeNull();
+  expect(
+    Math.abs(followBox!.x - contentBox!.x),
+    'follow-ups align with the assistant content left edge'
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(followBox!.width - contentBox!.width * 0.88),
+    'follow-ups span the bubble max width'
+  ).toBeLessThanOrEqual(2);
+
+  const chips = followups.locator('.follow-up');
+  expect(
+    await followups.locator('.follow-up-arrow').count(),
+    'every follow-up has a trailing arrow'
+  ).toBe(await chips.count());
+}
+
+/** Follow-up rows use straight hairline dividers, with none above the first. */
+async function expectFollowupBorders(page: Page): Promise<void> {
+  const rows = await page.locator('.follow-up').evaluateAll((elements) =>
+    elements.map((element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        top: style.borderTopWidth,
+        radius: style.borderRadius,
+        width: rect.width
+      };
+    })
+  );
+  expect(rows.length, 'follow-up rows are present').toBeGreaterThan(0);
+  rows.forEach((row, index) => {
+    expect(row.radius, 'follow-up corners are square').toBe('0px');
+    if (index === 0) {
+      expect(row.top, 'the first row has no top divider').toBe('0px');
+    } else {
+      expect(row.top, 'subsequent rows have a hairline divider').toBe('1px');
+      expect(row.width, 'the divider spans the row').toBeGreaterThan(0);
+    }
+  });
 }
 
 test.describe('chat prompts', () => {
@@ -78,8 +139,58 @@ test.describe('chat prompts', () => {
       expect(introText, `intro should mention ${phrase}`).toContain(phrase);
     }
     expect(chatPosts, 'the intro must not call the chat API').toEqual([]);
-    await expect(page.locator('.shortcuts .prompt').first()).toBeVisible();
-    await expect(page.locator('.follow-up')).toHaveCount(0);
+
+    // Starters live in the log as follow-ups, not above the composer.
+    await expect(page.locator('.shortcuts')).toHaveCount(0);
+    const introFollowups = page.locator('.chat-followups');
+    await expect(introFollowups).toHaveCount(1);
+    const starterChips = introFollowups.locator('.follow-up');
+    await expect(starterChips).toHaveCount(STARTER_PROMPTS.length);
+    const starterLabels = (await starterChips.allInnerTexts()).map((label) => label.trim());
+    for (const prompt of STARTER_PROMPTS) {
+      expect(starterLabels).toContain(prompt);
+    }
+
+    const introFollowupPlacement = await introFollowups.evaluate((element) => {
+      const introTurn = document.querySelector('.assistant-turn.intro');
+      return {
+        inLog: element.closest('.chat-log') !== null,
+        afterIntro: Boolean(
+          introTurn &&
+            introTurn.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING
+        )
+      };
+    });
+    expect(introFollowupPlacement, 'starters follow the intro inside the log').toEqual({
+      inLog: true,
+      afterIntro: true
+    });
+
+    const starterRows = await starterChips.evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { y: Math.round(rect.y), width: rect.width, height: rect.height };
+      })
+    );
+    const introFollowupWidth = await introFollowups.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return (
+        element.clientWidth -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight)
+      );
+    });
+    expect(new Set(starterRows.map((row) => row.y)).size, 'one starter per row').toBe(
+      starterRows.length
+    );
+    for (const row of starterRows) {
+      expect(row.width, 'each starter spans most of the log').toBeGreaterThan(
+        introFollowupWidth * 0.6
+      );
+      expect(row.height, 'starter rows stay compact').toBeLessThanOrEqual(40);
+    }
+    await expectFollowupsMatchBubble(page);
+    await expectFollowupBorders(page);
 
     // The mascot sits to the left of the intro bubble, aligned near its top.
     const introAvatar = page.locator('.assistant-turn.intro .eno-thinking');
@@ -112,6 +223,19 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.assistant-turn')).toHaveCount(2);
     await expect(page.locator('.shortcuts')).toHaveCount(0);
 
+    // The intro starters are replaced by the post-turn follow-ups (max three).
+    const postTurnChips = page.locator('.chat-followups .follow-up');
+    await expect(postTurnChips.first()).toBeVisible({ timeout: 20_000 });
+    const postTurnCount = await postTurnChips.count();
+    expect(postTurnCount, 'post-turn follow-ups appear').toBeGreaterThanOrEqual(1);
+    expect(postTurnCount, 'post-turn follow-ups are capped at three').toBeLessThanOrEqual(3);
+    const postTurnLabels = (await postTurnChips.allInnerTexts()).map((label) => label.trim());
+    expect(postTurnLabels, 'starter rows are gone after sending').not.toEqual([
+      ...STARTER_PROMPTS
+    ]);
+    await expectFollowupsMatchBubble(page);
+    await expectFollowupBorders(page);
+
     // The responder turn's mascot sits to the left of its content column.
     const responderTurn = page.locator('.assistant-turn').last();
     const responderAvatar = responderTurn.locator('.eno-thinking');
@@ -138,7 +262,15 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.profile-name')).toHaveText('Jordan', { timeout: 30_000 });
     await expect(page.locator('.assistant-turn.intro')).toHaveCount(1);
     await expect(page.locator('.assistant-turn')).toHaveCount(1);
-    await expect(page.locator('.shortcuts .prompt').first()).toBeVisible();
+    await expect(page.locator('.shortcuts')).toHaveCount(0);
+    const resetChips = page.locator('.chat-followups .follow-up');
+    await expect(resetChips).toHaveCount(STARTER_PROMPTS.length, { timeout: 20_000 });
+    const resetLabels = (await resetChips.allInnerTexts()).map((label) => label.trim());
+    for (const prompt of STARTER_PROMPTS) {
+      expect(resetLabels).toContain(prompt);
+    }
+    await expectFollowupsMatchBubble(page);
+    await expectFollowupBorders(page);
 
     expectNoErrors(errors);
   });
@@ -204,6 +336,8 @@ test.describe('chat prompts', () => {
       );
       expect(row.height, 'follow-up rows stay compact').toBeLessThanOrEqual(40);
     }
+    await expectFollowupsMatchBubble(page);
+    await expectFollowupBorders(page);
 
     // Transparent rows with a trailing arrow that points the way forward.
     const rowStyles = await chips.evaluateAll((elements) =>
@@ -420,6 +554,8 @@ test.describe('chat prompts', () => {
       );
       expect(row.height, 'follow-up rows stay compact').toBeLessThanOrEqual(40);
     }
+    await expectFollowupsMatchBubble(page);
+    await expectFollowupBorders(page);
 
     // After scrolling to the bottom the first follow-up is visible above the input.
     const firstFollowup = await chips.first().boundingBox();

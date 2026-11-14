@@ -260,15 +260,7 @@
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
   let promptSeq = 0;
   let canSend = $state(false);
-  let hasMessages = $state(false);
   let chatPanel = $state<ChatPanelApi>();
-  const suggestions = [
-    'Give me a snapshot of my finances',
-    'Where did my money go last month?',
-    "What's due in the next 30 days?",
-    'Anything weird in my transactions?',
-    'Find an ATM near Arlington'
-  ];
   const slideTiming = { duration: 480, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' };
   let composer: HTMLFormElement;
   let composerHeight = $state(58);
@@ -490,19 +482,11 @@
             customerId={activeCustomerId}
             initialPrompt={chatPrompt}
             bind:canSend
-            bind:hasMessages
             variant={isDark ? 'dark' : 'light'}
             onClose={() => void goto('/dashboard')}
           />
         </main>
         <div class="composer-area">
-          {#if inChat && !hasMessages}
-            <div class="shortcuts" role="group" aria-label="Wallet shortcuts">
-              {#each suggestions as suggestion}
-                <button class="prompt" disabled={!canSend} onclick={() => send(suggestion)}>{suggestion}</button>
-              {/each}
-            </div>
-          {/if}
           <form class="composer" bind:this={composer} bind:offsetHeight={composerHeight} onsubmit={search}>
             <div class="composer-field" data-value={query}>
               <textarea bind:value={query} onfocus={openChat} onkeydown={handleComposerKeydown} rows="1" aria-label="Ask Capital One" placeholder="Ask about your money, spending, or bills…"></textarea>
@@ -870,27 +854,6 @@
   .composer textarea::placeholder { color: var(--muted); }
   .composer .send { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; padding: 0; }
   .send:disabled { opacity: .55; cursor: default; }
-  .shortcuts { display: grid; gap: 2px; margin: 0 8px 10px; max-height: 30dvh; overflow-y: auto; }
-  @media (prefers-reduced-motion: no-preference) {
-    .shortcuts { animation: reveal-shortcuts 160ms ease-out 320ms both; }
-  }
-  @keyframes reveal-shortcuts {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  .prompt {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-height: 40px;
-    padding: 7px 13px;
-    background: transparent;
-    border: 0;
-    border-radius: 12px;
-    text-align: left;
-  }
-  .prompt:disabled { opacity: .55; cursor: default; }
-  .prompt:hover:not(:disabled) { background: color-mix(in srgb, var(--surface) 65%, transparent); }
   .link { display: inline-flex; align-items: center; gap: 5px; color: var(--link); font-weight: 650; text-align: left; }
   .link svg { width: 15px; height: 15px; }
 

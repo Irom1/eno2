@@ -10,6 +10,7 @@
   } from '$lib/chat/entityCards.js';
   import { inlineBlocks } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
+  import { STARTER_PROMPTS } from '$lib/chat/starters.js';
   import {
     friendlyToolLabel,
     initialThinking,
@@ -28,7 +29,6 @@
     initialPrompt: { text: string; id: number } | null;
     onClose: () => void;
     canSend: boolean;
-    hasMessages: boolean;
     variant?: EnoVariant;
   }
 
@@ -49,7 +49,6 @@
     initialPrompt,
     onClose,
     canSend = $bindable(),
-    hasMessages = $bindable(),
     variant = 'light'
   }: Props = $props();
 
@@ -80,12 +79,13 @@
 
   const suggestions = $derived.by(() => {
     if (streaming) return [];
-    if (!messages.some((message) => message.role === 'user')) return [];
+    const hasUserMessage = messages.some((message) => message.role === 'user');
+    if (!hasUserMessage) return [...STARTER_PROMPTS];
     const last = [...messages].reverse().find((message) => message.role === 'assistant');
     if (!last || last.pending) return [];
     const shown = visibleCards(last.cards ?? [], last.prompt ?? '');
     if (!last.text && shown.length === 0) return [];
-    return followUpsFor(shown, last.prompt ?? '');
+    return followUpsFor(shown, last.prompt ?? '').slice(0, 3);
   });
 
   function scrollLog(): void {
@@ -313,7 +313,6 @@
 
   $effect(() => {
     canSend = ready && !streaming;
-    hasMessages = messages.some((message) => message.role === 'user');
   });
 
   $effect(() => {
@@ -412,12 +411,15 @@
     {/each}
 
     {#if suggestions.length > 0}
-      <div class="chat-followups">
-        <FollowUps
-          suggestions={suggestions.slice(0, 3)}
-          disabled={!canSend}
-          onSelect={(prompt) => void send(prompt)}
-        />
+      <div class="chat-followups-row">
+        <span class="chat-followups-spacer" aria-hidden="true"></span>
+        <div class="chat-followups">
+          <FollowUps
+            {suggestions}
+            disabled={!canSend}
+            onSelect={(prompt) => void send(prompt)}
+          />
+        </div>
       </div>
     {/if}
   </div>
@@ -478,7 +480,23 @@
     align-items: flex-start;
     gap: 8px;
   }
-  .chat-followups { margin-top: 2px; }
+  .chat-followups-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+  }
+  .chat-followups-spacer {
+    flex: none;
+    width: 40px;
+  }
+  .chat-followups {
+    flex: 1;
+    min-width: 0;
+    max-width: 88%;
+    margin-top: 0;
+  }
   .status-line { color: var(--muted); font-size: 14px; }
   .thinking-row { display: flex; align-items: flex-start; gap: 10px; }
   .thinking-steps {
