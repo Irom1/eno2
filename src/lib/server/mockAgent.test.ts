@@ -140,7 +140,7 @@ describe("mockAgent", () => {
   });
 
   it("describes anomalies in plain language", async () => {
-    const { text } = await run("Anything weird in my transactions?", async (name) => {
+    const { events, text } = await run("Anything weird in my transactions?", async (name) => {
       expect(name).toBe("insight_anomalies");
       return ok({
         count: 2,
@@ -165,6 +165,11 @@ describe("mockAgent", () => {
     expect(text).toContain("possible duplicate");
     expect(text).toContain("unusually large purchase");
     expect(text).not.toMatch(/outlier|median|MAD|threshold|findings/i);
+
+    const insight = events.find(
+      (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
+    );
+    expect(insight?.accountId).toBe("acct-1");
   });
 
   it("degrades gracefully when a tool fails", async () => {

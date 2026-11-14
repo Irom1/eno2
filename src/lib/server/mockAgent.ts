@@ -394,7 +394,16 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
     } else {
       intro = composeIntro(intent.tool);
       emit({ type: "text", delta: intro });
-      emit({ type: "insight", kind: intent.tool, payload: result.data });
+      const accountId =
+        typeof args.accountId === "string" && args.accountId.trim().length > 0
+          ? args.accountId
+          : "";
+      emit({
+        type: "insight",
+        kind: intent.tool,
+        payload: result.data,
+        ...(accountId ? { accountId } : {})
+      });
       text = composeAnswer(intent.tool, result.data, now(), message);
     }
   } catch {

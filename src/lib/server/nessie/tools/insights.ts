@@ -201,6 +201,7 @@ export function computeMedian(values: readonly number[]): number {
 
 export interface DuplicateFinding {
   type: "duplicate";
+  _id: string;
   description: string;
   amount: number;
   date: string;
@@ -232,6 +233,7 @@ export function detectDuplicateCharges(
       flagged.add(j);
       findings.push({
         type: "duplicate",
+        _id: later.id,
         description: truncateText(later.description, 160),
         amount: toMoney(later.amount),
         date: toISODate(later.date),
@@ -247,6 +249,7 @@ export function detectDuplicateCharges(
 
 export interface OutlierFinding {
   type: "outlier";
+  _id: string;
   description: string;
   amount: number;
   date: string;
@@ -299,6 +302,7 @@ export function detectOutliers(
     .filter((tx) => tx.amount > threshold)
     .map((tx) => ({
       type: "outlier" as const,
+      _id: tx.id,
       description: truncateText(tx.description, 160),
       amount: toMoney(tx.amount),
       date: toISODate(tx.date),
@@ -686,7 +690,7 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
       const cardBalances = toMoney(
         cardAccounts.reduce((sum, account) => sum + accountBalance(account), 0),
       );
-      const totalRewards = cardAccounts.reduce(
+      const totalRewards = accounts.reduce(
         (sum, account) => sum + num(account.rewards),
         0,
       );

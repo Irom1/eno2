@@ -82,6 +82,8 @@
   let snapshotError = $state('');
   let snapshotSeq = 0;
   let walletView = $state<{ accountId: string; tab: WalletTab } | null>(null);
+  let focusTransactionId = $state('');
+  let deepLinkHandled = false;
 
   let displayAccounts = $derived.by(() => {
     const rank = (type: string): number => {
@@ -120,11 +122,10 @@
       ''
   );
   let firstCredit = $derived(
-    liveAccounts.find((account) => isCredit(account.type)) ?? null
+    liveAccounts.find((account) => account.rewards > 0) ?? liveAccounts.find((account) => isCredit(account.type)) ?? null
   );
   let creditRewards = $derived(
     liveAccounts
-      .filter((account) => isCredit(account.type))
       .reduce((sum, account) => sum + account.rewards, 0)
   );
   let rewardPoints = $derived(snapshotOverview?.overview?.totalRewards ?? creditRewards);
@@ -184,12 +185,30 @@
 
   async function loadCustomers() {
     try {
-      const response = await fetch('/api/customers');
+      const [response, sessionResponse] = await Promise.all([
+        fetch('/api/customers'),
+        fetch('/api/session').catch(() => null)
+      ]);
       if (!response.ok) throw new Error('Could not load customers.');
       const payload = (await response.json()) as { customers?: Customer[] };
       const list = Array.isArray(payload.customers) ? payload.customers : [];
+      const currentSession = sessionResponse?.ok
+        ? await sessionResponse.json() as { customer?: Customer }
+        : null;
+      const requestedCustomerId = page.url.searchParams.get('customer') || currentSession?.customer?.id;
+      if (requestedCustomerId && !list.some((customer) => customer.id === requestedCustomerId)) {
+        const selectedResponse = await fetch(`/api/customers?customer=${encodeURIComponent(requestedCustomerId)}`);
+        if (!selectedResponse.ok) throw new Error('Could not load selected customer.');
+        const selectedPayload = await selectedResponse.json() as { customers?: Customer[] };
+        const selected = selectedPayload.customers?.find((customer) => customer.id === requestedCustomerId);
+        if (!selected) throw new Error('Selected customer was not found.');
+        list.push(selected);
+      }
       customers = list;
-      const preferred = list.find((customer) => customer.lastName === 'Chen') ?? list[0];
+      const preferred =
+        list.find((customer) => customer.id === requestedCustomerId) ??
+        list.find((customer) => customer.lastName === 'Chen') ??
+        list[0];
       if (preferred) {
         activeCustomerId = preferred.id;
         void loadSnapshot(preferred.id);
@@ -242,6 +261,7 @@
       loans = Array.isArray(snapshot.loans) ? snapshot.loans : [];
       recentActivity = Array.isArray(snapshot.recentActivity) ? snapshot.recentActivity : [];
       snapshotOverview = overview;
+      if (seq === snapshotSeq) openDeepLinkedAccount();
     } catch {
       if (seq !== snapshotSeq) return;
       snapshotError = "We couldn't load your accounts.";
@@ -253,7 +273,27 @@
   function openAccountView(accountId: string, tab: WalletTab): void {
     if (!accountId) return;
     accountOpen = false;
+    focusTransactionId = '';
     walletView = { accountId, tab };
+  }
+
+  function openDeepLinkedAccount(): void {
+    if (deepLinkHandled) return;
+    const accountId = page.url.searchParams.get('account') ?? '';
+    const txn = page.url.searchParams.get('txn') ?? '';
+    if (!accountId) return;
+    if (!liveAccounts.some((account) => account.id === accountId)) return;
+    deepLinkHandled = true;
+    focusTransactionId = txn;
+    walletView = { accountId, tab: 'activity' };
+  }
+
+  function closeAccountView(): void {
+    walletView = null;
+    focusTransactionId = '';
+    if (page.url.searchParams.has('account') || page.url.searchParams.has('txn')) {
+      void goto('/dashboard', { replaceState: true, noScroll: true });
+    }
   }
   let hidden = $state<Record<string, boolean>>({});
   let inChat = $derived(page.params.view === 'chat');
@@ -273,6 +313,8 @@
   let gradientAnimation: Animation | undefined;
   let previousComposerBounds: DOMRect | undefined;
   let composerAnimation: Animation | undefined;
+  let chatResults: HTMLElement;
+  let chatRevealAnimation: Animation | undefined;
 
   beforeNavigate(({ from, to }) => {
     previousComposerBounds = undefined;
@@ -291,6 +333,7 @@
       coveringDashboard = to?.params?.view === 'chat';
       composerAnimation?.cancel();
       gradientAnimation?.cancel();
+      chatRevealAnimation?.cancel();
     }
   });
 
@@ -306,6 +349,13 @@
       [{ transform: `translate(${x}px, ${y}px)` }, { transform: 'translate(0, 0)' }],
       slideTiming
     );
+    if (inChat) {
+      // Keep the history's reveal edge just above the moving composer.
+      chatRevealAnimation = chatResults.animate(
+        [{ clipPath: `inset(0 0 ${Math.max(0, -y)}px 0)` }, { clipPath: 'inset(0)' }],
+        slideTiming
+      );
+    }
     const gradientBounds = gradient.getBoundingClientRect();
     const glowOffset = gradientBounds.bottom - top - height / 2;
     gradientAnimation = gradient.animate(
@@ -484,7 +534,7 @@
           </a>
 
         {/if}
-        <main class="chat-results" aria-label="Wallet chat" hidden={!inChat}>
+        <main class="chat-results" aria-label="Wallet chat" hidden={!inChat} bind:this={chatResults}>
           <ChatPanel
             bind:this={chatPanel}
             open={inChat}
@@ -527,7 +577,13 @@
                 <div class="skeleton-card" aria-hidden="true"></div>
               {/each}
             {:else if displayAccounts.length === 0 && !snapshotError}
-              <p class="muted empty-note">No accounts to show.</p>
+              <article class="panel welcome-empty">
+                <div class="empty-eno"><img src="/images/eno-character.png" alt="Eno" width="1254" height="1254" /></div>
+                <p class="empty-greeting">A LITTLE ROOM FOR YOUR NEXT CHAPTER</p>
+                <h2>Welcome to your fresh start, {activeFirstName}.</h2>
+                <p class="muted">No accounts or cards yet. When you add them, they’ll feel right at home here.</p>
+                <button class="primary" onclick={openChat}>Say hello to Eno {@render arrowIcon()}</button>
+              </article>
             {:else}
               {#each displayAccounts as account (account.id)}
                 {@const [dollars, cents] = account.balance.split('.')}
@@ -586,6 +642,8 @@
           <section class="stack tools" aria-labelledby="tools-title">
             <h2 id="tools-title" class="section-title">Your tools</h2>
 
+            {#if liveAccounts.length > 0}
+
             {#if upcoming.length}
               <article class="panel bills-panel">
                 <div class="panel-heading">
@@ -631,6 +689,13 @@
               <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
             </article>
             <ClimateWiseWidget />
+            {:else if !snapshotLoading && !snapshotError}
+              <article class="panel utility getting-started">
+                <h2>Make yourself at home.</h2>
+                <p class="muted">Questions about banking? Wondering where to start? You don’t need an account to say hello.</p>
+                <button class="link" onclick={() => send('I’m new here. What can I do with Eno?')}>Let’s get acquainted {@render arrowIcon()}</button>
+              </article>
+            {/if}
           </section>
 
           <footer>
@@ -650,8 +715,12 @@
   </div>
 
   {#if walletView}
-    <ViewShell title="Account details" subtitle={activeName} onBack={() => (walletView = null)}>
-      <AccountDetailView accountId={walletView.accountId} initialTab={walletView.tab} />
+    <ViewShell title="Account details" subtitle={activeName} onBack={closeAccountView}>
+      <AccountDetailView
+        accountId={walletView.accountId}
+        initialTab={walletView.tab}
+        {focusTransactionId}
+      />
     </ViewShell>
   {/if}
 </div>
@@ -893,6 +962,13 @@
   }
   .retry-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 18px; }
   .empty-note { padding: 16px 0; }
+  .welcome-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; padding: 36px; }
+  .welcome-empty h2 { max-width: 400px; font-size: clamp(24px, 3vw, 34px); line-height: 1.2; letter-spacing: -.04em; }
+  .welcome-empty > .muted { max-width: 390px; }
+  .empty-greeting { color: var(--link); font-size: 10px; font-weight: 600; letter-spacing: .12em; }
+  .empty-eno { position: relative; width: 68px; height: 76px; }
+  .empty-eno img { position: absolute; top: 45%; left: 52%; width: 118px; height: 118px; transform: translate(-50%, -50%); }
+  .getting-started { gap: 16px; padding: 24px; }
   .panel-heading {
     display: flex;
     align-items: center;

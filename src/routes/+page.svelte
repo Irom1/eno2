@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Eno from '$lib/components/Eno.svelte';
   import CapitalOneLogo from './[view=wallet]/CapitalOneLogo.svelte';
 
@@ -33,34 +33,95 @@
 
   let products = $state<HTMLDetailsElement>();
 
-  let theme = $state<'light' | 'dark' | 'system'>('system');
-  let systemDark = $state(false);
-  const isDark = $derived(theme === 'dark' || (theme === 'system' && systemDark));
+  type Theme = 'light' | 'dark' | 'system';
+  interface Customer {
+    id: string;
+    firstName: string;
+    lastName: string;
+    city?: string;
+    state?: string;
+  }
+
+  let theme = $state<Theme>('system');
+  let ready = $state(false);
+  let systemPrefersDark = $state(false);
+  let isDark = $derived(theme === 'dark' || (theme === 'system' && systemPrefersDark));
   const themeLabel = $derived(isDark ? 'Switch to light mode' : 'Switch to dark mode');
+  let accountsOpen = $state(false);
+  let customers = $state<Customer[]>([]);
+  let customersLoading = $state(true);
+  let customersError = $state(false);
+  let signInArea: HTMLDivElement;
+  let signInButton: HTMLButtonElement;
+  let accountList: HTMLDivElement;
 
-  onMount(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    systemDark = media.matches;
+  async function loadCustomers(): Promise<void> {
+    customersLoading = true;
+    customersError = false;
     try {
-      const saved = localStorage.getItem('dashboard-theme');
-      if (saved === 'light' || saved === 'dark') theme = saved;
+      const response = await fetch('/api/customers');
+      if (!response.ok) throw new Error('Could not load accounts.');
+      const payload = (await response.json()) as { customers?: Customer[] };
+      customers = Array.isArray(payload.customers)
+        ? payload.customers.filter((customer) => customer.id)
+        : [];
     } catch {
-      // The system theme works without storage.
+      customersError = true;
+    } finally {
+      customersLoading = false;
     }
-    const updateSystemTheme = (event: MediaQueryListEvent) => { systemDark = event.matches; };
-    media.addEventListener('change', updateSystemTheme);
-    return () => media.removeEventListener('change', updateSystemTheme);
-  });
+  }
 
-  function toggleTheme() {
+  async function toggleAccounts(): Promise<void> {
+    accountsOpen = !accountsOpen;
+    if (accountsOpen && products) products.open = false;
+    if (accountsOpen) {
+      await tick();
+      accountList?.querySelector<HTMLElement>('a, button')?.focus();
+    }
+  }
+
+  function handleWindowClick(event: MouseEvent): void {
+    if (accountsOpen && !event.composedPath().includes(signInArea)) {
+      accountsOpen = false;
+    }
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent): void {
+    closeProducts(event);
+    if (accountsOpen && event.key === 'Escape') {
+      event.preventDefault();
+      accountsOpen = false;
+      signInButton?.focus();
+    }
+  }
+
+  function toggleTheme(): void {
     theme = isDark ? 'light' : 'dark';
     try {
       localStorage.setItem('dashboard-theme', theme);
     } catch {
-      // The selection still applies to the current page.
+      // Keep the selected theme for this visit when storage is unavailable.
     }
   }
 
+  onMount(() => {
+    try {
+      const saved = localStorage.getItem('dashboard-theme');
+      if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved;
+    } catch {
+      // Fall back to the system preference when storage is unavailable.
+    }
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    systemPrefersDark = media.matches;
+    const onMediaChange = (event: MediaQueryListEvent) => {
+      systemPrefersDark = event.matches;
+    };
+    media.addEventListener('change', onMediaChange);
+    ready = true;
+    void loadCustomers();
+    return () => media.removeEventListener('change', onMediaChange);
+  });
   function closeProducts(event: KeyboardEvent) {
     if (event.key === 'Escape' && products?.open) {
       products.open = false;
@@ -75,9 +136,13 @@
   <link rel="preload" href="/rolling-hills.svg" as="image" />
 </svelte:head>
 
-<svelte:window onkeydown={closeProducts} />
+{#snippet arrowIcon()}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+{/snippet}
 
-<div class="site" class:dark={isDark}>
+<svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
+
+<div class="site landing" class:dark={isDark} data-theme={theme}>
   <header>
     <nav aria-label="Main navigation">
       <details bind:this={products}>
@@ -104,7 +169,7 @@
       </a>
 
       <div class="nav-actions">
-        <button type="button" class="theme-toggle" aria-label="Dark mode" aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
+        <button type="button" class="theme-toggle" disabled={!ready} aria-label={themeLabel} aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
             {#if isDark}
               <circle cx="12" cy="12" r="4" />
@@ -114,7 +179,8 @@
             {/if}
           </svg>
         </button>
-        <a class="sign-in" href="/dashboard">
+        <div class="sign-in-area" bind:this={signInArea}>
+        <button type="button" class="sign-in" disabled={!ready} bind:this={signInButton} aria-label="Sign in" aria-expanded={accountsOpen} aria-controls="account-list" onclick={toggleAccounts}>
           <span class="profile" aria-hidden="true">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="12" cy="8" r="4" />
@@ -122,7 +188,31 @@
             </svg>
           </span>
           Sign in
-        </a>
+        </button>
+        <div class="account-list" id="account-list" bind:this={accountList} hidden={!accountsOpen}>
+          <p class="list-heading">Choose your account</p>
+          {#if customersLoading}
+            <p class="list-message" role="status">Loading accounts…</p>
+          {:else if customersError}
+            <div class="list-message" role="status">
+              <p>We couldn’t load your accounts.</p>
+              <button class="retry" onclick={loadCustomers}>Try again {@render arrowIcon()}</button>
+            </div>
+          {:else if customers.length === 0}
+            <p class="list-message" role="status">No accounts available yet.</p>
+          {:else}
+            <nav class="account-links" aria-label="Current accounts">
+              {#each customers as customer (customer.id)}
+                <a class="account-choice" href={`/dashboard?customer=${encodeURIComponent(customer.id)}`}>
+                  <span class="avatar" aria-hidden="true">{customer.firstName[0]?.toUpperCase() ?? 'A'}</span>
+                  <span class="account-name"><strong>{`${customer.firstName} ${customer.lastName}`.trim() || 'Account'}</strong>{#if customer.city}<small>{customer.city}{customer.state ? `, ${customer.state}` : ''}</small>{/if}</span>
+                  {@render arrowIcon()}
+                </a>
+              {/each}
+            </nav>
+          {/if}
+        </div>
+        </div>
       </div>
     </nav>
   </header>
@@ -155,7 +245,7 @@
 
       <div class="foreground">
         <img class="hills" src="/rolling-hills.svg" alt="" width="1440" height="340" />
-        <a class="account-link" href="/chat?topic=open-account">
+        <a class="account-link" href="/signup" aria-label="Sign up">
           I’d like to open an account <span aria-hidden="true">↑</span>
         </a>
       </div>
@@ -204,7 +294,7 @@
 
   header, main, footer { max-width: 1440px; margin-inline: auto; }
 
-  nav {
+  header > nav {
     min-height: 84px;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -431,7 +521,7 @@
   footer a { text-decoration: underline; text-underline-offset: 3px; }
 
   @media (max-width: 690px) {
-    nav { grid-template-columns: 1fr auto; gap: 12px; padding-block: 12px; min-height: 0; }
+    header > nav { grid-template-columns: 1fr auto; gap: 12px; padding-block: 12px; min-height: 0; }
     .brand { grid-area: 1 / 1; }
     .nav-actions { grid-area: 1 / 2; }
     details { grid-column: 1 / -1; padding-block: 5px; font-size: 0.9rem; }
@@ -449,7 +539,7 @@
   }
 
   @media (max-width: 390px) {
-    nav { grid-template-columns: 1fr auto; }
+    header > nav { grid-template-columns: 1fr auto; }
     .brand { grid-area: 1 / 1 / 2 / -1; }
     .nav-actions { grid-area: 2 / 2; }
     details { grid-area: 2 / 1; }
@@ -462,4 +552,19 @@
     .sign-in { padding-inline: 4px 9px; font-size: 0.85rem; }
     .profile { width: 28px; height: 28px; }
   }
+
+  .sign-in-area { position: relative; }
+  button.sign-in { color: inherit; background: transparent; font: inherit; font-weight: 650; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .account-list { position: absolute; top: calc(100% + 12px); right: 0; z-index: 10; width: min(320px, calc(100vw - 48px)); padding: 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 12px 30px #16374626; text-align: left; }
+  .account-list[hidden] { display: none; }
+  .list-heading { margin: 8px 10px 12px; color: var(--muted); font-size: 12px; }
+  .account-links { display: grid; gap: 3px; max-height: min(340px, 55dvh); overflow-y: auto; }
+  .account-choice { display: flex; align-items: center; gap: 11px; padding: 11px; border-radius: 10px; }
+  .account-choice:hover { background: var(--hover); }
+  .avatar { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; color: var(--brand); background: var(--avatar); font-weight: 650; }
+  .account-name { flex: 1; min-width: 0; }.account-name strong { display: block; font-size: 14px; }.account-name small { display: block; color: var(--muted); font-size: 12px; }
+  .account-choice :global(svg), .retry :global(svg) { width: 18px; height: 18px; flex: none; }
+  .list-message { margin: 0; padding: 10px; color: var(--muted); font-size: 13px; }.list-message p { margin: 0 0 10px; }
+  .retry { display: inline-flex; align-items: center; gap: 8px; padding: 6px 0; border: 0; color: var(--brand); background: transparent; font: inherit; cursor: pointer; }
 </style>

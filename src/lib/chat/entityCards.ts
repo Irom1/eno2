@@ -10,6 +10,9 @@ export interface TransactionCardPayload {
   date: string;
   flag: 'duplicate' | 'unusual';
   duplicateOf?: string;
+  transactionId: string;
+  accountId?: string;
+  customerId?: string;
 }
 
 export interface TransactionEntityCard {
@@ -26,6 +29,8 @@ export interface TransactionRow {
   amount: number | null;
   date: string;
   status?: string;
+  accountId?: string;
+  customerId?: string;
 }
 
 export interface TransactionListPayload {
@@ -44,6 +49,23 @@ export interface TransactionListEntityCard {
 export type EntityCard = TransactionEntityCard | TransactionListEntityCard;
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
+
+/**
+ * Deep link into the dashboard account activity view for one transaction.
+ * Returns undefined unless every id is present so cards render without a link
+ * rather than pointing at a broken target.
+ */
+export function transactionHref(
+  customerId: string | undefined,
+  accountId: string | undefined,
+  transactionId: string | undefined
+): string | undefined {
+  const customer = typeof customerId === 'string' ? customerId.trim() : '';
+  const account = typeof accountId === 'string' ? accountId.trim() : '';
+  const transaction = typeof transactionId === 'string' ? transactionId.trim() : '';
+  if (!customer || !account || !transaction) return undefined;
+  return `/dashboard?customer=${encodeURIComponent(customer)}&account=${encodeURIComponent(account)}&txn=${encodeURIComponent(transaction)}`;
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -72,6 +94,26 @@ function entityIdFor(type: string, payload: TransactionCardPayload): string {
   return `${type}|${payload.description}|${payload.date}|${amountKey}`;
 }
 
+export interface TransactionCardContext {
+  accountId?: string;
+  customerId?: string;
+  cap?: number;
+}
+
+function contextStrings(context: TransactionCardContext | undefined): {
+  accountId?: string;
+  customerId?: string;
+} {
+  const result: { accountId?: string; customerId?: string } = {};
+  if (context && typeof context.accountId === 'string' && context.accountId.trim().length > 0) {
+    result.accountId = context.accountId;
+  }
+  if (context && typeof context.customerId === 'string' && context.customerId.trim().length > 0) {
+    result.customerId = context.customerId;
+  }
+  return result;
+}
+
 /**
  * Normalize insight_anomalies findings into at most `cap` single-transaction
  * cards. Malformed payloads and entries are skipped rather than thrown on.
@@ -80,14 +122,15 @@ export function anomalyTransactionCards(
   payload: unknown,
   afterText: number,
   startId: number,
-  cap = 2
+  context?: TransactionCardContext
 ): TransactionEntityCard[] {
-  const limit = normalizeCap(cap);
+  const limit = normalizeCap(context?.cap ?? 2);
   if (limit === 0) return [];
 
   try {
     if (!isRecord(payload) || !Array.isArray(payload.findings)) return [];
     const findings = payload.findings;
+    const contextIds = contextStrings(context);
 
     const cards: TransactionEntityCard[] = [];
     const seen = new Set<string>();
@@ -102,17 +145,24 @@ export function anomalyTransactionCards(
       const description = descriptionOf(finding.description);
       const amount = amountOf(finding.amount);
       const date = dateOf(finding.date);
-      const payload: TransactionCardPayload = { description, amount, date, flag };
+      const transactionId =
+        typeof finding._id === 'string' || typeof finding._id === 'number'
+          ? String(finding._id)
+          : '';
+      const payload: TransactionCardPayload = {
+        description,
+        amount,
+        date,
+        flag,
+        transactionId,
+        ...contextIds
+      };
 
       if (typeof finding.duplicateOf === 'string') {
         payload.duplicateOf = finding.duplicateOf;
       }
 
-      const explicitId =
-        typeof finding._id === 'string' || typeof finding._id === 'number'
-          ? String(finding._id)
-          : '';
-      const entityId = explicitId || entityIdFor(type || 'unusual', payload);
+      const entityId = transactionId || entityIdFor(type || 'unusual', payload);
 
       if (seen.has(entityId)) continue;
       seen.add(entityId);
@@ -137,7 +187,10 @@ function normalizeListCap(cap: number): number {
   return Math.max(0, Math.floor(cap));
 }
 
-function transactionRowOf(item: Record<string, unknown>): TransactionRow {
+function transactionRowOf(
+  item: Record<string, unknown>,
+  contextIds: { accountId?: string; customerId?: string }
+): TransactionRow {
   const descriptionRaw = typeof item.description === 'string' ? item.description.trim() : '';
   const description = descriptionRaw || 'Transaction';
   const amount =
@@ -158,7 +211,7 @@ function transactionRowOf(item: Record<string, unknown>): TransactionRow {
       ? String(explicitId).trim()
       : `${description}|${date}|${amount === null ? 'null' : String(amount)}`;
 
-  const row: TransactionRow = { id, description, amount, date };
+  const row: TransactionRow = { id, description, amount, date, ...contextIds };
   if (typeof item.status === 'string' && item.status.trim().length > 0) {
     row.status = item.status.trim();
   }
@@ -185,13 +238,15 @@ export function transactionListCard(
   payload: unknown,
   afterText: number,
   startId: number,
-  cap = 8
+  context?: TransactionCardContext
 ): TransactionListEntityCard | null {
   try {
     const items = asItems(payload);
     if (items.length === 0) return null;
 
-    const rows = uniqueRows(items.map(transactionRowOf));
+    const contextIds = contextStrings(context);
+    const cap = context?.cap ?? 8;
+    const rows = uniqueRows(items.map((item) => transactionRowOf(item, contextIds)));
     const visible = rows.slice(0, normalizeListCap(cap));
     if (visible.length === 0) return null;
 

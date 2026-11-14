@@ -338,7 +338,16 @@ export async function runGeminiAgent({
             summary: result.ok ? summarizeToolResult(call.name, result.data) : 'Tool reported an error'
           });
           if (result.ok) {
-            emit({ type: 'insight', kind: call.name, payload: result.data });
+            const accountId =
+              typeof call.args?.accountId === 'string' && call.args.accountId.trim().length > 0
+                ? call.args.accountId
+                : '';
+            emit({
+              type: 'insight',
+              kind: call.name,
+              payload: result.data,
+              ...(accountId ? { accountId } : {})
+            });
           }
           responseParts.push({
             functionResponse: {

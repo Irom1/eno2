@@ -5,6 +5,7 @@ import {
   anomalyTransactionCards,
   mergeEntityCards,
   mergeTransactionListCards,
+  transactionHref,
   transactionListCard,
   type EntityCard,
   type TransactionEntityCard,
@@ -66,7 +67,7 @@ describe('anomalyTransactionCards', () => {
       ]),
       0,
       1,
-      3
+      { cap: 3 }
     );
 
     expect(cards.map((card) => card.payload.flag)).toEqual(['unusual', 'unusual', 'unusual']);
@@ -81,8 +82,8 @@ describe('anomalyTransactionCards', () => {
     }));
 
     expect(anomalyTransactionCards(payload(findings), 0, 1)).toHaveLength(2);
-    expect(anomalyTransactionCards(payload(findings), 0, 1, 1)).toHaveLength(1);
-    expect(anomalyTransactionCards(payload(findings), 0, 1, 0)).toEqual([]);
+    expect(anomalyTransactionCards(payload(findings), 0, 1, { cap: 1 })).toHaveLength(1);
+    expect(anomalyTransactionCards(payload(findings), 0, 1, { cap: 0 })).toEqual([]);
   });
 
   it('deduplicates by _id and by the stable key', () => {
@@ -96,6 +97,7 @@ describe('anomalyTransactionCards', () => {
     );
     expect(byId).toHaveLength(1);
     expect(byId[0]?.entityId).toBe('txn-1');
+    expect(byId[0]?.payload.transactionId).toBe('txn-1');
 
     const byKey = anomalyTransactionCards(
       payload([
@@ -159,6 +161,74 @@ describe('anomalyTransactionCards', () => {
     expect(anomalyTransactionCards({ findings: null }, 0, 1)).toEqual([]);
     expect(anomalyTransactionCards([], 0, 1)).toEqual([]);
   });
+
+  it('carries the finding _id as transactionId and attaches account context', () => {
+    const cards = anomalyTransactionCards(
+      payload([
+        {
+          _id: 'txn-apple',
+          type: 'outlier',
+          description: 'APPLE STORE',
+          amount: 1299,
+          date: '2026-11-03'
+        },
+        {
+          _id: 'txn-netflix',
+          type: 'duplicate',
+          description: 'NETFLIX.COM',
+          amount: 15.49,
+          date: '2026-11-02',
+          duplicateOf: '2026-11-01'
+        }
+      ]),
+      0,
+      1,
+      { accountId: 'acct-1', customerId: 'cust-1' }
+    );
+
+    expect(cards.map((card) => card.payload.transactionId)).toEqual([
+      'txn-apple',
+      'txn-netflix'
+    ]);
+    expect(cards[0]?.payload.accountId).toBe('acct-1');
+    expect(cards[0]?.payload.customerId).toBe('cust-1');
+    expect(cards[1]?.payload.accountId).toBe('acct-1');
+    expect(cards[1]?.payload.customerId).toBe('cust-1');
+    // Raw finding internals never leak into the card payload.
+    expect(cards[0]?.payload).not.toHaveProperty('reason');
+    expect(cards[0]?.payload).not.toHaveProperty('median');
+  });
+
+  it('keeps cards without a transaction id and omits blank context', () => {
+    const cards = anomalyTransactionCards(
+      payload([{ type: 'outlier', description: 'NO ID', amount: 5, date: '2026-11-01' }]),
+      0,
+      1,
+      { accountId: '', customerId: 'cust-1' }
+    );
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.payload.transactionId).toBe('');
+    expect(cards[0]?.payload).not.toHaveProperty('accountId');
+    expect(cards[0]?.payload.customerId).toBe('cust-1');
+  });
+});
+
+describe('transactionHref', () => {
+  it('builds the dashboard deep link with encoded ids', () => {
+    expect(transactionHref('cust-1', 'acct-2', 'txn 3')).toBe(
+      '/dashboard?customer=cust-1&account=acct-2&txn=txn%203'
+    );
+  });
+
+  it('returns undefined when any id is missing or blank', () => {
+    expect(transactionHref(undefined, 'acct-2', 'txn-3')).toBeUndefined();
+    expect(transactionHref('cust-1', undefined, 'txn-3')).toBeUndefined();
+    expect(transactionHref('cust-1', 'acct-2', undefined)).toBeUndefined();
+    expect(transactionHref('', 'acct-2', 'txn-3')).toBeUndefined();
+    expect(transactionHref('cust-1', '  ', 'txn-3')).toBeUndefined();
+    expect(transactionHref('cust-1', 'acct-2', '')).toBeUndefined();
+  });
 });
 
 function transactionCard(
@@ -171,7 +241,7 @@ function transactionCard(
     id,
     entityId: `txn-${id}`,
     kind: 'transaction',
-    payload: { description, amount: 100 + id, date: '2026-11-02', flag },
+    payload: { description, amount: 100 + id, date: '2026-11-02', flag, transactionId: `txn-${id}` },
     ...(afterText === undefined ? {} : { afterText })
   };
 }
@@ -343,9 +413,43 @@ describe('transactionListCard', () => {
 
   it('honours a custom cap', () => {
     const items = Array.from({ length: 5 }, (_, index) => ({ _id: `t-${index}` }));
-    const card = transactionListCard({ items }, 0, 1, 2);
+    const card = transactionListCard({ items }, 0, 1, { cap: 2 });
     expect(card?.payload.rows).toHaveLength(2);
     expect(card?.payload.more).toBe(3);
+  });
+
+  it('attaches account and customer context to every row', () => {
+    const card = transactionListCard(
+      {
+        items: [
+          { _id: 't-1', description: 'Coffee', amount: 4.5, transactionDate: '2026-11-01' },
+          { _id: 't-2', description: 'Rent', amount: 1800, transactionDate: '2026-11-02' }
+        ]
+      },
+      0,
+      1,
+      { accountId: 'acct-1', customerId: 'cust-1' }
+    );
+
+    expect(card?.payload.rows).toEqual([
+      {
+        id: 't-1',
+        description: 'Coffee',
+        amount: 4.5,
+        date: '2026-11-01',
+        accountId: 'acct-1',
+        customerId: 'cust-1'
+      },
+      {
+        id: 't-2',
+        description: 'Rent',
+        amount: 1800,
+        date: '2026-11-02',
+        accountId: 'acct-1',
+        customerId: 'cust-1'
+      }
+    ]);
+    expect(card?.payload.rows[0]).not.toHaveProperty('type');
   });
 
   it('returns null for empty or malformed payloads', () => {
@@ -405,6 +509,39 @@ describe('mergeTransactionListCards', () => {
     expect(capped.payload.rows).toHaveLength(2);
     expect(capped.payload.more).toBe(2);
   });
+
+  it('preserves each row id and account/customer context while merging', () => {
+    const existing = transactionListCard(
+      {
+        items: [
+          { _id: 'd-1', description: 'Payroll', amount: 100, transactionDate: '2026-11-01' },
+          { _id: 'd-2', description: 'Refund', amount: 20, transactionDate: '2026-11-02' }
+        ]
+      },
+      100,
+      1,
+      { accountId: 'checking-1', customerId: 'cust-1' }
+    );
+    const incoming = transactionListCard(
+      {
+        items: [
+          { _id: 'w-1', description: 'Coffee', amount: 4.5, transactionDate: '2026-11-03' }
+        ]
+      },
+      200,
+      2,
+      { accountId: 'checking-1', customerId: 'cust-1' }
+    );
+    if (!existing || !incoming) throw new Error('expected list cards');
+
+    const merged = mergeTransactionListCards(existing, incoming);
+    expect(merged.payload.rows.map((row) => row.id)).toEqual(['d-1', 'd-2', 'w-1']);
+    expect(
+      merged.payload.rows.every(
+        (row) => row.accountId === 'checking-1' && row.customerId === 'cust-1'
+      )
+    ).toBe(true);
+  });
 });
 
 describe('anchorTransactionCards with list cards', () => {
@@ -431,7 +568,7 @@ describe('mergeEntityCards', () => {
       id,
       entityId,
       kind: 'transaction',
-      payload: { description: entityId, amount: id, date: '', flag: 'unusual' }
+      payload: { description: entityId, amount: id, date: '', flag: 'unusual', transactionId: entityId }
     };
   }
 

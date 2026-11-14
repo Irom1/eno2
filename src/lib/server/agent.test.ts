@@ -367,6 +367,10 @@ describe("agent loop", () => {
     expect(toolResults[0]?.summary).not.toContain("(reused)");
     expect(toolResults[1]?.summary).toContain("(reused)");
     expect(events.filter((event) => event.type === "insight")).toHaveLength(1);
+    const insight = events.find(
+      (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
+    );
+    expect(insight?.accountId).toBe("acct-1");
     expect(events[events.length - 1]?.type).toBe("done");
   });
 

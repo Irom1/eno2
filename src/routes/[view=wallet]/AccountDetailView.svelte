@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { money, dateLabel } from '$lib/format';
   import {
     accountBalanceLabel,
@@ -18,6 +19,7 @@
   interface Props {
     accountId: string;
     initialTab: Tab;
+    focusTransactionId?: string;
   }
 
   interface DetailPayload {
@@ -28,7 +30,7 @@
     loans?: WalletLoan[];
   }
 
-  let { accountId, initialTab }: Props = $props();
+  let { accountId, initialTab, focusTransactionId }: Props = $props();
 
   let tab = $state<Tab>('activity');
   let filter = $state<ActivityFilter>('all');
@@ -43,6 +45,7 @@
   let selectedTransaction = $state<WalletTransaction | null>(null);
   let selectedBill = $state<WalletBill | null>(null);
   let selectedLoan = $state<WalletLoan | null>(null);
+  let highlightId = $state('');
 
   let credit = $derived(isCredit(account?.type ?? ''));
   let heroKind = $derived(
@@ -87,7 +90,12 @@
   }
 
   function signedAmount(transaction: WalletTransaction): string {
-    return `${transaction.kind === 'deposit' ? '+' : '−'}${money(transaction.amount, { decimals: 2 })}`;
+    const positive = credit ? transaction.kind === 'withdrawal' : transaction.kind === 'deposit';
+    return `${positive ? '+' : '−'}${money(transaction.amount, { decimals: 2 })}`;
+  }
+
+  function transactionLabel(kind: 'deposit' | 'withdrawal'): string {
+    return credit ? kind === 'deposit' ? 'Payment' : 'Purchase' : kind === 'deposit' ? 'Deposit' : 'Withdrawal';
   }
 
   function label(value: string | number | undefined | null): string {
@@ -125,7 +133,33 @@
     selectedTransaction = null;
     selectedBill = null;
     selectedLoan = null;
+    highlightId = '';
     void load(id);
+  });
+
+  $effect(() => {
+    const focus = focusTransactionId ?? '';
+    const currentTab = tab;
+    const isLoading = loading;
+    const rows = transactions;
+    if (!focus || currentTab !== 'activity' || isLoading) return;
+    if (!rows.some((transaction) => transaction.id === focus)) return;
+
+    let cancelled = false;
+    void tick().then(() => {
+      if (cancelled) return;
+      const row = document.querySelector<HTMLElement>(
+        `[data-transaction-id="${CSS.escape(focus)}"]`
+      );
+      if (!row) return;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+      highlightId = focus;
+    });
+
+    return () => {
+      cancelled = true;
+    };
   });
 </script>
 
@@ -146,7 +180,7 @@
         <h2>{account.nickname || account.type}</h2>
         <p class="hero-ending">•••• {ending}</p>
       </div>
-      {#if credit}
+      {#if credit || account.rewards > 0}
         <p class="hero-rewards">{account.rewards.toLocaleString('en-US')} pts</p>
       {/if}
     </div>
@@ -175,8 +209,8 @@
     <section class="tab-panel" aria-label="Activity">
       <div class="filters" aria-label="Filter transactions">
         <button aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>All</button>
-        <button aria-pressed={filter === 'deposits'} onclick={() => (filter = 'deposits')}>Deposits</button>
-        <button aria-pressed={filter === 'withdrawals'} onclick={() => (filter = 'withdrawals')}>Withdrawals</button>
+        <button aria-pressed={filter === 'deposits'} onclick={() => (filter = 'deposits')}>{credit ? 'Payments' : 'Deposits'}</button>
+        <button aria-pressed={filter === 'withdrawals'} onclick={() => (filter = 'withdrawals')}>{credit ? 'Purchases' : 'Withdrawals'}</button>
       </div>
 
       {#if groupedTransactions.length === 0}
@@ -187,15 +221,20 @@
             <h3>{dateLabel(date)}</h3>
             <div class="rows">
               {#each rows as transaction (transaction.id)}
-                <button class="tx-row" onclick={() => (selectedTransaction = transaction)}>
+                <button
+                  class="tx-row"
+                  class:highlight={highlightId === transaction.id}
+                  data-transaction-id={transaction.id}
+                  onclick={() => (selectedTransaction = transaction)}
+                >
                   <span class="tx-main">
                     <strong>{transaction.description || 'Transaction'}</strong>
-                    <small>{transaction.kind === 'deposit' ? 'Deposit' : 'Withdrawal'} · {label(transaction.status)}</small>
+                    <small>{transactionLabel(transaction.kind)} · {label(transaction.status)}</small>
                   </span>
                   <span class="tx-amount" class:deposit={transaction.kind === 'deposit'}>
                     {signedAmount(transaction)}
-                    {#if !credit && transaction.balanceAfter !== undefined}
-                      <small>Balance {money(transaction.balanceAfter, { decimals: 2 })}</small>
+                    {#if transaction.balanceAfter !== undefined}
+                      <small>{credit ? 'Balance owed' : 'Balance'} {money(transaction.balanceAfter, { decimals: 2 })}</small>
                     {/if}
                   </span>
                 </button>
@@ -212,7 +251,7 @@
         <div><dt>Nickname</dt><dd>{label(account.nickname)}</dd></div>
         <div><dt>Account number</dt><dd>•••• {ending}</dd></div>
         <div><dt>{accountBalanceLabel(account.type)}</dt><dd>{balanceText}</dd></div>
-        {#if credit}<div><dt>Rewards points</dt><dd>{account.rewards.toLocaleString('en-US')}</dd></div>{/if}
+        {#if credit || account.rewards > 0}<div><dt>Rewards points</dt><dd>{account.rewards.toLocaleString('en-US')}</dd></div>{/if}
         <div><dt>Account holder</dt><dd>{customer ? `${customer.firstName} ${customer.lastName}`.trim() : '—'}</dd></div>
         <div><dt>Address</dt><dd>{customerAddress}</dd></div>
       </dl>
@@ -267,11 +306,11 @@
     <dl class="detail-list">
       <div><dt>Date</dt><dd>{dateLabel(selectedTransaction.date)}</dd></div>
       <div><dt>Description</dt><dd>{label(selectedTransaction.description)}</dd></div>
-      <div><dt>Type</dt><dd>{selectedTransaction.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}</dd></div>
+      <div><dt>Type</dt><dd>{transactionLabel(selectedTransaction.kind)}</dd></div>
       <div><dt>Status</dt><dd>{label(selectedTransaction.status)}</dd></div>
       <div><dt>Amount</dt><dd>{signedAmount(selectedTransaction)}</dd></div>
       <div><dt>Medium</dt><dd>{label(selectedTransaction.medium)}</dd></div>
-      {#if !credit && selectedTransaction.balanceAfter !== undefined}
+      {#if selectedTransaction.balanceAfter !== undefined}
         <div><dt>Balance after</dt><dd>{money(selectedTransaction.balanceAfter, { decimals: 2 })}</dd></div>
       {/if}
       <div><dt>Transaction ID</dt><dd class="mono">{label(selectedTransaction.id)}</dd></div>
@@ -411,6 +450,10 @@
     text-align: left;
   }
   .tx-row:hover, .list-row:hover { background: var(--page); }
+  .tx-row.highlight,
+  .tx-row.highlight:hover {
+    background: color-mix(in srgb, var(--link) 22%, transparent);
+  }
   .tx-main, .list-main, .tx-amount, .list-side { display: grid; gap: 2px; min-width: 0; }
   .tx-main strong, .list-main strong { font-size: 14px; font-weight: 600; }
   .tx-main small, .list-main small, .tx-amount small, .list-side small { color: var(--muted); font-size: 11px; }

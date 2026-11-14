@@ -712,6 +712,7 @@ test.describe('chat prompts', () => {
     const deposits = {
       type: 'insight',
       kind: 'nessie_list_account_deposits',
+      accountId: 'acct-checking',
       payload: {
         count: 3,
         items: [
@@ -742,6 +743,7 @@ test.describe('chat prompts', () => {
     const withdrawals = {
       type: 'insight',
       kind: 'nessie_list_account_withdrawals',
+      accountId: 'acct-checking',
       payload: {
         count: 3,
         items: [
@@ -812,6 +814,23 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.transaction-list-card .card-head')).toHaveCount(0);
     await expect(page.locator('.transaction-list-card .badge')).toHaveCount(0);
     await expect(page.locator('.transaction-list-card .flag, .flag')).toHaveCount(0);
+
+    // Every row links to the owning account, opened in a new tab.
+    const links = lists.locator('.transaction-row a.transaction-link');
+    await expect(links).toHaveCount(rowCount);
+    const hrefs = await links.evaluateAll((elements) =>
+      elements.map((element) => ({
+        href: element.getAttribute('href') ?? '',
+        target: element.getAttribute('target'),
+        rel: element.getAttribute('rel') ?? ''
+      }))
+    );
+    for (const link of hrefs) {
+      expect(link.target).toBe('_blank');
+      expect(link.rel).toContain('noopener');
+      expect(link.href).toMatch(/^\/dashboard\?customer=[^&]+&account=acct-checking&txn=.+/);
+    }
+    await expect(page.locator('.transaction-row .open-icon').first()).toBeVisible();
 
     // The prose introduces the list; the card follows that intro inside the turn.
     const prose = (
@@ -928,16 +947,19 @@ test.describe('chat prompts', () => {
     const insight = {
       type: 'insight',
       kind: 'insight_anomalies',
+      accountId: 'acct-checking',
       payload: {
         count: 2,
         findings: [
           {
+            _id: 'txn-apple',
             type: 'outlier',
             description: 'APPLE STORE',
             amount: 1299,
             date: '2026-11-03'
           },
           {
+            _id: 'txn-netflix',
             type: 'duplicate',
             description: 'NETFLIX.COM',
             amount: 15.49,
@@ -994,6 +1016,26 @@ test.describe('chat prompts', () => {
     expect(cardsText).not.toContain('Unusual amount');
     await expect(page.locator('.transaction-card .flag, .flag')).toHaveCount(0);
     await expect(page.locator('.transaction-card[data-flag]')).toHaveCount(0);
+
+    // Each anomaly card links to its transaction with the finding _id.
+    const cardLinks = cards.locator('a.transaction-link');
+    await expect(cardLinks).toHaveCount(count);
+    const cardHrefs = await cardLinks.evaluateAll((elements) =>
+      elements.map((element) => ({
+        href: element.getAttribute('href') ?? '',
+        target: element.getAttribute('target'),
+        rel: element.getAttribute('rel') ?? ''
+      }))
+    );
+    for (const link of cardHrefs) {
+      expect(link.target).toBe('_blank');
+      expect(link.rel).toContain('noopener');
+      expect(link.href).toMatch(/^\/dashboard\?customer=[^&]+&account=acct-checking&txn=.+/);
+    }
+    expect(cardHrefs.map((link) => link.href)).toEqual([
+      expect.stringMatching(/txn=txn-apple$/),
+      expect.stringMatching(/txn=txn-netflix$/)
+    ]);
 
     // Exactly one assistant turn owns the cards; no archived card chrome.
     await expect(
@@ -1104,6 +1146,82 @@ test.describe('chat prompts', () => {
     expect(rendered, 'greeting should produce a visible assistant response').toBe(true);
 
     await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+  test('deep link opens the account activity and highlights the transaction', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+
+    const customersResponse = await page.request.get('/api/customers');
+    const { customers } = (await customersResponse.json()) as {
+      customers: Array<{ id: string; lastName: string }>;
+    };
+    const maya = customers.find((customer) => customer.lastName === 'Chen') ?? customers[0];
+    expect(maya, 'Maya should exist in the fixture customers').toBeTruthy();
+
+    const sessionResponse = await page.request.post('/api/session', {
+      data: { customerId: maya.id }
+    });
+    expect(sessionResponse.ok()).toBe(true);
+
+    const accountsResponse = await page.request.get('/api/accounts');
+    const accountsPayload = (await accountsResponse.json()) as {
+      accounts: Array<{ id: string; type: string }>;
+    };
+    const checking =
+      accountsPayload.accounts.find((account) =>
+        account.type.toLowerCase().includes('checking')
+      ) ?? accountsPayload.accounts[0];
+    expect(checking, 'a checking account should exist').toBeTruthy();
+
+    const detailResponse = await page.request.get(
+      `/api/accounts/${encodeURIComponent(checking.id)}`
+    );
+    const detail = (await detailResponse.json()) as {
+      transactions: Array<{ id: string; description: string }>;
+    };
+    const transaction = detail.transactions[0];
+    expect(transaction?.id, 'the account should have a transaction').toBeTruthy();
+
+    await page.goto(
+      `/dashboard?customer=${encodeURIComponent(maya.id)}&account=${encodeURIComponent(
+        checking.id
+      )}&txn=${encodeURIComponent(transaction.id)}`
+    );
+
+    await expect(page.locator('.view-shell')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
+    await expect(page.locator('.tab[aria-pressed="true"]')).toContainText('Activity');
+
+    const selectorId = transaction.id.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const row = page.locator(`[data-transaction-id="${selectorId}"]`);
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await expect(row).toHaveClass(/highlight/);
+
+    await page.waitForTimeout(4000);
+    await expect(row, 'the highlight persists past the old timeout').toHaveClass(/highlight/);
+    const highlightStyle = await row.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { boxShadow: style.boxShadow, background: style.backgroundColor };
+    });
+    expect(highlightStyle.boxShadow, 'no inset accent bar').not.toContain('inset');
+    expect(highlightStyle.background, 'a tinted background marks the row').not.toBe(
+      'rgba(0, 0, 0, 0)'
+    );
+
+    await expect
+      .poll(
+        async () => {
+          const box = await row.boundingBox();
+          const viewport = page.viewportSize();
+          if (!box || !viewport) return false;
+          return box.y >= -1 && box.y + box.height <= viewport.height + 1;
+        },
+        { message: 'the highlighted row is scrolled into the viewport' }
+      )
+      .toBe(true);
+
     expectNoErrors(errors);
   });
 });
