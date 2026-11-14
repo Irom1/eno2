@@ -80,4 +80,45 @@ test.describe('iPhone 13 viewport', () => {
     await expectNoHorizontalOverflow(page);
     expectNoErrors(errors);
   });
+
+  test('locks pinch/double-tap zoom and keeps 16px mobile fields', async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto('/chat');
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await expect(composer).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
+
+    const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
+    expect(viewport).toContain('width=device-width');
+    expect(viewport).toContain('maximum-scale=1');
+    expect(viewport).toContain('user-scalable=no');
+
+    const touch = await page.evaluate(() => ({
+      html: getComputedStyle(document.documentElement).touchAction,
+      body: getComputedStyle(document.body).touchAction
+    }));
+    for (const value of [touch.html, touch.body]) {
+      expect(value).toContain('pan-x');
+      expect(value).toContain('pan-y');
+    }
+
+    const gesturesPrevented = await page.evaluate(() => {
+      const results: boolean[] = [];
+      for (const name of ['gesturestart', 'gesturechange']) {
+        const event = new Event(name, { bubbles: true, cancelable: true });
+        document.dispatchEvent(event);
+        results.push(event.defaultPrevented);
+      }
+      return results;
+    });
+    expect(gesturesPrevented).toEqual([true, true]);
+
+    const fontSize = await composer.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).fontSize)
+    );
+    expect(fontSize).toBeGreaterThanOrEqual(16);
+
+    await expectNoHorizontalOverflow(page);
+    expectNoErrors(errors);
+  });
 });
