@@ -28,20 +28,27 @@ export interface Category {
 	colorDark: string;
 	/** Rough share of this category's emissions a typical swap can avoid (for nudges). */
 	reducible: number;
+	/**
+	 * Typical share of a US household's purchase-related emissions (0..1, all categories sum to 1).
+	 * Fixed slice size on the ClimateWise ring. Placeholder estimates, not taken from a source:
+	 * TODO(before judging): replace with cited figures, e.g. Jones & Kammen 2011 (CoolClimate),
+	 * https://doi.org/10.1021/es102221h, mapped onto these five categories.
+	 */
+	typicalShare: number;
 	tip: string;
 }
 
 /** Fixed order = ring order = color order (validated for light + dark). Don't reorder. */
 export const CATEGORIES: Category[] = [
-	{ id: 'transport', label: 'Travel & transport', factor: 2.87, color: '#c4562e', colorDark: '#c95436', reducible: 0.3,
+	{ id: 'transport', label: 'Travel & transport', factor: 2.87, color: '#c4562e', colorDark: '#c95436', reducible: 0.3, typicalShare: 0.27,
 	  tip: 'Swap two drives a week for the T or a bike' },
-	{ id: 'shopping', label: 'Shopping & services', factor: 0.2, color: '#7a5cc7', colorDark: '#8569d4', reducible: 0.3,
+	{ id: 'shopping', label: 'Shopping & services', factor: 0.2, color: '#7a5cc7', colorDark: '#8569d4', reducible: 0.3, typicalShare: 0.18,
 	  tip: 'Choose refurbished for your next electronics buy' },
-	{ id: 'energy', label: 'Home energy', factor: 0.85, color: '#e3a21a', colorDark: '#c98500', reducible: 0.15,
+	{ id: 'energy', label: 'Home energy', factor: 0.85, color: '#e3a21a', colorDark: '#c98500', reducible: 0.15, typicalShare: 0.2,
 	  tip: 'Enroll in a green-power plan with your utility' },
-	{ id: 'food', label: 'Food & dining', factor: 0.55, color: '#2f8f5b', colorDark: '#2f9a62', reducible: 0.2,
+	{ id: 'food', label: 'Food & dining', factor: 0.55, color: '#2f8f5b', colorDark: '#2f9a62', reducible: 0.2, typicalShare: 0.3,
 	  tip: 'Make two dinners a week plant-based' },
-	{ id: 'housing', label: 'Housing', factor: 0.1, color: '#2a6fb5', colorDark: '#3478c2', reducible: 0.05,
+	{ id: 'housing', label: 'Housing', factor: 0.1, color: '#2a6fb5', colorDark: '#3478c2', reducible: 0.05, typicalShare: 0.05,
 	  tip: 'Ask your landlord about efficiency upgrades' }
 ];
 

@@ -2,7 +2,8 @@
 	export interface RingItem {
 		id: string;
 		label: string;
-		share: number; // 0..1 — shown as a percentage in the centre while the segment is active
+		share: number; // 0..1 — the segment's share, for the page's own use
+		size: number; // relative angular size of the segment; fixed, so the ring's shape never changes
 		fill: number; // 0..1 — how far the solid fill grows outward inside the segment (0 = empty slot)
 		color: string; // any CSS color, e.g. var(--cat-transport)
 		detail: string;
@@ -11,7 +12,7 @@
 
 <script lang="ts">
 	/**
-	 * Apple-style "filled" segmented ring. Every item gets an equal, fixed slice shown as a pale slot;
+	 * Apple-style "filled" segmented ring. Every item gets a fixed slice (sized by `size`) shown as a pale slot;
 	 * a solid fill grows outward from the inner edge to show its 0..1 value.
 	 */
 	let {
@@ -43,13 +44,13 @@
 	const MIN_FILL = 0.1; // smallest visible fill for a non-zero value
 
 	let active = $derived(hovered ?? selected);
-	let activeItem = $derived(items.find((i) => i.id === active) ?? null);
 
 	const pt = (a: number, r: number) => `${(C + r * Math.sin(a)).toFixed(2)} ${(C - r * Math.cos(a)).toFixed(2)}`;
 
 	/** Annular sector with rounded corners, drawn as a path shrunk by rc then stroked 2·rc with round joins. */
 	function sector(a0: number, a1: number, rIn: number, rOut: number, side: number) {
-		const rc = Math.max(0.5, Math.min(9, (rOut - rIn) / 2 - 0.25));
+		// corner radius also limited by the inner arc, so narrow slices keep their shape instead of vanishing
+		const rc = Math.max(0.5, Math.min(9, (rOut - rIn) / 2 - 0.25, ((a1 - a0) * rIn - 2 * side) / 2 - 0.5));
 		const ro = rOut - rc;
 		const ri = rIn + rc;
 		const o0 = a0 + (side + rc) / ro;
@@ -66,10 +67,11 @@
 	}
 
 	let segs = $derived.by(() => {
-		const sweep = (Math.PI * 2) / Math.max(1, items.length);
-		return items.map((i, k) => {
-			const a0 = k * sweep;
-			const a1 = a0 + sweep;
+		const total = items.reduce((s, i) => s + i.size, 0) || 1;
+		let a = 0;
+		return items.map((i) => {
+			const a0 = a;
+			const a1 = (a += (i.size / total) * Math.PI * 2);
 			const f = i.fill > 0 ? Math.max(MIN_FILL, Math.min(1, i.fill)) : 0;
 			const fillOut = R_IN + INSET + (T - INSET * 2) * f;
 			return {
@@ -105,9 +107,10 @@
 			</g>
 		{/each}
 	</svg>
-	<div class="center" aria-live="polite">
-		<strong>{activeItem ? `${Math.round(activeItem.share * 100)}%` : centerValue}</strong>
-		<small>{activeItem ? activeItem.label : centerUnit}</small>
+	<!-- The centre always shows the headline value; segment details live outside the ring -->
+	<div class="center">
+		<strong>{centerValue}</strong>
+		<small>{centerUnit}</small>
 	</div>
 </div>
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mergeTransactions } from '../server/accounts';
 import { buildDemoTransactions } from '../server/nessie/seedTransactions';
-import { buildReport, classify, fromNessiePurchase, scoreFor, tierFor, US_AVG_TONNES } from './emissions';
+import { buildReport, CATEGORIES, classify, fromNessiePurchase, scoreFor, tierFor, US_AVG_TONNES } from './emissions';
 
 // Raw Nessie deposits/withdrawals, run through the same normalizer /api/accounts/:id uses,
 // so these tests break if that endpoint's transaction shape ever drifts from what ClimateWise reads.
@@ -75,6 +75,10 @@ describe('ClimateWise report', () => {
   it('counts flights as carbon-heavy travel', () => {
     expect(classify('DELTA AIR LINES')).toMatchObject({ category: 'transport', rating: 'heavy', sub: 'Flights' });
     expect(classify('MARRIOTT HOTEL').sub).toBe('Hotels');
+  });
+
+  it('gives the ring slice sizes that add up to the whole ring', () => {
+    expect(CATEGORIES.reduce((s, c) => s + c.typicalShare, 0)).toBeCloseTo(1, 6);
   });
 
   it('maps raw Nessie purchases', () => {
