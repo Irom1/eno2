@@ -2,6 +2,7 @@
   import { money, titleCase } from '$lib/format.js';
   import { accountHref, type LoanEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
+  import MoneyText from './primitives/MoneyText.svelte';
   import OpenIcon from './OpenIcon.svelte';
   import StatusChip from './StatusChip.svelte';
 
@@ -15,9 +16,6 @@
   const typeText = $derived(titleCase(payload.type));
   const balanceText = $derived(
     payload.balance === null ? '' : money(payload.balance, { decimals: 2 })
-  );
-  const paymentText = $derived(
-    payload.monthlyPayment === null ? '' : money(payload.monthlyPayment, { decimals: 2 })
   );
   const href = $derived(accountHref(payload.customerId, payload.accountId));
   const label = $derived(`Loan, ${typeText}${balanceText ? `, ${balanceText}` : ''}`);
@@ -36,11 +34,11 @@
     </span>
   </div>
   <div class="loan-figures">
-    {#if balanceText}
-      <span class="balance">{balanceText}</span>
+    {#if payload.balance !== null}
+      <span class="balance"><MoneyText amount={payload.balance} decimals={2} /></span>
     {/if}
-    {#if paymentText}
-      <span class="payment">{paymentText}/mo</span>
+    {#if payload.monthlyPayment !== null}
+      <span class="payment"><MoneyText amount={payload.monthlyPayment} decimals={2} />/mo</span>
     {/if}
   </div>
 {/snippet}

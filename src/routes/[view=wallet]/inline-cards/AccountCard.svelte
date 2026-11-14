@@ -2,6 +2,7 @@
   import { money, titleCase } from '$lib/format.js';
   import { accountHref, type AccountEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
+  import MoneyText from './primitives/MoneyText.svelte';
   import OpenIcon from './OpenIcon.svelte';
 
   interface Props {
@@ -40,8 +41,8 @@
     {/if}
   </div>
   <div class="account-figures">
-    {#if balanceText}
-      <span class="balance">{balanceText}</span>
+    {#if payload.balance !== null}
+      <span class="balance"><MoneyText amount={payload.balance} decimals={2} /></span>
     {/if}
     {#if rewardsText}
       <span class="rewards">{rewardsText}</span>

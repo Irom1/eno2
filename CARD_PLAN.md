@@ -2,7 +2,7 @@
 
 Canonical inventory and plan for every chat card and inline primitive in Eno 2.0.
 
-Status: Phase 0 shipped (legacy cards archived, chat is prose-first). Phase 2 and the Phase 3 primitive cards are largely shipped: inline single-transaction cards, a merged transaction-list card, the spending-by-category pie chart, single Bill/Account cards, single Loan/Location/RecurringCharge cards, and the Reward/Goal/CashflowPoint cards are live, along with the shared `EntityKeyValue` primitive. Merchant and profile cards are now shipped too; `present_card` remains planned.
+Status: Phase 0 shipped (legacy cards archived, chat is prose-first). Phase 2 and the Phase 3 primitive cards are largely shipped: inline single-transaction cards, a merged transaction-list card, the spending-by-category pie chart, single Bill/Account cards, single Loan/Location/RecurringCharge cards, and the Reward/Goal/CashflowPoint cards are live, along with the shared `EntityKeyValue` primitive and the shared primitives library (`primitives.ts` plus `inline-cards/primitives/`). Merchant and profile cards are now shipped too; `present_card` remains planned.
 
 See `GOAL_PLAN.md` for the active implementation checklist; this document remains the canonical detail and design reference.
 
@@ -142,27 +142,30 @@ Archived legacy cards in `src/lib/chat/archive/legacy-cards/` (18 files, archive
 
 `AccountCard.svelte`, `AccountListCard.svelte`, `AnomaliesCard.svelte`, `BillsCard.svelte`, `CashflowCard.svelte`, `ChatCardRenderer.svelte`, `ChatCardShell.svelte`, `CustomerCard.svelte`, `FallbackCard.svelte`, `GoalCard.svelte`, `LoansCard.svelte`, `LocationsCard.svelte`, `MerchantsCard.svelte`, `README.md`, `RecurringCard.svelte`, `RewardsCard.svelte`, `SpendingCard.svelte`, `TransactionsCard.svelte`.
 
-## 6. Shared primitive components (planned)
+## 6. Shared primitive components (shipped)
 
-Reusable display primitives keep cards small and consistent. None of these introduce editorial interpretation.
+Reusable display primitives keep cards small and consistent. None of these introduce editorial interpretation. Pure formatting helpers live in `src/lib/chat/primitives.ts`; Svelte components live in `src/routes/[view=wallet]/inline-cards/primitives/`.
 
 | Primitive | Purpose | Status | Notes |
 | --- | --- | --- | --- |
-| `Money` / `SignedAmount` | Currency formatting and sign/colour | Current via `money` in `lib/format.ts` | Promote to a component when a second card needs it. |
-| `DateLabel` / `RelativeDate` | Consistent date display | Current via `dateLabel` | Component planned. |
-| `StatusChip` | Status text | Shipped | Factual state only, never a reason tag. Used by `BillCard`. |
-| `AccountTag` | Account name/mask | Planned | Reuse across transaction, bill, loan cards. |
-| `EntityKeyValue` | Label/value rows | Shipped | One compact row; theme-aware and tabular. Used by `GoalCard` and `CashflowPointCard`. |
-| `ProgressMeter` | Goal or coverage progress | Planned | Factual meter only. |
-| `ShareBar` | Single share of a whole | Planned | Lighter alternative to the pie. |
-| `DeltaBadge` | Month-over-month difference | Planned | Value and direction only. |
-| `Sparkline` | Basic inline series | Planned | One series; no annotation text. |
-| `InlineAction` | Deep link / “open” affordance | Current pattern (`OpenIcon`) | Generalize when a second action exists. |
-| `TruncationFooter` | “N more” row | Current in `TransactionListCard` | Extract for other capped lists. |
-| `InlineEmpty` | Honest empty state | Planned | Prefer prose-only when there is no data. |
-| `ExpandRow` | Reveal additional rows | Planned | Client-only, no refetch. |
-| `DefinitionHint` | Small field explanation | Planned | Avoid unless necessary; no advice. |
-| `BufferedPlaceholder` | Space reservation while a card is buffered | Planned | Optional; current UI simply omits the card. |
+| `MoneyText` / `signedMoney` | Currency formatting and sign display | Shipped | Component plus pure helper. Used by `TransactionCard`, `TransactionListCard`, `BillCard`, `LoanCard`, `RecurringChargeCard`, `CashflowPointCard`, and `AccountCard`. No colour-only sign meaning. |
+| `DateText` / `relativeDateLabel` | Consistent absolute and relative dates | Shipped | Component plus pure helper. Used by `TransactionCard`, `TransactionListCard`, `BillCard`, and `RecurringChargeCard`. |
+| `StatusChip` | Status text | Shipped | Factual state only, never a reason tag. Used by `BillCard` and `LoanCard`. |
+| `AccountTag` | Account name/mask | Shipped (library-only) | Compact `nickname / type · masked`; no link. |
+| `EntityKeyValue` | Label/value rows | Shipped | One compact row; theme-aware and tabular. Optional children let `MoneyText` supply the value (`CashflowPointCard`). Used by `GoalCard` and `CashflowPointCard`. |
+| `ProgressMeter` | Goal or coverage progress | Shipped | Factual meter only; `role="progressbar"` with min/max/now. Used by `GoalCard`. |
+| `ShareBar` | Single share of a whole | Shipped (library-only) | Lighter alternative to the pie; no editorial copy. |
+| `DeltaBadge` | Month-over-month difference | Shipped (library-only) | Value and direction only, with a textual direction for accessibility. |
+| `Sparkline` | Basic inline series | Shipped (library-only) | One series; `role="img"` with a label; no annotation text. |
+| `InlineAction` | Deep link / “open” affordance | Shipped (library-only) | Anchor styling; adds `target="_blank"` and `rel="noopener noreferrer"` when external. |
+| `TruncationFooter` | “N more” row | Shipped | Extracted from `TransactionListCard` and used there. |
+| `InlineEmpty` | Honest empty state | Shipped (library-only) | Muted row only; prefer prose-only when there is no data. |
+| `ExpandRow` | Reveal additional rows | Shipped (library-only) | Native `<details>/<summary>`; client-only, no refetch. |
+| `DefinitionHint` | Small field explanation | Shipped (library-only) | `<details>` hint; no advice. |
+| `BufferedPlaceholder` | Space reservation while a card is buffered | Shipped (library-only) | Optional subtle skeleton; current UI still omits buffered cards. |
+
+The principle stays explicit: primitives are data-only. They carry no titles, rankings, reasons, recommendations, or advice; those belong in the assistant prose.
+
 
 ## 7. Data model and inference
 
@@ -318,6 +321,7 @@ Active components and UI:
 
 - `src/routes/[view=wallet]/inline-cards/CardFrame.svelte`
 - `src/routes/[view=wallet]/inline-cards/OpenIcon.svelte`
+- `src/routes/[view=wallet]/inline-cards/primitives/` — `MoneyText.svelte`, `DateText.svelte`, `AccountTag.svelte`, `ProgressMeter.svelte`, `ShareBar.svelte`, `DeltaBadge.svelte`, `Sparkline.svelte`, `InlineAction.svelte`, `TruncationFooter.svelte`, `InlineEmpty.svelte`, `ExpandRow.svelte`, `DefinitionHint.svelte`, `BufferedPlaceholder.svelte`
 - `src/routes/[view=wallet]/inline-cards/TransactionCard.svelte`
 - `src/routes/[view=wallet]/inline-cards/TransactionListCard.svelte`
 - `src/routes/[view=wallet]/inline-cards/PieChartCard.svelte`
@@ -338,6 +342,8 @@ Active components and UI:
 
 Client libraries:
 
+- `src/lib/chat/primitives.ts`
+- `src/lib/chat/primitives.test.ts`
 - `src/lib/chat/entityCards.ts`
 - `src/lib/chat/entityCards.test.ts`
 - `src/lib/chat/inline.ts`

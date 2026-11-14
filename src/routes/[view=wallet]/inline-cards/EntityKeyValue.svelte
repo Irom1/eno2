@@ -1,15 +1,24 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
+
   interface Props {
     label: string;
-    value: string;
+    value?: string;
+    children?: Snippet;
   }
 
-  let { label, value }: Props = $props();
+  let { label, value = '', children }: Props = $props();
 </script>
 
 <div class="entity-key-value">
   <span class="key">{label}</span>
-  <span class="value">{value}</span>
+  <span class="value">
+    {#if children}
+      {@render children()}
+    {:else}
+      {value}
+    {/if}
+  </span>
 </div>
 
 <style>

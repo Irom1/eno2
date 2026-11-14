@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { dateLabel, money } from '$lib/format.js';
+  import { money } from '$lib/format.js';
   import type { RecurringChargeEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
+  import DateText from './primitives/DateText.svelte';
+  import MoneyText from './primitives/MoneyText.svelte';
 
   interface Props {
     card: RecurringChargeEntityCard;
@@ -18,7 +20,6 @@
       ? `Seen in ${payload.monthsSeen} ${payload.monthsSeen === 1 ? 'month' : 'months'}`
       : ''
   );
-  const lastText = $derived(payload.lastDate ? `Last ${dateLabel(payload.lastDate)}` : '');
   const label = $derived(
     `Recurring charge, ${payload.description}${amountText ? `, ${amountText}` : ''}`
   );
@@ -29,13 +30,13 @@
     <div class="description">{payload.description}</div>
     <div class="recurring-meta">
       {#if amountText}
-        <span class="amount">{amountText}</span>
+        <span class="amount"><MoneyText amount={payload.averageAmount} decimals={2} /></span>
       {/if}
       {#if monthsText}
         <span class="months">{monthsText}</span>
       {/if}
-      {#if lastText}
-        <span class="last">{lastText}</span>
+      {#if payload.lastDate}
+        <span class="last">Last <DateText value={payload.lastDate} /></span>
       {/if}
     </div>
   </div>

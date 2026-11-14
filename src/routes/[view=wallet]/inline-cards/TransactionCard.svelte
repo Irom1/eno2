@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { dateLabel, money } from '$lib/format.js';
+  import { money } from '$lib/format.js';
   import { transactionHref, type TransactionEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
+  import DateText from './primitives/DateText.svelte';
+  import MoneyText from './primitives/MoneyText.svelte';
   import OpenIcon from './OpenIcon.svelte';
 
   interface Props {
@@ -13,7 +15,6 @@
   let { card, inline = false }: Props = $props();
 
   const payload = $derived(card.payload);
-  const dateText = $derived(payload.date ? dateLabel(payload.date) : '');
   const amountText = $derived(
     payload.amount === null ? '' : money(payload.amount, { decimals: 2 })
   );
@@ -28,13 +29,13 @@
 {#snippet content(linked: boolean)}
   <div class="details">
     <span class="description">{payload.description}</span>
-    {#if dateText}
-      <span class="meta">{dateText}</span>
+    {#if payload.date}
+      <span class="meta"><DateText value={payload.date} /></span>
     {/if}
   </div>
   <span class="side">
-    {#if amountText}
-      <span class="amount">{amountText}</span>
+    {#if payload.amount !== null}
+      <span class="amount"><MoneyText amount={payload.amount} decimals={2} /></span>
     {/if}
     {#if linked}
       <OpenIcon />
