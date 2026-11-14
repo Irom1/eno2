@@ -65,6 +65,9 @@ describe("buildSystemInstruction", () => {
       'Prefer the smallest primitive card(s) needed, and put the novel insight, comparison, and tip in the prose.'
     );
     expect(instruction).toContain(
+      'For a single bill or account, use one primitive card; never render an account list. Leave totals, coverage, and account comparisons in the prose.'
+    );
+    expect(instruction).toContain(
       'Do not ask for or describe a broad “everything” card.'
     );
     expect(instruction).toContain(

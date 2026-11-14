@@ -2,7 +2,9 @@
 
 Canonical inventory and plan for every chat card and inline primitive in Eno 2.0.
 
-Status: Phase 0 shipped (legacy cards archived, chat is prose-first). Phase 2 is partially shipped: inline single-transaction cards, a merged transaction-list card, and the spending-by-category pie chart are live. Bill, account, loan, and remaining cards are planned.
+Status: Phase 0 shipped (legacy cards archived, chat is prose-first). Phase 2 is partially shipped: inline single-transaction cards, a merged transaction-list card, the spending-by-category pie chart, and single Bill/Account cards are live. Loan and the remaining Phase 3 cards are planned.
+
+See `GOAL_PLAN.md` for the active implementation checklist; this document remains the canonical detail and design reference.
 
 Code directories:
 
@@ -22,11 +24,12 @@ Shipped:
 
 - Phase 0: legacy broad cards archived; chat is prose-only.
 - Phase 2 first slice: `TransactionCard` for anomaly findings (1–2 per turn), `TransactionListCard` for multi-transaction answers (max 8 rows plus “N more”), and the spending pie chart for `insight_spending_breakdown`.
+- Phase 2 second slice: `BillCard` (one largest upcoming bill from `insight_upcoming_bills`) and `AccountCard` (exactly one account; never an account list), plus the shared `StatusChip` primitive.
 
 In progress / next:
 
-- `BillCard` and `AccountCard`.
-- Wiring remaining insight families to a primitive card where a card genuinely helps.
+- Wiring remaining insight families (loan, location, recurring, reward, goal, cashflow, merchant, profile) to a primitive card where a card genuinely helps.
+- `present_card`, ownership validation, the `card` SSE event, and the v2 flag.
 
 ## 2. Design principles
 
@@ -58,15 +61,15 @@ Server (`src/routes/api/chat/+server.ts` → `src/lib/server/agent.ts`):
 Client (`src/routes/[view=wallet]/ChatPanel.svelte`):
 
 1. The SSE parser appends text deltas and pushes every insight into the legacy `message.cards` collection (kept for follow-ups).
-2. Selected insights also build normalized `EntityCard` values in `message.inlineCards`; built-in builders cover anomalies, transaction lists, and spending pies.
+2. Selected insights also build normalized `EntityCard` values in `message.inlineCards`; built-in builders cover anomalies, transaction lists, spending pies, single bills, and single accounts.
 3. Rendering derives, in order:
-   - `anchorTransactionCards(text, cards)` re-anchors transaction cards after their merchant/payee mention.
+   - `anchorEntityCards(text, cards)` re-anchors transaction cards after their merchant mention, bill cards after their payee, and account cards after their nickname (or type).
    - `revealInlineCards(cards, textLength, pending)` buffers cards until the streamed text reaches their `afterText` offset.
    - `inlineBlocks(text, readyCards)` splits prose into text and card blocks, never splitting a markdown code/bold/italic span.
 4. Text blocks render as markdown bubbles; card blocks render the matching component.
 5. When prose is empty, `ensureExplanation` supplies a deterministic sentence for anomalies and transaction lists.
 
-Deep links: `transactionHref` builds `/dashboard?customer=…&account=…&txn=…`; the dashboard reads those query parameters and scrolls/highlights the matching row. Cards without complete ids render without a link.
+Deep links: `transactionHref` builds `/dashboard?customer=…&account=…&txn=…`; `accountHref` builds `/dashboard?customer=…&account=…` and opens the account Activity view. The dashboard reads those query parameters and scrolls/highlights the matching row. Cards without complete ids render without a link.
 
 Buffering details:
 
@@ -84,13 +87,16 @@ Buffering details:
 | `src/routes/[view=wallet]/inline-cards/TransactionCard.svelte` | `card: TransactionEntityCard`, `inline?: boolean` | Shipped | Single merchant/date/amount. `inline` mode renders a compact row inside `.bubble.assistant.inline-transactions`; no flags or reasons. Deep link. |
 | `src/routes/[view=wallet]/inline-cards/TransactionListCard.svelte` | `card: TransactionListEntityCard` | Shipped | Multiple rows, cap 8 plus “N more”; every row deep-links; standalone `CardFrame`. |
 | `src/routes/[view=wallet]/inline-cards/PieChartCard.svelte` | `card: SpendingPieEntityCard` | Shipped | Filled SVG pie plus period and category/share/amount legend. Primitive: no editorial labels, rankings, or recommendation text. Top 5 plus `Other`. |
+| `src/routes/[view=wallet]/inline-cards/StatusChip.svelte` | `status: string` | Shipped | Small factual status chip (`pending`, `paid`, `overdue`, …). No reason or interpretation; theme-aware and never colour-only. |
+| `src/routes/[view=wallet]/inline-cards/BillCard.svelte` | `card: BillEntityCard` | Shipped | One bill: payee, due date, amount, status chip. Optional deep link to the owning account. No coverage, total, or recommendation text. |
+| `src/routes/[view=wallet]/inline-cards/AccountCard.svelte` | `card: AccountEntityCard` | Shipped | One account: nickname, type, masked number, balance, rewards when positive. Whole card deep-links to the account view. Never an account list. |
 | `src/routes/[view=wallet]/ChatPanel.svelte` | `open`, `customerId`, `initialPrompt`, `onClose`, `canSend`, `variant` | Shipped | Bubbles, streaming text, inline blocks, thinking checklist, loading line, follow-ups, send/abort lifecycle. |
 | `src/lib/chat/thinking.ts` | `initialThinking`, `pushThinkingStep`, `friendlyToolLabel`, `THINKING_COMPOSING` | Shipped | Pure, non-technical thinking-step state machine. |
 | `src/lib/components/EnoThinking.svelte` | `active?: boolean`, `variant?: EnoVariant`, `size?: number` | Shipped | Eno avatar; pulses while active. |
 | `src/routes/[view=wallet]/FollowUps.svelte` | `suggestions`, `disabled?`, `onSelect` | Shipped | Suggested follow-up rows with arrows. |
 | `src/lib/components/Eno.svelte` | `variant?`, `size?`, `alt?`, `class?` | Shipped | Static Eno image used by layout/empty states. |
 | `src/lib/chat/inline.ts` | `revealInlineCards`, `inlineBlocks` | Shipped | Pending buffer, markdown-safe anchors, text/card block split. |
-| `src/lib/chat/entityCards.ts` | types plus `anomalyTransactionCards`, `transactionListCard`, `mergeTransactionListCard`, `spendingPieCard`, `anchorTransactionCards`, `mergeEntityCards`, `transactionHref` | Shipped | Pure, client-safe normalization and placement helpers. |
+| `src/lib/chat/entityCards.ts` | types plus `anomalyTransactionCards`, `transactionListCard`, `mergeTransactionListCard`, `spendingPieCard`, `billCard`, `accountCard`, `anchorEntityCards`, `mergeEntityCards`, `transactionHref`, `accountHref` | Shipped | Pure, client-safe normalization and placement helpers. |
 
 Avatar/layout note: the assistant turn uses `EnoThinking` beside `.assistant-content`; chat bubbles and standalone cards are siblings inside that content column. The pie and list cards are intentionally standalone `CardFrame` cards, never pulled into the transaction bubble.
 
@@ -101,8 +107,8 @@ Avatar/layout note: the assistant turn uses `EnoThinking` beside `.assistant-con
 | `TransactionCard` | `transaction` | `description`, `amount`, `date`, `flag` (inference only), `duplicateOf?`, `transactionId`, `accountId?`, `customerId?` | `insight_anomalies` findings | Inline in `.bubble.assistant.inline-transactions` or standalone | Shipped | `inline-cards/TransactionCard.svelte`; `entityCards.ts` | No reason chip; prose explains why it stands out. Deep-links when ids exist. |
 | `TransactionListCard` | `transaction-list` | `rows[]` (`id`, `description`, `amount`, `date`, `status?`, `accountId?`, `customerId?`), `more` | Deposit/withdrawal transaction tools | Standalone `CardFrame` | Shipped | `inline-cards/TransactionListCard.svelte`; `entityCards.ts` | Deposits and withdrawals in one turn merge into one list. Cap 8, “N more”. |
 | `SpendingPieCard` / pie | `spending-pie` | `period`, `total`, `slices[]` (`label`, `amount`, `share`) | `insight_spending_breakdown` | Standalone `CardFrame` | Shipped in this pass | `inline-cards/PieChartCard.svelte`; `spendingPieCard` | Latest complete month; top 5 plus `Other`; period plus percentage legend; no editorial analysis. |
-| `BillCard` | `bill` | `payee`, `amount`, `dueDate`, `status`, `covered` | `insight_upcoming_bills`, bill tools | Standalone | Planned | — | One bill per card; coverage statement stays in prose. |
-| `AccountCard` | `account` | `nickname`, `type`, `maskedNumber`, `balance?`, `rewards?` | Account tools | Standalone | Planned | — | One account; never an all-accounts dump. |
+| `BillCard` | `bill` | `billId`, `payee`, `amount` (nullable), `dueDate`, `status?`, `accountId?`, `customerId?` | `insight_upcoming_bills`, bill tools | Standalone `CardFrame` | Shipped in this pass | `inline-cards/BillCard.svelte`; `billCard` | One bill per card: the largest amount, earliest due date on a tie, matching the deterministic prose. Coverage and totals stay in prose. Optional deep link. |
+| `AccountCard` | `account` | `accountId`, `nickname`, `type`, `maskedNumber`, `balance` (nullable), `rewards` (nullable), `customerId?` | Account tools | Standalone `CardFrame` | Shipped in this pass | `inline-cards/AccountCard.svelte`; `accountCard` | Exactly one account. `asItems` must yield one row; zero or many returns null so prose answers. Whole card deep-links. |
 | `LoanCard` | `loan` | `type`, `balance`, `monthlyPayment`, `status` | Loan tools | Standalone | Planned | — | One loan. |
 | `SpendingCategoryCard` | `category` | `name`, `amount`, `share`, `period` | Spending breakdown | Standalone | Planned; represented by the pie | `spendingPieCard` | The old single-category card is superseded by the primitive pie (period + category shares). A “top category” claim belongs in prose. |
 | `LocationCard` | `location` | `name`, `address`, `distance` | ATM/branch tools | Standalone | Planned | — | One ATM or branch. |
@@ -133,7 +139,7 @@ Reusable display primitives keep cards small and consistent. None of these intro
 | --- | --- | --- | --- |
 | `Money` / `SignedAmount` | Currency formatting and sign/colour | Current via `money` in `lib/format.ts` | Promote to a component when a second card needs it. |
 | `DateLabel` / `RelativeDate` | Consistent date display | Current via `dateLabel` | Component planned. |
-| `StatusChip` | Status text | Planned | Not a reason tag; only factual state. |
+| `StatusChip` | Status text | Shipped | Factual state only, never a reason tag. Used by `BillCard`. |
 | `AccountTag` | Account name/mask | Planned | Reuse across transaction, bill, loan cards. |
 | `EntityKeyValue` | Label/value rows | Planned | Generic details grid. |
 | `ProgressMeter` | Goal or coverage progress | Planned | Factual meter only. |
@@ -161,21 +167,26 @@ interface EntityCardBase {
 type EntityCard =
   | (EntityCardBase & { kind: 'transaction'; payload: TransactionCardPayload })
   | (EntityCardBase & { kind: 'transaction-list'; payload: TransactionListPayload })
-  | (EntityCardBase & { kind: 'spending-pie'; payload: SpendingPiePayload });
+  | (EntityCardBase & { kind: 'spending-pie'; payload: SpendingPiePayload })
+  | (EntityCardBase & { kind: 'bill'; payload: BillCardPayload })
+  | (EntityCardBase & { kind: 'account'; payload: AccountCardPayload });
 ```
 
 - Payloads are whitelisted view models. Raw tool records never pass through.
-- `entityId` identifies the entity within a turn: a transaction id or stable key, the single `transaction-list`, or `spending-pie`.
+- `entityId` identifies the entity within a turn: a transaction id or stable key, the single `transaction-list`, `spending-pie`, the bill id (or a stable `bill|payee|dueDate|amount` key), or `account:<id>`.
 - `afterText` is the pending buffer/anchor contract; missing offsets render at end-of-text.
-- Anomaly cards dedupe by `entityId` and cap at 1–2. A turn keeps one transaction list and one pie, replacing rather than stacking duplicates.
+- Anomaly cards dedupe by `entityId` and cap at 1–2. A turn keeps one transaction list, one pie, one bill, and one account card, replacing rather than stacking duplicates.
+- Bill and account cards are single-entity by construction: one largest bill, and only a payload whose `asItems` resolves to exactly one account. An all-accounts list renders no card.
 
 Inference:
 
 - **Preferred (planned):** a read-only `present_card({ kind, id })` tool. The model resolves the entity through normal tools, then declares it for display. The server validates ownership against the session customer and emits a normalized `card` SSE event with `afterText` = current text length.
 - **Fallback (current):** deterministic client-side builders from this turn's insights:
-  - `insight_anomalies` → transaction cards (`anomalyTransactionCards`), then `anchorTransactionCards` re-anchors each after its merchant mention.
+  - `insight_anomalies` → transaction cards (`anomalyTransactionCards`), then `anchorEntityCards` re-anchors each after its merchant mention.
   - Deposit/withdrawal tools → one merged transaction list (`transactionListCard` + `mergeTransactionListCards`).
   - `insight_spending_breakdown` → one pie (`spendingPieCard`), choosing the latest complete month, top 5 categories, and an `Other` rollup.
+  - `insight_upcoming_bills` → one bill (`billCard`), choosing the largest amount and earliest due date on a tie, then anchoring after the payee mention.
+  - Single-account payloads → one account card (`accountCard`), anchored after the nickname (or type). An account list returns null; prose answers.
 - Selection priority when `present_card` lands: explicit references → query intent → recency, capped at 1–2. If nothing scores above threshold, emit no card.
 - Never emit a broad “everything” card. Prefer prose over an uncertain card.
 
@@ -185,7 +196,7 @@ Inference:
 | --- | --- | --- | --- | --- |
 | Phase 0 | Archive legacy cards; chat prose-only; add plan | Shipped | App builds; no app import of archived components | Revert commit |
 | Phase 1 | `EntityCard` schema, per-kind normalizers, `present_card`, ownership validation, `card` SSE event, flag (`off` / `v2`) | Partially in place as client-side builders; tool/flag deferred | Flag off matches current behavior; flag v2 emits events with a renderer stub | Flag to `off` |
-| Phase 2 | First cards: `TransactionCard`, `TransactionListCard`, `SpendingPieCard`; next `BillCard`, `AccountCard` | Transaction cards, transaction list, and pie shipped; bills/accounts planned | Cards appear inline with correct contrast; 1–2 per turn; no fallback | Revert slice |
+| Phase 2 | First cards: `TransactionCard`, `TransactionListCard`, `SpendingPieCard`, `BillCard`, `AccountCard` | Transaction cards, transaction list, pie, bill, and account shipped; remaining Phase 3 cards planned | Cards appear inline with correct contrast; 1–2 per turn; no fallback; bills/accounts show one entity only | Revert slice |
 | Phase 3 | Remaining cards: loan, location, recurring, reward, goal, cashflow | Planned | Each kind is primitive, accessible, and theme-safe | Revert slice |
 | Phase 4 | Remove legacy registry/relevance coupling; migrate follow-ups to `EntityCard`; rewrite stale E2E card assertions | Planned | No legacy card-kind rendering paths remain | Revert commit |
 
@@ -196,6 +207,7 @@ Phase 2 slice refinements already shipped:
 - A compact loading line remains visible for the whole pending turn.
 - Deposit and withdrawal results merge into one list card, capped at 8 visible rows with “N more”.
 - The spending pie is a standalone primitive: latest complete month, top 5 plus `Other`, period plus percentage legend, no analysis inside the card.
+- Bill and account cards are single-entity primitives: one largest bill, one account only. `insight_upcoming_bills` never renders a bills list; an all-accounts payload renders no card. Totals, coverage, and comparisons stay in the prose.
 
 ## 9. Tests and verification
 
@@ -204,13 +216,17 @@ Unit (`vitest`):
 - Normalizers: valid/invalid payloads, field whitelisting, ids, caps, dedupe, fallbacks.
 - Placement and buffering: `afterText` order, markdown-span safety, pending vs done reveal.
 - Pie: latest complete month selection, top-5 plus `Other`, share normalization, empty/malformed payload, period formatting, non-transaction cards untouched by transaction anchoring and merging.
-- Prompt: primitive-card language and the spending intro/takeaway rule.
+- Bill: largest selection, earliest-due tie-break, field whitelist, missing/zero/negative amount handling, empty payee, malformed payloads, stable id fallback, payee anchoring.
+- Account: single row vs list (list returns null), id/type requirements, masking, rewards/balance normalization, context customer id, `accountHref`, nickname/type anchoring.
+- Prompt: primitive-card language, the single-bill/single-account rule, and the spending intro/takeaway rule.
 
 E2E (`e2e/chat.spec.ts`, Playwright; current policy forbids running it):
 
 - Text → card → text ordering in a real turn.
 - One entity only; no fallback or legacy `.chat-card`.
 - Pie renders `.pie-chart-card`, wedge paths, a category legend, and a period; no editorial labels.
+- Bill prompts render one `.bill-card` with payee, amount, due date, and status, and no legacy `.chat-card`.
+- Account-list prompts render no account list; a single-account payload renders `.account-card` with a deep link.
 - Buffered cards appear only after the prose reaches their anchor.
 - Theme contrast, reduced motion, accessibility names, and deep-link navigation.
 
@@ -262,6 +278,9 @@ Active components and UI:
 - `src/routes/[view=wallet]/inline-cards/TransactionCard.svelte`
 - `src/routes/[view=wallet]/inline-cards/TransactionListCard.svelte`
 - `src/routes/[view=wallet]/inline-cards/PieChartCard.svelte`
+- `src/routes/[view=wallet]/inline-cards/StatusChip.svelte`
+- `src/routes/[view=wallet]/inline-cards/BillCard.svelte`
+- `src/routes/[view=wallet]/inline-cards/AccountCard.svelte`
 - `src/routes/[view=wallet]/ChatPanel.svelte`
 - `src/routes/[view=wallet]/FollowUps.svelte`
 - `src/lib/components/Eno.svelte`

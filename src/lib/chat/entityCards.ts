@@ -66,10 +66,48 @@ export interface SpendingPieEntityCard {
   afterText?: number;
 }
 
+export interface BillCardPayload {
+  billId: string;
+  payee: string;
+  amount: number | null;
+  dueDate: string;
+  status?: string;
+  accountId?: string;
+  customerId?: string;
+}
+
+export interface BillEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'bill';
+  payload: BillCardPayload;
+  afterText?: number;
+}
+
+export interface AccountCardPayload {
+  accountId: string;
+  nickname: string;
+  type: string;
+  maskedNumber: string;
+  balance: number | null;
+  rewards: number | null;
+  customerId?: string;
+}
+
+export interface AccountEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'account';
+  payload: AccountCardPayload;
+  afterText?: number;
+}
+
 export type EntityCard =
   | TransactionEntityCard
   | TransactionListEntityCard
-  | SpendingPieEntityCard;
+  | SpendingPieEntityCard
+  | BillEntityCard
+  | AccountEntityCard;
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
 export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
@@ -89,6 +127,20 @@ export function transactionHref(
   const transaction = typeof transactionId === 'string' ? transactionId.trim() : '';
   if (!customer || !account || !transaction) return undefined;
   return `/dashboard?customer=${encodeURIComponent(customer)}&account=${encodeURIComponent(account)}&txn=${encodeURIComponent(transaction)}`;
+}
+
+/**
+ * Deep link into the dashboard account view. Returns undefined unless both ids
+ * are present so the card renders without a broken link.
+ */
+export function accountHref(
+  customerId: string | undefined,
+  accountId: string | undefined
+): string | undefined {
+  const customer = typeof customerId === 'string' ? customerId.trim() : '';
+  const account = typeof accountId === 'string' ? accountId.trim() : '';
+  if (!customer || !account) return undefined;
+  return `/dashboard?customer=${encodeURIComponent(customer)}&account=${encodeURIComponent(account)}`;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -432,6 +484,187 @@ export function spendingPieCard(
   }
 }
 
+function trimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function optionalTrimmed(value: unknown): string | undefined {
+  const text = trimmedString(value);
+  return text.length > 0 ? text : undefined;
+}
+
+/** Keep only the last four digits, preserving an existing bullet/star mask. */
+export function normalizeMaskedAccountNumber(value: unknown): string {
+  const raw = trimmedString(value);
+  if (!raw) return '';
+  const digits = raw.replace(/\D+/g, '');
+  if (digits.length >= 4) return `\u2022\u2022\u2022\u2022 ${digits.slice(-4)}`;
+  if (/[•*]/.test(raw)) return raw.replace(/\s+/g, ' ').trim();
+  return raw;
+}
+
+/**
+ * Normalize insight_upcoming_bills into one primitive bill card. The card shows
+ * the largest bill (earliest due date breaks ties), matching the deterministic
+ * prose that names the largest amount. Malformed or empty bills are skipped.
+ */
+export function billCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): BillEntityCard | null {
+  try {
+    if (!isRecord(payload) || !Array.isArray(payload.bills)) return null;
+
+    interface Candidate {
+      index: number;
+      billId: string;
+      payee: string;
+      amount: number | null;
+      dueDate: string;
+      status?: string;
+      accountId?: string;
+    }
+
+    const candidates: Candidate[] = [];
+    for (let index = 0; index < payload.bills.length; index += 1) {
+      const entry = payload.bills[index];
+      if (!isRecord(entry)) continue;
+
+      const payee = trimmedString(entry.payee);
+      if (!payee) continue;
+
+      const amount = finiteNumberOrNull(entry.amount);
+      // Negative amounts are malformed for a bill; zero stays visible.
+      if (amount !== null && amount < 0) continue;
+
+      const dueDate = trimmedString(entry.dueDate);
+      if (!dueDate) continue;
+
+      const rawId = entry.billId ?? entry._id;
+      const billId =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+
+      candidates.push({
+        index,
+        billId,
+        payee,
+        amount,
+        dueDate,
+        ...(optionalTrimmed(entry.status) ? { status: optionalTrimmed(entry.status) } : {}),
+        ...(optionalTrimmed(entry.accountId)
+          ? { accountId: optionalTrimmed(entry.accountId) }
+          : {})
+      });
+    }
+
+    if (candidates.length === 0) return null;
+
+    const selected = candidates.reduce((best, entry) => {
+      const bestAmount = best.amount === null ? Number.NEGATIVE_INFINITY : best.amount;
+      const entryAmount = entry.amount === null ? Number.NEGATIVE_INFINITY : entry.amount;
+      if (entryAmount !== bestAmount) return entryAmount > bestAmount ? entry : best;
+      if (entry.dueDate !== best.dueDate) return entry.dueDate < best.dueDate ? entry : best;
+      return entry.index < best.index ? entry : best;
+    });
+
+    const customerId = optionalTrimmed(context?.customerId);
+    const payloadOut: BillCardPayload = {
+      billId: selected.billId,
+      payee: selected.payee,
+      amount: selected.amount,
+      dueDate: selected.dueDate,
+      ...(selected.status ? { status: selected.status } : {}),
+      ...(selected.accountId ? { accountId: selected.accountId } : {}),
+      ...(customerId ? { customerId } : {})
+    };
+
+    const entityId =
+      payloadOut.billId ||
+      `bill|${payloadOut.payee}|${payloadOut.dueDate}|${
+        payloadOut.amount === null ? 'null' : String(payloadOut.amount)
+      }`;
+
+    const card: BillEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId,
+      kind: 'bill',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build a single-account card. Account lists (zero or more than one row) return
+ * null so the prose answers instead of rendering an all-accounts dump.
+ */
+export function accountCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): AccountEntityCard | null {
+  try {
+    const items = asItems(payload);
+    if (items.length !== 1) return null;
+
+    const item = items[0];
+    const rawId = item._id ?? item.id;
+    const accountId =
+      (typeof rawId === 'string' || typeof rawId === 'number') &&
+      String(rawId).trim().length > 0
+        ? String(rawId).trim()
+        : '';
+    const type = trimmedString(item.type);
+    if (!accountId || !type) return null;
+
+    const nickname = trimmedString(item.nickname) || type;
+    const maskedNumber = normalizeMaskedAccountNumber(
+      item.accountNumber ?? item.account_number
+    );
+    const customerId =
+      optionalTrimmed(item.customerId ?? item.customer_id) ??
+      optionalTrimmed(context?.customerId);
+
+    const payloadOut: AccountCardPayload = {
+      accountId,
+      nickname,
+      type,
+      maskedNumber,
+      balance: finiteNumberOrNull(item.balance),
+      rewards: finiteNumberOrNull(item.rewards),
+      ...(customerId ? { customerId } : {})
+    };
+
+    const card: AccountEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: `account:${accountId}`,
+      kind: 'account',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Merge rows into a single list card, dedupe by transaction id, cap the rows,
  * and keep the earliest anchor (a real anchor beats end-of-text).
@@ -545,11 +778,59 @@ function anchorEnd(source: string, tokenEnd: number): number {
   return offset;
 }
 
+/** Candidate token runs used to anchor a card after the entity it names. */
+function anchorCandidates(card: EntityCard): string[][] {
+  if (card.kind === 'transaction') {
+    const description =
+      typeof card.payload?.description === 'string' ? card.payload.description : '';
+    const keys = descriptionTokens(description);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  if (card.kind === 'bill') {
+    const payee = typeof card.payload?.payee === 'string' ? card.payload.payee : '';
+    const keys = tokenize(payee).map((token) => token.norm);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  if (card.kind === 'account') {
+    const nickname =
+      typeof card.payload?.nickname === 'string' ? card.payload.nickname : '';
+    const nicknameKeys = tokenize(nickname).map((token) => token.norm);
+    const typeKeys = tokenize(
+      typeof card.payload?.type === 'string' ? card.payload.type : ''
+    ).map((token) => token.norm);
+
+    const candidates: string[][] = [];
+    if (nicknameKeys.length > 0) candidates.push(nicknameKeys);
+    if (nicknameKeys.length > 1) {
+      const token = firstMeaningfulToken(nicknameKeys);
+      if (token) candidates.push([token]);
+    }
+    if (typeKeys.length > 0) candidates.push(typeKeys);
+    return candidates;
+  }
+
+  return [];
+}
+
 /**
- * Reposition transaction cards after the merchant mention in the assistant
- * text. Returns copies; cards with no mention keep their existing `afterText`.
+ * Reposition entity cards after the mention they introduce: transactions after
+ * their description, bills after their payee, and accounts after their nickname
+ * (falling back to type). Returns copies; cards with no mention keep their
+ * existing `afterText`. Non-anchored kinds (lists, pies) are left unchanged.
  */
-export function anchorTransactionCards(text: string, cards: EntityCard[]): EntityCard[] {
+export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard[] {
   const source = typeof text === 'string' ? text : '';
   const list = Array.isArray(cards) ? cards : [];
 
@@ -561,19 +842,20 @@ export function anchorTransactionCards(text: string, cards: EntityCard[]): Entit
     for (const card of list) {
       if (!card || typeof card !== 'object' || Array.isArray(card)) continue;
 
-      if (card.kind !== 'transaction') {
+      if (
+        card.kind !== 'transaction' &&
+        card.kind !== 'bill' &&
+        card.kind !== 'account'
+      ) {
         anchored.push({ ...card });
         continue;
       }
 
-      const description =
-        typeof card.payload?.description === 'string' ? card.payload.description : '';
-      const keys = descriptionTokens(description);
-
-      let match = findTokenMatch(textTokens, keys, cursor);
-      if (!match && keys.length > 1) {
-        const token = firstMeaningfulToken(keys);
-        if (token) match = findTokenMatch(textTokens, [token], cursor);
+      const candidates = anchorCandidates(card);
+      let match: TokenMatch | null = null;
+      for (const keys of candidates) {
+        match = findTokenMatch(textTokens, keys, cursor);
+        if (match) break;
       }
 
       if (!match) {
@@ -593,6 +875,14 @@ export function anchorTransactionCards(text: string, cards: EntityCard[]): Entit
       (card) => Boolean(card) && typeof card === 'object' && !Array.isArray(card)
     ).map((card) => ({ ...card }));
   }
+}
+
+/**
+ * Reposition transaction cards after the merchant mention in the assistant
+ * text. Thin wrapper over `anchorEntityCards` for existing callers.
+ */
+export function anchorTransactionCards(text: string, cards: EntityCard[]): EntityCard[] {
+  return anchorEntityCards(text, cards);
 }
 
 function anomalyPhrase(card: TransactionEntityCard): string {

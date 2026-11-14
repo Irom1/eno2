@@ -4,9 +4,11 @@
   import { createSseParser } from '$lib/sse.js';
   import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
   import {
-    anchorTransactionCards,
+    accountCard,
+    anchorEntityCards,
     anomalyExplanation,
     anomalyTransactionCards,
+    billCard,
     mergeEntityCards,
     mergeTransactionListCards,
     spendingPieCard,
@@ -33,6 +35,8 @@
   import TransactionCard from './inline-cards/TransactionCard.svelte';
   import TransactionListCard from './inline-cards/TransactionListCard.svelte';
   import PieChartCard from './inline-cards/PieChartCard.svelte';
+  import BillCard from './inline-cards/BillCard.svelte';
+  import AccountCard from './inline-cards/AccountCard.svelte';
 
   interface Props {
     open: boolean;
@@ -313,6 +317,42 @@
                 cardSeq = Math.max(cardSeq, incoming.id);
               }
             }
+            if (data.kind === 'insight_upcoming_bills') {
+              // One primitive bill card per turn. The prose names the largest
+              // bill; a later bills insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = billCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'bill'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'bill' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (chatCardKind(data.kind) === 'account') {
+              // Accounts are single-entity cards; an all-accounts list stays in
+              // prose, and a later account insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = accountCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'account'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'account' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
             if (chatCardKind(data.kind) === 'transactions') {
               // Deposits and withdrawals in one turn share a single merged list.
               const anchor =
@@ -440,7 +480,7 @@
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const arrangedCards = anchorTransactionCards(message.text, message.inlineCards ?? [])}
+        {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [])}
         {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
         {@const blocks = inlineBlocks(message.text, readyCards)}
         {@const hasBlocks = blocks.length > 0}
@@ -516,6 +556,10 @@
                         <TransactionListCard {card} />
                       {:else if card.kind === 'spending-pie'}
                         <PieChartCard {card} />
+                      {:else if card.kind === 'bill'}
+                        <BillCard {card} />
+                      {:else if card.kind === 'account'}
+                        <AccountCard {card} />
                       {/if}
                     {/each}
                   {/if}

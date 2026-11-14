@@ -1707,3 +1707,234 @@ test.describe('Eno mascot', () => {
   });
 });
 
+
+test.describe('primitive bill and account cards', () => {
+  test('"Show me my bills" renders one primitive bill card and no legacy chrome', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'The largest bill is City Power: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_upcoming_bills',
+        payload: {
+          asOf: '2026-11-14',
+          days: 30,
+          count: 2,
+          total: 3120,
+          coverageRatio: 1.4,
+          shortfall: 0,
+          bills: [
+            {
+              billId: 'bill-rent',
+              payee: 'Maple Property',
+              nickname: 'Rent',
+              amount: 3000,
+              dueDate: '2026-11-20',
+              daysUntil: 6,
+              status: 'pending',
+              accountId: 'acct-checking'
+            },
+            {
+              billId: 'bill-power',
+              payee: 'City Power',
+              nickname: 'Utilities',
+              amount: 120,
+              dueDate: '2026-11-18',
+              daysUntil: 4,
+              status: 'pending',
+              accountId: 'acct-checking'
+            }
+          ]
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'it is the largest item in the window.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my bills');
+
+    const bill = page.locator('.bill-card');
+    await expect(bill).toHaveCount(1, { timeout: 20_000 });
+    await expect(bill).toBeVisible();
+    await expect(bill).toHaveAttribute('data-kind', 'bill');
+
+    const text = await bill.innerText();
+    // The largest bill wins even though it is not the earliest.
+    expect(text).toContain('Maple Property');
+    expect(text).not.toContain('City Power');
+    expect(text, 'amount is shown').toContain('$3,000.00');
+    expect(text, 'due date is shown').toMatch(/Nov 20/);
+    expect(text, 'factual status is shown').toContain('Pending');
+
+    // Primitive: no coverage, total, insight, or recommendation copy.
+    expect(text.toLowerCase()).not.toMatch(/coverage|covered|shortfall|recommend|insight|top bill/);
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    await expect(page.locator('.entity-card .bill-card')).toHaveCount(1);
+    expect(
+      await bill.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the bill card is standalone, not folded into the prose bubble'
+    ).toBe(false);
+
+    // It deep-links to the owning account when the ids are present.
+    const link = bill.locator('a.bill-link');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('href', /^\/dashboard\?customer=[^&]+&account=acct-checking$/);
+    await expect(bill.locator('.open-icon')).toBeVisible();
+
+    expectNoErrors(errors);
+  });
+
+  test('an accounts list stays in prose and renders no account list card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'You have two accounts: Everyday Checking and Venture card.'
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_list_customer_accounts',
+        payload: {
+          count: 2,
+          accounts: [
+            {
+              _id: 'acct-checking',
+              nickname: 'Everyday Checking',
+              type: 'Checking',
+              accountNumber: '•••• 4212',
+              balance: 4218,
+              rewards: 0,
+              customerId: 'cust-test'
+            },
+            {
+              _id: 'acct-venture',
+              nickname: 'Venture',
+              type: 'Credit Card',
+              accountNumber: '•••• 7788',
+              balance: 862,
+              rewards: 24850,
+              customerId: 'cust-test'
+            }
+          ]
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Your checking account covers everyday spending.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'What accounts do I have?');
+
+    await expect(page.locator('.account-card')).toHaveCount(0);
+    // No legacy account-list card either.
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    const prose = (await assistantText(page)).trim();
+    expect(prose.length, 'the prose answers the account question').toBeGreaterThan(0);
+    expect(prose).toMatch(/Everyday Checking|Venture/);
+
+    expectNoErrors(errors);
+  });
+
+  test('a single-account payload renders one account card with a deep link', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is your Everyday Checking account: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_get_account',
+        payload: {
+          _id: 'acct-checking',
+          nickname: 'Everyday Checking',
+          type: 'Checking',
+          accountNumber: '12345678904212',
+          balance: 4218,
+          rewards: 0,
+          customerId: 'cust-test',
+          extra: 'do not leak'
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'you can open it to review recent activity.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Tell me about my checking account');
+
+    const card = page.locator('.account-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'account');
+
+    const text = await card.innerText();
+    expect(text).toContain('Everyday Checking');
+    expect(text).toContain('Checking');
+    expect(text).toContain('•••• 4212');
+    expect(text, 'balance is shown').toContain('$4,218.00');
+    expect(text, 'a zero rewards balance is not shown as an offer').not.toMatch(/0 points/);
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(card.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the account card is standalone'
+    ).toBe(false);
+
+    const link = card.locator('a.account-link');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute(
+      'href',
+      '/dashboard?customer=cust-test&account=acct-checking'
+    );
+    await expect(card.locator('.open-icon')).toBeVisible();
+
+    expectNoErrors(errors);
+  });
+});

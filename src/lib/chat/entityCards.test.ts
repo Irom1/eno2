@@ -1,14 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  accountCard,
+  accountHref,
+  anchorEntityCards,
   anchorTransactionCards,
   anomalyExplanation,
   anomalyTransactionCards,
+  billCard,
   mergeEntityCards,
   mergeTransactionListCards,
+  normalizeMaskedAccountNumber,
   spendingPieCard,
   spendingPiePeriod,
   transactionHref,
   transactionListCard,
+  type AccountEntityCard,
+  type BillEntityCard,
   type EntityCard,
   type SpendingPieEntityCard,
   type TransactionEntityCard,
@@ -858,5 +865,306 @@ describe('spendingPieCard', () => {
     const mixed = mergeEntityCards([pie], [transactionCard(1, 'a')]);
     expect(mixed[0]).toBe(pie);
     expect(mixed.map((entry) => entry.kind)).toEqual(['spending-pie', 'transaction']);
+  });
+});
+
+describe('billCard', () => {
+  const bill = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    billId: 'bill-1',
+    payee: 'City Power',
+    nickname: 'Home utilities',
+    amount: 120,
+    dueDate: '2026-11-20',
+    daysUntil: 6,
+    status: 'pending',
+    accountId: 'acct-checking',
+    ...overrides
+  });
+
+  it('selects the largest bill and whitelists its fields', () => {
+    const card = billCard(
+      {
+        asOf: '2026-11-14',
+        days: 30,
+        count: 2,
+        total: 3120,
+        coverageRatio: 1.4,
+        shortfall: 0,
+        bills: [bill(), bill({ billId: 'bill-2', payee: 'Rent', amount: 3000 })]
+      },
+      42,
+      7,
+      { customerId: 'cust-1' }
+    );
+
+    expect(card).not.toBeNull();
+    expect(card).toMatchObject({
+      id: 7,
+      entityId: 'bill-2',
+      kind: 'bill',
+      afterText: 42,
+      payload: {
+        billId: 'bill-2',
+        payee: 'Rent',
+        amount: 3000,
+        dueDate: '2026-11-20',
+        status: 'pending',
+        accountId: 'acct-checking',
+        customerId: 'cust-1'
+      }
+    });
+    expect(Object.keys(card!.payload).sort()).toEqual([
+      'accountId',
+      'amount',
+      'billId',
+      'customerId',
+      'dueDate',
+      'payee',
+      'status'
+    ]);
+    expect(card!.payload).not.toHaveProperty('total');
+    expect(card!.payload).not.toHaveProperty('coverageRatio');
+    expect(card!.payload).not.toHaveProperty('shortfall');
+    expect(card!.payload).not.toHaveProperty('nickname');
+    expect(card!.payload).not.toHaveProperty('daysUntil');
+  });
+
+  it('breaks amount ties with the earliest due date', () => {
+    const card = billCard(
+      {
+        bills: [
+          bill({ billId: 'late', payee: 'Late', amount: 200, dueDate: '2026-12-02' }),
+          bill({ billId: 'early', payee: 'Early', amount: 200, dueDate: '2026-11-18' })
+        ]
+      },
+      0,
+      1
+    );
+    expect((card as BillEntityCard).payload.billId).toBe('early');
+  });
+
+  it('normalizes a missing amount to null and keeps zero amounts', () => {
+    const missing = billCard({ bills: [bill({ amount: undefined })] }, 0, 1);
+    expect(missing?.payload.amount).toBeNull();
+
+    const zero = billCard({ bills: [bill({ amount: 0 })] }, 0, 1);
+    expect(zero?.payload.amount).toBe(0);
+    expect(zero?.payload).not.toHaveProperty('customerId');
+  });
+
+  it('skips empty payees, negative amounts, missing due dates, and malformed rows', () => {
+    const card = billCard(
+      {
+        bills: [
+          null,
+          'nope',
+          bill({ payee: '   ', amount: 500, dueDate: '2026-11-18' }),
+          bill({ payee: 'Refund', amount: -5, dueDate: '2026-11-18' }),
+          bill({ payee: 'No date', amount: 400, dueDate: '' }),
+          bill({ payee: 'No amount', amount: undefined, dueDate: '2026-12-01', billId: '' })
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(card?.payload.payee).toBe('No amount');
+    expect(card?.payload.amount).toBeNull();
+    expect(card?.entityId).toBe('bill|No amount|2026-12-01|null');
+  });
+
+  it('returns null for empty or malformed payloads and never throws', () => {
+    expect(billCard(null, 0, 1)).toBeNull();
+    expect(billCard(undefined, 0, 1)).toBeNull();
+    expect(billCard('bills', 0, 1)).toBeNull();
+    expect(billCard({}, 0, 1)).toBeNull();
+    expect(billCard({ bills: [] }, 0, 1)).toBeNull();
+    expect(billCard({ bills: 'nope' }, 0, 1)).toBeNull();
+    expect(billCard({ items: [bill()] }, 0, 1)).toBeNull();
+  });
+});
+
+describe('accountCard', () => {
+  const account = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    _id: 'acct-checking',
+    nickname: 'Everyday Checking',
+    type: 'Checking',
+    accountNumber: '\u2022\u2022\u2022\u2022 4212',
+    balance: 4218,
+    rewards: 0,
+    customerId: 'cust-1',
+    ...overrides
+  });
+
+  it('builds one card from a single account and masks the number', () => {
+    const card = accountCard(account({ accountNumber: '12345678904212' }), 12, 4);
+
+    expect(card).toMatchObject({
+      id: 4,
+      entityId: 'account:acct-checking',
+      kind: 'account',
+      afterText: 12,
+      payload: {
+        accountId: 'acct-checking',
+        nickname: 'Everyday Checking',
+        type: 'Checking',
+        maskedNumber: '\u2022\u2022\u2022\u2022 4212',
+        balance: 4218,
+        rewards: 0,
+        customerId: 'cust-1'
+      }
+    });
+    expect(Object.keys(card!.payload).sort()).toEqual([
+      'accountId',
+      'balance',
+      'customerId',
+      'maskedNumber',
+      'nickname',
+      'rewards',
+      'type'
+    ]);
+  });
+
+  it('never renders an account list, whether empty or multi-row', () => {
+    expect(accountCard({ items: [account(), account({ _id: 'acct-2' })] }, 0, 1)).toBeNull();
+    expect(accountCard({ results: [] }, 0, 1)).toBeNull();
+    expect(accountCard({ accounts: [account(), account()] }, 0, 1)).toBeNull();
+  });
+
+  it('requires an id and type and falls back to type as the nickname', () => {
+    expect(accountCard({ nickname: 'No id', type: 'Checking' }, 0, 1)).toBeNull();
+    expect(accountCard({ _id: 'acct-1', nickname: 'No type' }, 0, 1)).toBeNull();
+
+    const card = accountCard({ _id: 'acct-1', type: 'savings' }, 0, 1);
+    expect(card?.payload.nickname).toBe('savings');
+    expect(card?.payload.balance).toBeNull();
+    expect(card?.payload.rewards).toBeNull();
+  });
+
+  it('copies context customerId and accepts snake_case ids', () => {
+    const card = accountCard(
+      account({ customerId: undefined, customer_id: 'cust-row' }),
+      0,
+      1,
+      { customerId: 'cust-context' }
+    );
+    expect(card?.payload.customerId).toBe('cust-row');
+
+    const fallback = accountCard(
+      { _id: 'acct-2', type: 'Checking' },
+      0,
+      1,
+      { customerId: 'cust-context' }
+    );
+    expect(fallback?.payload.customerId).toBe('cust-context');
+  });
+
+  it('normalizes masked account numbers and returns null on malformed payloads', () => {
+    expect(normalizeMaskedAccountNumber('1234567890123456')).toBe('\u2022\u2022\u2022\u2022 3456');
+    expect(normalizeMaskedAccountNumber('****1234')).toBe('\u2022\u2022\u2022\u2022 1234');
+    expect(normalizeMaskedAccountNumber('\u2022\u2022\u2022\u2022 1234')).toBe(
+      '\u2022\u2022\u2022\u2022 1234'
+    );
+    expect(normalizeMaskedAccountNumber('')).toBe('');
+
+    expect(accountCard(null, 0, 1)).toBeNull();
+    expect(accountCard(undefined, 0, 1)).toBeNull();
+    expect(accountCard('account', 0, 1)).toBeNull();
+    expect(accountCard([], 0, 1)).toBeNull();
+    expect(accountCard({ count: 3 }, 0, 1)).toBeNull();
+  });
+});
+
+describe('accountHref', () => {
+  it('builds the dashboard account link with encoded ids', () => {
+    expect(accountHref('cust-1', 'acct 2')).toBe(
+      '/dashboard?customer=cust-1&account=acct%202'
+    );
+  });
+
+  it('returns undefined when either id is missing', () => {
+    expect(accountHref(undefined, 'acct-2')).toBeUndefined();
+    expect(accountHref('cust-1', undefined)).toBeUndefined();
+    expect(accountHref('', 'acct-2')).toBeUndefined();
+    expect(accountHref('cust-1', '  ')).toBeUndefined();
+  });
+});
+
+describe('anchorEntityCards', () => {
+  function bill(id: number, payee: string, afterText?: number): BillEntityCard {
+    return {
+      id,
+      entityId: `bill-${id}`,
+      kind: 'bill',
+      payload: { billId: `bill-${id}`, payee, amount: 100, dueDate: '2026-11-20' },
+      ...(afterText === undefined ? {} : { afterText })
+    };
+  }
+
+  function account(id: number, nickname: string, type: string, afterText?: number): AccountEntityCard {
+    return {
+      id,
+      entityId: `account:${id}`,
+      kind: 'account',
+      payload: {
+        accountId: `acct-${id}`,
+        nickname,
+        type,
+        maskedNumber: '\u2022\u2022\u2022\u2022 1234',
+        balance: 100,
+        rewards: 0
+      },
+      ...(afterText === undefined ? {} : { afterText })
+    };
+  }
+
+  it('anchors a bill after its payee mention', () => {
+    const text = 'The largest bill is City Power: it is due soon.';
+    const [anchored] = anchorEntityCards(text, [bill(1, 'City Power')]);
+    expect(anchored?.afterText).toBe(text.indexOf(':') + 1);
+  });
+
+  it('anchors an account after its nickname, falling back to type', () => {
+    const byNickname = 'Your Everyday Checking account is your main one.';
+    const [nicknameCard] = anchorEntityCards(byNickname, [
+      account(1, 'Everyday Checking', 'Checking')
+    ]);
+    expect(nicknameCard?.afterText).toBe(byNickname.indexOf('account'));
+
+    const byType = 'This savings account earns interest.';
+    const [typeCard] = anchorEntityCards(byType, [account(1, 'Emergency Fund', 'savings')]);
+    expect(typeCard?.afterText).toBe(byType.indexOf('account'));
+  });
+
+  it('leaves non-target cards unchanged, keeps copies, and never throws', () => {
+    const list = transactionListCard(
+      { items: [{ _id: 'a', description: 'APPLE', amount: 1 }] },
+      55,
+      2
+    );
+    if (!list) throw new Error('expected list card');
+    const anchored = anchorEntityCards('APPLE and City Power.', [
+      list,
+      bill(3, 'City Power', 9)
+    ]);
+
+    expect(anchored[0]?.kind).toBe('transaction-list');
+    expect(anchored[0]?.afterText).toBe(55);
+    expect(anchored[0]).not.toBe(list);
+    expect(anchored[1]?.afterText).toBe('APPLE and City Power.'.length);
+
+    expect(anchorEntityCards(null as unknown as string, [bill(1, 'City Power')])).toHaveLength(1);
+    expect(anchorEntityCards('text', null as unknown as EntityCard[])).toEqual([]);
+    expect(anchorEntityCards('text', [null as unknown as EntityCard])).toEqual([]);
+  });
+
+  it('preserves bill and account cards through mergeEntityCards without counting the cap', () => {
+    const billCardValue = bill(1, 'City Power', 5);
+    const accountCardValue = account(2, 'Everyday Checking', 'Checking', 6);
+    const lists = mergeEntityCards([billCardValue, accountCardValue], [transactionCard(1, 'x')]);
+
+    expect(lists.map((entry) => entry.kind)).toEqual(['bill', 'account', 'transaction']);
+    expect(lists[0]).toBe(billCardValue);
+    expect(lists[1]).toBe(accountCardValue);
   });
 });
