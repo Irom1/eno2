@@ -2,9 +2,10 @@
  * Client-safe grouping of inline chat blocks for rendering.
  *
  * Single-entity cards render inline inside the assistant prose bubble; the
- * multi/series cards (`transaction-list`, `spending-pie`) render as standalone
- * framed cards. This helper only rearranges blocks, preserving order and card
- * identity, so the panel can interleave the two presentations.
+ * multi/series cards (`transaction-list`, `spending-pie`) and ATM location
+ * cards render as standalone framed cards. This helper only rearranges blocks,
+ * preserving order and card identity, so the panel can interleave the two
+ * presentations.
  *
  * Pure functions only: no server or DOM imports.
  */
@@ -23,6 +24,20 @@ const STANDALONE_KINDS: ReadonlySet<EntityCard['kind']> = new Set([
 
 export function isInlineCardKind(kind: EntityCard['kind']): boolean {
   return !STANDALONE_KINDS.has(kind);
+}
+
+/**
+ * True when a card should fold into the assistant prose bubble.
+ *
+ * ATM location cards are the one exception to the single-inline rule: their
+ * map preview plus external map actions are too wide for the bubble, so they
+ * render as a standalone card. Branch locations stay inline.
+ */
+export function isInlineCard(card: EntityCard): boolean {
+  if (!card || typeof card !== 'object') return true;
+  if (!isInlineCardKind(card.kind)) return false;
+  if (card.kind === 'location') return card.payload?.type !== 'atm';
+  return true;
 }
 
 /**
@@ -70,7 +85,7 @@ export function groupInlineCards(
       for (const card of block.cards) {
         if (!card || typeof card !== 'object') continue;
 
-        if (isInlineCardKind(card.kind)) {
+        if (isInlineCard(card)) {
           inlineCards.push(card);
           continue;
         }

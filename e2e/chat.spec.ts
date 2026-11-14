@@ -1803,24 +1803,147 @@ test.describe('chat prompts', () => {
     // Primitive: no recommendation or directions copy.
     expect(text.toLowerCase()).not.toMatch(/recommend|tip:|directions/);
 
-    // The map is a keyless OpenStreetMap embed, never a Mapbox image proxy.
-    const map = card.locator('iframe.atm-map');
+    // The map is a server-proxied Mapbox Static Images <img>, never a keyless
+    // OSM iframe and never a URL carrying the token.
+    await expect(card.locator('iframe.atm-map')).toHaveCount(0);
+    const map = card.locator('img.atm-map');
     await expect(map).toHaveCount(1);
     const src = await map.getAttribute('src');
-    expect(src).toMatch(/^https:\/\/www\.openstreetmap\.org\/export\/embed\.html\?/);
-    expect(src).toContain('marker=');
-    expect(src?.toLowerCase()).not.toContain('mapbox');
+    expect(src).toMatch(/^\/api\/mapbox\/static\?/);
+    expect(src).toContain('lat=');
+    expect(src).toContain('lng=');
     expect(src?.toLowerCase()).not.toContain('access_token');
+    expect(src?.toLowerCase()).not.toContain('mapbox.com');
     expect(await card.innerHTML()).not.toContain('access_token');
-    expect(await card.innerHTML()).not.toContain('mapbox');
+    expect(await card.innerHTML()).not.toContain('mapbox.com');
+    expect(await card.innerHTML()).not.toContain('openstreetmap.org');
+
+    // Standalone card: the ATM map is not folded into the assistant bubble.
+    await expect(page.locator('.bubble.assistant .atm-locator-card')).toHaveCount(0);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the ATM locator map renders as a standalone card, not inside the prose bubble'
+    ).toBe(false);
+
+    // The Apple/Google actions sit below the map card, outside its surface and
+    // outside the prose bubble.
+    const actions = page.locator('.atm-actions');
+    await expect(actions).toHaveCount(1);
+    await expect(actions).toBeVisible();
+    await expect(page.locator('.entity-card .atm-actions')).toHaveCount(0);
+    expect(
+      await actions.evaluate((element) => ({
+        inCard: Boolean(element.closest('.entity-card')),
+        inBubble: Boolean(element.closest('.bubble.assistant'))
+      })),
+      'the actions row sits outside both the map card and the prose bubble'
+    ).toEqual({ inCard: false, inBubble: false });
+
+    // The explicit external links open Apple Maps and Google Maps.
+    const apple = actions.getByRole('link', { name: 'Open in Apple Maps', exact: true });
+    await expect(apple).toHaveCount(1);
+    const appleHref = await apple.getAttribute('href');
+    expect(appleHref).not.toBeNull();
+    expect(new URL(appleHref as string).host).toBe('maps.apple.com');
+    expect(appleHref).toContain('ll=');
+    expect(appleHref).toContain('q=');
+    await expect(apple).toHaveAttribute('target', '_blank');
+    expect(await apple.getAttribute('rel')).toContain('noopener');
+
+    const google = actions.getByRole('link', { name: 'Open in Google Maps', exact: true });
+    await expect(google).toHaveCount(1);
+    const googleHref = await google.getAttribute('href');
+    expect(googleHref).not.toBeNull();
+    const googleUrl = new URL(googleHref as string);
+    expect(googleUrl.host).toBe('www.google.com');
+    expect(googleUrl.pathname).toBe('/maps/search/');
+    expect(googleUrl.searchParams.get('api')).toBe('1');
+    expect(googleUrl.searchParams.get('query')).toContain(',');
+    await expect(google).toHaveAttribute('target', '_blank');
+    expect(await google.getAttribute('rel')).toContain('noopener');
+
+    // The actions are text-only: no OpenIcon glyph inside either button.
+    for (const [name, link] of [
+      ['Apple', apple],
+      ['Google', google]
+    ] as const) {
+      await expect(
+        link.locator('svg, .open-icon'),
+        `the ${name} action has no icon`
+      ).toHaveCount(0);
+    }
+
+    // Taller tap targets (at least 42px tall).
+    const [appleBox, googleBox] = await Promise.all([
+      apple.boundingBox(),
+      google.boundingBox()
+    ]);
+    expect(appleBox, 'the Apple Maps button is laid out').not.toBeNull();
+    expect(googleBox, 'the Google Maps button is laid out').not.toBeNull();
+    expect(
+      appleBox!.height,
+      'the Apple Maps button is at least 42px tall'
+    ).toBeGreaterThanOrEqual(42);
+    expect(
+      googleBox!.height,
+      'the Google Maps button is at least 42px tall'
+    ).toBeGreaterThanOrEqual(42);
+
+    // Hover is a background highlight, never an underline.
+    const idleBackground = await apple.evaluate(
+      (element) => getComputedStyle(element).backgroundColor
+    );
+    await apple.hover();
+    await expect
+      .poll(
+        () =>
+          apple.evaluate(
+            (element) => getComputedStyle(element).textDecorationLine
+          ),
+        { message: 'the hovered action has no underline' }
+      )
+      .toBe('none');
+    const hoveredBackground = await apple.evaluate(
+      (element) => getComputedStyle(element).backgroundColor
+    );
+    expect(
+      hoveredBackground,
+      'the hovered action gets a link-tinted background'
+    ).not.toBe(idleBackground);
+
+    // Both buttons are equal-width halves of the 88% card row (8px gap).
+    const frameBox = await card.locator('xpath=..').boundingBox();
+    expect(frameBox, 'the map card is laid out').not.toBeNull();
+    expect(
+      Math.abs(appleBox!.width - googleBox!.width),
+      'the two action buttons have equal widths'
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(appleBox!.y - googleBox!.y),
+      'the two action buttons sit side by side'
+    ).toBeLessThanOrEqual(2);
+    const expectedHalf = (frameBox!.width - 8) / 2;
+    expect(
+      Math.abs(appleBox!.width - expectedHalf),
+      'the Apple button is about half the card width'
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(googleBox!.width - expectedHalf),
+      'the Google button is about half the card width'
+    ).toBeLessThanOrEqual(2);
+    expect(Math.abs(appleBox!.x - frameBox!.x)).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(googleBox!.x + googleBox!.width - (frameBox!.x + frameBox!.width)),
+      'the actions row spans the card width'
+    ).toBeLessThanOrEqual(2);
+
+    await expect(actions.getByRole('link', { name: 'Open in OpenStreetMap' })).toHaveCount(0);
+    expect(await page.locator('.atm-locator').innerText()).not.toContain('Open in OpenStreetMap');
+    await expect(card.locator('iframe')).toHaveCount(0);
     await expect(page.locator('.location-card')).toHaveCount(0);
 
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(page.locator('.entity-card .atm-locator-card')).toHaveCount(1);
-    expect(
-      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the ATM locator card renders inline inside the prose bubble'
-    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -1842,10 +1965,14 @@ test.describe('chat prompts', () => {
     // The nearest ATM still renders its map card, even though it is far away.
     const card = page.locator('.atm-locator-card');
     await expect(card).toHaveCount(1);
-    const map = card.locator('iframe.atm-map');
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the distant ATM map is standalone, not inside the prose bubble'
+    ).toBe(false);
+    const map = card.locator('img.atm-map');
     await expect(map).toHaveCount(1);
     const src = await map.getAttribute('src');
-    expect(src).toMatch(/^https:\/\/www\.openstreetmap\.org\/export\/embed\.html\?/);
+    expect(src).toMatch(/^\/api\/mapbox\/static\?/);
     await expect(card.locator('.distance')).toContainText('mi away');
 
     expectNoErrors(errors);
@@ -1860,6 +1987,10 @@ test.describe('chat prompts', () => {
     await expect(card).toHaveAttribute('data-kind', 'location');
     await expect(card.locator('.name')).not.toBeEmpty();
     await expect(card.locator('.address')).not.toBeEmpty();
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'branch location cards stay inline inside the prose bubble'
+    ).toBe(true);
 
     expectNoErrors(errors);
   });
