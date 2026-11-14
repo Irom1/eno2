@@ -2387,4 +2387,55 @@ test.describe('primitive bill and account cards', () => {
 
     expectNoErrors(errors);
   });
+
+  test('a synthetic card SSE event renders the normalized primitive inline', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const intro = 'Your checking account is below.';
+    const events = [
+      `event: text\ndata: ${JSON.stringify({ type: 'text', delta: intro })}`,
+      `event: card\ndata: ${JSON.stringify({
+        type: 'card',
+        card: {
+          id: 1,
+          entityId: 'account:acct-checking',
+          kind: 'account',
+          afterText: intro.length,
+          payload: {
+            accountId: 'acct-checking',
+            nickname: 'Everyday Checking',
+            type: 'Checking',
+            maskedNumber: '•••• 4212',
+            balance: 4218,
+            rewards: 0,
+            customerId: 'cust-test'
+          }
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: ' You can open it to review recent activity.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Tell me about my checking account');
+
+    const card = page.locator('.account-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toContainText('Everyday Checking');
+    await expect(card).toContainText('•••• 4212');
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+
+    expectNoErrors(errors);
+  });
 });

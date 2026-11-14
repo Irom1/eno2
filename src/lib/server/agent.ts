@@ -3,6 +3,7 @@
  * events emitted as text and tools complete. Numbers always come from tools.
  */
 import type { RuntimeEnv } from './env';
+import { cardsMode } from './cardsMode';
 import { GUEST_CUSTOMER_ID } from '../chat/guest';
 import type {
   FunctionCallRequest,
@@ -19,6 +20,7 @@ import { buildSystemInstruction } from './prompts';
 import { trimContents, type Content, type ContentPart, type Session } from './session';
 import { summarizeToolResult, toFunctionDeclarations, toolLabel } from './toolBridge';
 import type { Emit, ProviderFailureReason } from './events';
+import { collectCardCandidates, resolvePresentCard, type CardCandidate } from './presentCard';
 
 const BREAKER_MS = 5 * 60_000;
 
@@ -52,6 +54,27 @@ export interface RunAgentInput {
 
 const MAX_ROUNDS = 6;
 const WALL_CLOCK_MS = 45_000;
+
+/**
+ * Read-only entity declaration. Only offered when `CARDS_MODE=v2`; the model
+ * must already have the entity from a data tool this turn.
+ */
+export const PRESENT_CARD_DECLARATION: GeminiFunctionDeclaration = {
+  name: 'present_card',
+  description:
+    'Declare one specific entity already returned by a data tool so the client can render its primitive card. Call at most twice per turn, only for a single account/bill/loan/transaction/merchant/location/customer, never for lists.',
+  parametersJsonSchema: {
+    type: 'object',
+    properties: {
+      kind: {
+        type: 'string',
+        enum: ['account', 'bill', 'loan', 'transaction', 'merchant', 'location', 'profile']
+      },
+      id: { type: 'string' }
+    },
+    required: ['kind', 'id']
+  }
+};
 
 interface AgentGlobal {
   __nessieAgentDeps?: Partial<AgentDeps>;
@@ -236,13 +259,28 @@ export async function runGeminiAgent({
   let lastUsage: RoundResult['usage'];
   let declarations: GeminiFunctionDeclaration[] = [];
   let providerError: unknown = null;
+  let textLength = 0;
+  let cardRenderId = 0;
+  const candidates: CardCandidate[] = [];
   const toolCache = new Map<string, ToolCallResult>();
+  const emitText = (delta: string): void => {
+    if (!delta) return;
+    textLength += delta.length;
+    emit({ type: 'text', delta });
+  };
 
   try {
     if (!deps.isConfigured()) {
       throw new Error('GEMINI_API_KEY is not set. Run with LLM=mock or add the key to the environment.');
     }
-    if (!isGuest) declarations = await deps.getDeclarations();
+    if (!isGuest) {
+      declarations = await deps.getDeclarations();
+      // The declaration is only offered in v2. `off` disables the pipeline but
+      // leaves every existing client-side card builder untouched.
+      if (cardsMode(runtime) === 'v2') {
+        declarations = [...declarations, PRESENT_CARD_DECLARATION];
+      }
+    }
   } catch (error) {
     emit({ type: 'error', message: "I couldn't finish that request.", hint: safeReason(error) });
     return;
@@ -258,7 +296,7 @@ export async function runGeminiAgent({
           contents,
           systemInstruction,
           declarations,
-          onText: (delta) => emit({ type: 'text', delta })
+          onText: (delta) => emitText(delta)
         });
       } catch (error) {
         if (!isThoughtSignatureError(error)) {
@@ -267,7 +305,7 @@ export async function runGeminiAgent({
         }
         try {
           round = await deps.generateOnce({ contents, systemInstruction, declarations });
-          if (round.text) emit({ type: 'text', delta: round.text });
+          if (round.text) emitText(round.text);
         } catch (retryError) {
           providerError = retryError;
           break;
@@ -286,6 +324,52 @@ export async function runGeminiAgent({
       let fastTool: { name: string; data: unknown } | undefined;
       for (const call of round.functionCalls) {
         if (!call.name) continue;
+
+        // `present_card` is a local declaration, not an MCP tool: resolve it
+        // against this turn's candidates before the guard/callTool path.
+        if (call.name === 'present_card' && cardsMode(runtime) === 'v2') {
+          emit({ type: 'tool_start', name: call.name, label: 'Preparing a card' });
+          const kind = typeof call.args?.kind === 'string' ? call.args.kind : '';
+          const id = typeof call.args?.id === 'string' ? call.args.id : '';
+          const card = resolvePresentCard(candidates, kind, id, session);
+
+          if (card) {
+            card.id = ++cardRenderId;
+            card.afterText = textLength;
+            emit({ type: 'card', card });
+            emit({
+              type: 'tool_result',
+              name: call.name,
+              ok: true,
+              ms: 0,
+              summary: `Showing your ${card.kind}`
+            });
+            responseParts.push({
+              functionResponse: {
+                name: call.name,
+                response: { result: { ok: true } },
+                ...(call.id ? { id: call.id } : {})
+              }
+            });
+          } else {
+            emit({
+              type: 'tool_result',
+              name: call.name,
+              ok: false,
+              ms: 0,
+              summary: 'Card not available'
+            });
+            responseParts.push({
+              functionResponse: {
+                name: call.name,
+                response: { error: 'Card not available' },
+                ...(call.id ? { id: call.id } : {})
+              }
+            });
+          }
+          continue;
+        }
+
         emit({ type: 'tool_start', name: call.name, label: toolLabel(call.name) });
 
         const guard = assertToolArgsAllowed(call.args, allowlist);
@@ -341,6 +425,10 @@ export async function runGeminiAgent({
             summary: result.ok ? summarizeToolResult(call.name, result.data) : 'Tool reported an error'
           });
           if (result.ok) {
+            // Candidate entities are turn-local: present_card never fetches.
+            candidates.push(
+              ...collectCardCandidates(call.name, call.args, result.data, session)
+            );
             const accountId =
               typeof call.args?.accountId === 'string' && call.args.accountId.trim().length > 0
                 ? call.args.accountId
@@ -394,8 +482,8 @@ export async function runGeminiAgent({
         const intro = composeIntro(fastTool.name);
         const answer = composeFastAnswer(fastTool.name, fastTool.data, new Date(deps.now()), message);
         const prose = `${intro}\n\n${answer}`;
-        emit({ type: 'text', delta: intro });
-        emit({ type: 'text', delta: `\n\n${answer}` });
+        emitText(intro);
+        emitText(`\n\n${answer}`);
         contents.push({ role: 'model', parts: [{ text: prose }] });
         break;
       }

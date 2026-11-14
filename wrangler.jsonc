@@ -12,6 +12,7 @@
     "ALLOW_SEED": "0",
     "GEMINI_MODEL": "gemini-3.8-flash",
     "LLM": "gemini",
+    "CARDS_MODE": "v2",
     "NESSIE_BASE_URL": "https://prod-api.nessieisreal.com"
   }
 }

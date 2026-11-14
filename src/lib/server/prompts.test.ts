@@ -103,6 +103,9 @@ describe("buildSystemInstruction", () => {
     expect(instruction).toContain(
       'Put the reason in the prose; the transaction card shows only the transaction details.'
     );
+    expect(instruction).toContain(
+      'call present_card({kind,id}) before the sentence that mentions it. Call it at most twice per turn, only for single entities, never for lists or when the id is unknown. Do not describe the card or repeat its data.'
+    );
     expect(instruction).not.toContain('or no prose.');
     expect(instruction).toContain(
       'Bad: "Your Venture card has a $50 balance." (the card shows both)'

@@ -215,6 +215,27 @@
     cardSeq = Math.max(cardSeq, incoming.id);
   }
 
+  const SUPPORTED_CARD_KINDS = new Set<EntityCard['kind']>([
+    'transaction',
+    'transaction-list',
+    'spending-pie',
+    'bill',
+    'account',
+    'loan',
+    'location',
+    'recurring',
+    'reward',
+    'goal',
+    'cashflow',
+    'merchant',
+    'profile'
+  ]);
+
+  /** Ignore unknown future card kinds instead of rendering a broken card. */
+  function isSupportedCardKind(kind: string): kind is EntityCard['kind'] {
+    return SUPPORTED_CARD_KINDS.has(kind as EntityCard['kind']);
+  }
+
   function positiveTotalRewards(payload: unknown): boolean {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
     const total = (payload as Record<string, unknown>).totalRewards;
@@ -511,6 +532,39 @@
                 cardSeq = Math.max(cardSeq, merged.id);
               }
             }
+            scrollLog();
+            break;
+          }
+          case 'card': {
+            // Server-side present_card result: a normalized EntityCard payload.
+            const raw = data.card;
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) break;
+            const record = raw as Record<string, unknown>;
+            if (typeof record.kind !== 'string' || !isSupportedCardKind(record.kind)) break;
+            if (typeof record.entityId !== 'string' || !record.entityId) break;
+            if (!record.payload || typeof record.payload !== 'object') break;
+
+            const incoming = { ...record } as unknown as EntityCard;
+            if (typeof incoming.id !== 'number' || !Number.isFinite(incoming.id)) {
+              incoming.id = ++cardSeq;
+            } else {
+              cardSeq = Math.max(cardSeq, incoming.id);
+            }
+            if (
+              typeof incoming.afterText !== 'number' ||
+              !Number.isFinite(incoming.afterText)
+            ) {
+              incoming.afterText = message.text.length;
+            }
+
+            const current = message.inlineCards ?? [];
+            const index = current.findIndex(
+              (card) => card.entityId === incoming.entityId
+            );
+            message.inlineCards =
+              index >= 0
+                ? current.map((card, position) => (position === index ? incoming : card))
+                : [...current, incoming];
             scrollLog();
             break;
           }

@@ -27,10 +27,12 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
   - Library-only: `AccountTag`, `ShareBar`, `DeltaBadge`, `Sparkline`, `InlineAction`, `InlineEmpty`, `ExpandRow`, `DefinitionHint`, `BufferedPlaceholder`.
 - [x] Buffering, markdown-safe anchoring, and deep links — `revealInlineCards`, `inlineBlocks`, `anchorEntityCards`, `transactionHref`, `accountHref`.
 - [x] Prompt rules for primitive cards and the single-bill/single-account/single-loan/location/recurring-charge/reward/goal/cashflow/merchant/profile rules.
+- [x] `present_card` tool, ownership validation, normalized `card` SSE event, and the `off`/`v2` flag.
+  - Server collects turn-local candidates from successful data-tool results, validates account ownership for account/bill/loan/transaction/profile, and emits a whitelisted `EntityCard`.
+  - `CARDS_MODE=off` removes the declaration and handling while every existing client-side builder remains the fallback.
 
 ## Remaining
 
-- [ ] `present_card` tool, ownership validation, normalized `card` SSE event, and the `off`/`v2` flag.
 - [ ] Phase 4 cleanup: remove legacy registry/relevance coupling, migrate follow-ups to `EntityCard`, rewrite stale E2E card assertions.
 
 ## Acceptance for every card slice

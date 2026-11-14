@@ -8,7 +8,8 @@ export interface TransactionCardPayload {
   description: string;
   amount: number | null;
   date: string;
-  flag: 'duplicate' | 'unusual';
+  /** Set by anomaly inference only; present_card transactions have no flag. */
+  flag?: 'duplicate' | 'unusual';
   duplicateOf?: string;
   transactionId: string;
   accountId?: string;
@@ -326,6 +327,54 @@ function contextStrings(context: TransactionCardContext | undefined): {
     result.customerId = context.customerId;
   }
   return result;
+}
+
+/**
+ * Normalize one transaction record into a primitive transaction card, used by
+ * the server-side `present_card` pipeline. Returns null without a stable id so
+ * the caller can reject the request.
+ */
+export function transactionCard(
+  record: unknown,
+  accountId: string | undefined,
+  customerId: string | undefined,
+  afterText: number,
+  startId: number
+): TransactionEntityCard | null {
+  try {
+    if (!isRecord(record)) return null;
+
+    const rawId = record._id ?? record.id;
+    const transactionId =
+      (typeof rawId === 'string' || typeof rawId === 'number') &&
+      String(rawId).trim().length > 0
+        ? String(rawId).trim()
+        : '';
+    if (!transactionId) return null;
+
+    const dateValue = record.transactionDate ?? record.transaction_date ?? record.date;
+    const payloadOut: TransactionCardPayload = {
+      description: descriptionOf(record.description),
+      amount: amountOf(record.amount),
+      date: dateOf(dateValue),
+      transactionId,
+      ...(optionalTrimmed(accountId) ? { accountId: optionalTrimmed(accountId) } : {}),
+      ...(optionalTrimmed(customerId) ? { customerId: optionalTrimmed(customerId) } : {})
+    };
+
+    const card: TransactionEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: transactionId,
+      kind: 'transaction',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
 }
 
 /**
