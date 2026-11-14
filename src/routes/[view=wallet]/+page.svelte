@@ -81,6 +81,8 @@
   let snapshotError = $state('');
   let snapshotSeq = 0;
   let walletView = $state<{ accountId: string; tab: WalletTab } | null>(null);
+  let focusTransactionId = $state('');
+  let deepLinkHandled = false;
 
   let displayAccounts = $derived.by(() => {
     const rank = (type: string): number => {
@@ -258,6 +260,7 @@
       loans = Array.isArray(snapshot.loans) ? snapshot.loans : [];
       recentActivity = Array.isArray(snapshot.recentActivity) ? snapshot.recentActivity : [];
       snapshotOverview = overview;
+      if (seq === snapshotSeq) openDeepLinkedAccount();
     } catch {
       if (seq !== snapshotSeq) return;
       snapshotError = "We couldn't load your accounts.";
@@ -269,7 +272,27 @@
   function openAccountView(accountId: string, tab: WalletTab): void {
     if (!accountId) return;
     accountOpen = false;
+    focusTransactionId = '';
     walletView = { accountId, tab };
+  }
+
+  function openDeepLinkedAccount(): void {
+    if (deepLinkHandled) return;
+    const accountId = page.url.searchParams.get('account') ?? '';
+    const txn = page.url.searchParams.get('txn') ?? '';
+    if (!accountId) return;
+    if (!liveAccounts.some((account) => account.id === accountId)) return;
+    deepLinkHandled = true;
+    focusTransactionId = txn;
+    walletView = { accountId, tab: 'activity' };
+  }
+
+  function closeAccountView(): void {
+    walletView = null;
+    focusTransactionId = '';
+    if (page.url.searchParams.has('account') || page.url.searchParams.has('txn')) {
+      void goto('/dashboard', { replaceState: true, noScroll: true });
+    }
   }
   let hidden = $state<Record<string, boolean>>({});
   let inChat = $derived(page.params.view === 'chat');
@@ -682,8 +705,12 @@
   </div>
 
   {#if walletView}
-    <ViewShell title="Account details" subtitle={activeName} onBack={() => (walletView = null)}>
-      <AccountDetailView accountId={walletView.accountId} initialTab={walletView.tab} />
+    <ViewShell title="Account details" subtitle={activeName} onBack={closeAccountView}>
+      <AccountDetailView
+        accountId={walletView.accountId}
+        initialTab={walletView.tab}
+        {focusTransactionId}
+      />
     </ViewShell>
   {/if}
 </div>

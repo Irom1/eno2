@@ -249,6 +249,7 @@
           case 'insight': {
             if (typeof data.kind !== 'string') break;
             const payload = data.payload;
+            const accountId = typeof data.accountId === 'string' ? data.accountId : '';
             const fingerprint = `${data.kind}:${JSON.stringify(payload)}`;
             const existing = message.cards ?? [];
             if (
@@ -273,7 +274,10 @@
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const startId = cardSeq + 1;
-              const incoming = anomalyTransactionCards(payload, anchor, startId);
+              const incoming = anomalyTransactionCards(payload, anchor, startId, {
+                accountId,
+                customerId
+              });
               cardSeq += incoming.length;
               message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
             }
@@ -281,7 +285,10 @@
               // Deposits and withdrawals in one turn share a single merged list.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
-              const incoming = transactionListCard(payload, anchor, cardSeq + 1);
+              const incoming = transactionListCard(payload, anchor, cardSeq + 1, {
+                accountId,
+                customerId
+              });
               if (incoming) {
                 const existing = message.inlineCards?.find(
                   (card): card is TransactionListEntityCard =>

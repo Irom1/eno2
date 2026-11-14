@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { money, dateLabel } from '$lib/format';
   import {
     accountBalanceLabel,
@@ -18,6 +19,7 @@
   interface Props {
     accountId: string;
     initialTab: Tab;
+    focusTransactionId?: string;
   }
 
   interface DetailPayload {
@@ -28,7 +30,7 @@
     loans?: WalletLoan[];
   }
 
-  let { accountId, initialTab }: Props = $props();
+  let { accountId, initialTab, focusTransactionId }: Props = $props();
 
   let tab = $state<Tab>('activity');
   let filter = $state<ActivityFilter>('all');
@@ -43,6 +45,7 @@
   let selectedTransaction = $state<WalletTransaction | null>(null);
   let selectedBill = $state<WalletBill | null>(null);
   let selectedLoan = $state<WalletLoan | null>(null);
+  let highlightId = $state('');
 
   let credit = $derived(isCredit(account?.type ?? ''));
   let heroKind = $derived(
@@ -130,7 +133,33 @@
     selectedTransaction = null;
     selectedBill = null;
     selectedLoan = null;
+    highlightId = '';
     void load(id);
+  });
+
+  $effect(() => {
+    const focus = focusTransactionId ?? '';
+    const currentTab = tab;
+    const isLoading = loading;
+    const rows = transactions;
+    if (!focus || currentTab !== 'activity' || isLoading) return;
+    if (!rows.some((transaction) => transaction.id === focus)) return;
+
+    let cancelled = false;
+    void tick().then(() => {
+      if (cancelled) return;
+      const row = document.querySelector<HTMLElement>(
+        `[data-transaction-id="${CSS.escape(focus)}"]`
+      );
+      if (!row) return;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+      highlightId = focus;
+    });
+
+    return () => {
+      cancelled = true;
+    };
   });
 </script>
 
@@ -192,7 +221,12 @@
             <h3>{dateLabel(date)}</h3>
             <div class="rows">
               {#each rows as transaction (transaction.id)}
-                <button class="tx-row" onclick={() => (selectedTransaction = transaction)}>
+                <button
+                  class="tx-row"
+                  class:highlight={highlightId === transaction.id}
+                  data-transaction-id={transaction.id}
+                  onclick={() => (selectedTransaction = transaction)}
+                >
                   <span class="tx-main">
                     <strong>{transaction.description || 'Transaction'}</strong>
                     <small>{transactionLabel(transaction.kind)} · {label(transaction.status)}</small>
@@ -416,6 +450,10 @@
     text-align: left;
   }
   .tx-row:hover, .list-row:hover { background: var(--page); }
+  .tx-row.highlight,
+  .tx-row.highlight:hover {
+    background: color-mix(in srgb, var(--link) 22%, transparent);
+  }
   .tx-main, .list-main, .tx-amount, .list-side { display: grid; gap: 2px; min-width: 0; }
   .tx-main strong, .list-main strong { font-size: 14px; font-weight: 600; }
   .tx-main small, .list-main small, .tx-amount small, .list-side small { color: var(--muted); font-size: 11px; }

@@ -186,6 +186,7 @@ describe("duplicate detection", () => {
       tx("NETFLIX.COM", 15, "2026-10-20"),
     ]);
     expect(findings).toHaveLength(1);
+    expect(findings[0]?._id).toBe("NETFLIX.COM-2026-10-06-15");
     expect(findings[0]?.duplicateOf).toBe("2026-10-05");
     expect(findings[0]?.date).toBe("2026-10-06");
     expect(findings[0]?.amount).toBe(15);
@@ -217,6 +218,7 @@ describe("outlier detection", () => {
     );
     const findings = detectOutliers(transactions, asOf);
     expect(findings).toHaveLength(1);
+    expect(findings[0]?._id).toBe("PURCHASE-2026-10-09-500");
     expect(findings[0]?.amount).toBe(500);
     expect(findings[0]?.threshold).toBe(30);
   });
