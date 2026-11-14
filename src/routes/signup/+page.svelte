@@ -2,6 +2,8 @@
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
   import CapitalOneLogo from '../[view=wallet]/CapitalOneLogo.svelte';
+  import Eno from '$lib/components/Eno.svelte';
+  import EnoThinking from '$lib/components/EnoThinking.svelte';
   import { accountChoiceSchema, accountTypesFor, emptyAnswers, SIGNUP_FIELDS, customerFromAnswers, type AccountChoice, type SignupAnswers } from '$lib/signup';
 
   interface Message { id: number; role: 'eno' | 'you'; text: string; review?: SignupAnswers; accountChoice?: AccountChoice; retry?: 'turn' | 'signup'; retryText?: string; recovery?: boolean; dashboard?: string }
@@ -168,7 +170,7 @@
 
   async function submit() {
     submitting = true;
-    addEno(`You got it, ${answers.first_name}. I’m getting your space ready.`);
+    addEno(accountChoice === 'none' ? `You got it, ${answers.first_name}. I’m getting your space ready.` : `You got it, ${answers.first_name}. I’m setting up your demo accounts with 100 sample transactions each. This may take a moment.`);
     void settle();
     try {
       if (!createdCustomerId) {
@@ -197,22 +199,21 @@
 <div class="signup-chat" data-theme={theme}>
   <header>
     <a class="brand" href="/" aria-label="Capital One home"><CapitalOneLogo label="Capital One" /><span aria-hidden="true">|</span><strong>Eno 2.0</strong></a>
+    <div class="header-actions">
+      <button class="voice-toggle" disabled={!ready || !speechSupported} aria-label={voiceEnabled ? 'Mute Eno voice' : 'Enable Eno voice'} aria-pressed={voiceEnabled} onclick={toggleVoice}>{@render speaker()}<span>{speechSupported ? voiceEnabled ? 'Voice on' : 'Hear Eno speak' : 'Voice unavailable'}</span></button>
     <a class="exit" href="/" aria-label="Back to home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg></a>
+    </div>
   </header>
   <div class="experience">
-  <aside class="companion" aria-label="Eno, your money sidekick">
-    <div class="companion-character" class:speaking class:thinking={waiting}><img src="/images/eno-character.png" alt="Eno" width="1254" height="1254" /></div>
-    <div class="companion-copy"><h2>Hey, I’m Eno.</h2><p>Your money sidekick.</p><span class="companion-status" role="status">{speaking ? 'Speaking…' : busy ? 'Thinking it through…' : 'Right here with you.'}</span></div>
-    <button class="voice-toggle" disabled={!ready || !speechSupported} aria-label={voiceEnabled ? 'Mute Eno voice' : 'Enable Eno voice'} aria-pressed={voiceEnabled} onclick={toggleVoice}>{@render speaker()}<span>{speechSupported ? voiceEnabled ? 'Voice on' : 'Hear Eno speak' : 'Voice unavailable'}</span></button>
-    {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
-  </aside>
   <main>
     <h1 class="sr-only">Sign up with Eno</h1>
-    <div class="chat-heading"><span class="status-dot" aria-hidden="true"></span> A little hello. A fresh start.</div>
+    <div class="chat-heading" role="status"><span class="status-dot" aria-hidden="true"></span> {speaking ? 'Eno is speaking…' : busy ? 'Eno is thinking…' : 'A little hello. A fresh start.'}</div>
+    {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
     <div class="transcript" bind:this={scrollArea} role="log" aria-label="Your conversation with Eno" aria-live="polite" aria-relevant="additions">
       <div class="messages">
         {#each messages as message (message.id)}
           <div class="message" class:from-you={message.role === 'you'}>
+            {#if message.role === 'eno'}<span class="message-avatar"><Eno variant={isDark ? 'navy' : 'light'} size={40} alt="Eno" /></span>{/if}
             <div class="message-content">
               <span class="sender">{message.role === 'eno' ? 'Eno' : 'You'}{#if message.role === 'eno' && speechSupported}<button class="read-aloud" aria-label="Read Eno message aloud" title="Read aloud" onclick={() => speak(message.text)}>{@render speaker()}</button>{/if}</span>
               <div class="bubble"><p>{message.text}</p>
@@ -221,7 +222,7 @@
                     {#each [{ label: 'First name', value: message.review.first_name }, { label: 'Last name', value: message.review.last_name }, { label: 'Street address', value: `${message.review.street_number} ${message.review.street_name}` }, { label: 'City', value: message.review.city }, { label: 'State', value: message.review.state }, { label: 'ZIP', value: message.review.zip }] as row}
                       <div><span>{row.label}</span><strong>{row.value}</strong>{#if message.id === latestReviewId && readyToCreate && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit(row.label)} aria-label={`Edit ${row.label.toLowerCase()}`}>Edit</button>{/if}</div>
                     {/each}
-                    <div><span>Accounts</span><strong>{message.accountChoice === 'none' ? 'None yet — a fresh dashboard' : accountTypesFor(message.accountChoice ?? 'none').join(' + ') + ' · $0 starting balance'}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('account choice')} aria-label="Edit account choice">Edit</button>{/if}</div>
+                    <div><span>Accounts</span><strong>{message.accountChoice === 'none' ? 'None yet — a fresh dashboard' : accountTypesFor(message.accountChoice ?? 'none').join(' + ') + ' · 100 sample transactions each'}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('account choice')} aria-label="Edit account choice">Edit</button>{/if}</div>
                   </div>
                   {#if message.id === latestReviewId && readyToCreate && !recovery}<button class="confirm" disabled={busy} onclick={confirm}>Looks good. Let’s go {@render arrow()}</button>{/if}
                 {/if}
@@ -232,7 +233,7 @@
             </div>
           </div>
         {/each}
-        {#if busy}<div class="message typing" role="status" aria-label={submitting ? 'Eno is creating your profile' : 'Eno is typing'}><div><span class="sender">Eno</span><span class="typing-dots"><i></i><i></i><i></i></span></div></div>{/if}
+        {#if busy}<div class="message typing" role="status" aria-label={submitting ? 'Eno is creating your profile' : 'Eno is typing'}><span class="message-avatar"><EnoThinking active={busy} variant={isDark ? 'navy' : 'light'} size={40} /></span><div><span class="sender">Eno</span><span class="typing-dots"><i></i><i></i><i></i></span></div></div>{/if}
       </div>
     </div>
     <div class="composer-area">
@@ -267,22 +268,14 @@
   .brand strong { font-size: 17px; font-weight: 550; letter-spacing: -.04em; }
   .exit { display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; width: 38px; height: 38px; color: var(--muted); }
   .exit:hover { background: var(--surface); }
-  .experience { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 30px; flex: 1; min-height: 0; width: min(1160px, 100%); padding: 0 24px; margin: 0 auto; }
-  .companion { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding-bottom: 100px; text-align: center; }
-  .companion-character { position: relative; width: 170px; height: 192px; }
-  .companion-character::before { content: ''; position: absolute; inset: 6%; border-radius: 50%; background: var(--glow); filter: blur(30px); opacity: .55; }
-  .companion-character img { position: absolute; width: 292px; height: 292px; top: 45%; left: 52%; transform: translate(-50%, -50%); }
-  .companion-character.speaking::before { animation: voice-glow 1.2s ease-in-out infinite; }
-  .companion h2 { margin: 0; font-size: 25px; font-weight: 550; letter-spacing: -.04em; }
-  .companion-copy > p { margin: 2px 0 12px; color: var(--muted); font-size: 13px; }
-  .companion-status { display: block; color: var(--link); font-size: 11px; }
+  .experience { display: flex; flex: 1; min-height: 0; width: min(800px, 100%); margin: 0 auto; }
+  .header-actions { display: flex; align-items: center; gap: 16px; }
   .voice-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 24px; background: var(--surface); font-size: 11px; }
   .voice-toggle[aria-pressed='true'] { border-color: var(--link); color: var(--link); }
   .voice-toggle svg { width: 16px; height: 16px; }
-  .speech-notice { margin: 0; max-width: 190px; color: var(--muted); font-size: 11px; }
+  .speech-notice { margin: 0 22px 12px; color: var(--muted); font-size: 11px; text-align: center; }
   .read-aloud { display: grid; place-items: center; padding: 1px; border: 0; background: transparent; color: var(--muted); }
   .read-aloud:hover { color: var(--link); }.read-aloud svg { width: 13px; height: 13px; }
-  @keyframes voice-glow { 50% { opacity: .95; transform: scale(1.12); } }
   main { display: flex; flex-direction: column; min-height: 0; min-width: 0; width: 100%; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .chat-heading { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 20px 18px; color: var(--muted); font-size: 11px; flex: none; }
@@ -290,6 +283,7 @@
   .transcript { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
   .messages { display: flex; flex-direction: column; gap: 28px; padding: 30px 22px 36px; }
   .message { display: flex; align-items: flex-start; gap: 12px; max-width: 92%; }
+  .message-avatar { display: block; flex: none; width: 40px; height: 40px; margin-top: 24px; }
   .sender { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; margin: 0 0 7px 2px; }
   .bubble { padding: 17px 20px; border: 1px solid var(--border); border-radius: 4px 20px 20px; background: var(--surface); }
   .bubble > p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -320,12 +314,8 @@
   .theme-toggle { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: transparent; }
   .theme-toggle svg { width: 14px; height: 14px; }
   @media (max-width: 600px) {
-    .experience { display: flex; flex-direction: column; padding: 0; gap: 0; }
-    .companion { flex: none; flex-direction: row; justify-content: flex-start; gap: 14px; padding: 4px 20px 12px; text-align: left; }
-    .companion-character { width: 50px; height: 62px; flex: none; }.companion-character img { width: 90px; height: 90px; }
-    .companion-copy { flex: 1; }.companion h2 { font-size: 18px; }.companion-copy > p { display: none; }.companion-status { margin-top: 3px; font-size: 10px; }
     .voice-toggle { width: 38px; height: 38px; padding: 0; flex: none; }.voice-toggle span { display: none; }
-    .speech-notice { position: absolute; top: 145px; inset-inline: 20px; max-width: none; font-size: 10px; }
+    .header-actions { gap: 10px; }
     main { flex: 1; }.chat-heading { padding: 0 16px 10px; font-size: 10px; }
     header { width: calc(100% - 36px); padding: 18px 0; }
     .brand { gap: 10px; }.brand :global(svg) { width: 94px; height: 34px; }.brand strong { font-size: 15px; }
@@ -335,5 +325,5 @@
     .composer-footer > span:first-child { display: none; }.composer-footer > span:nth-child(2) { margin-left: 4px; margin-right: auto; }
     .profile-preview > div > span { width: 55px; }.profile-preview strong { min-width: 70px; }
   }
-  @media (prefers-reduced-motion: reduce) { .typing-dots i, .companion-character.speaking::before { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .typing-dots i { animation: none; } }
 </style>

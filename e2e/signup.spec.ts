@@ -32,6 +32,8 @@ test('starts immediately as a freeform chat, keeps details through questions, th
   await say(page, 'No accounts yet');
   await expect(page.getByLabel('Your profile')).toContainText('MA');
   await expect(page.getByLabel('Your profile')).toContainText('None yet');
+  const enoMessages = page.locator('.message:not(.from-you):not(.typing)');
+  await expect(page.locator('.message-avatar img[alt="Eno"]')).toHaveCount(await enoMessages.count());
   expect(signupBody).toBeUndefined();
   await say(page, 'Looks good');
   await expect(page).toHaveURL(/dashboard\?customer=new-ada$/);
@@ -56,7 +58,7 @@ test('a failed model reply can be retried without losing the conversation', asyn
   await expect(page.locator('.from-you')).toHaveCount(1);
 });
 
-test('Eno stays beside the chat, can speak, and fits on mobile', async ({ page }) => {
+test('Eno appears beside each of his messages, can speak, and fits on mobile', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
       getVoices: () => [], cancel: () => {},
@@ -65,7 +67,8 @@ test('Eno stays beside the chat, can speak, and fits on mobile', async ({ page }
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/signup');
-  await expect(page.getByRole('complementary', { name: 'Eno, your money sidekick' })).toBeVisible();
+  await expect(page.getByRole('complementary')).toHaveCount(0);
+  await expect(page.locator('.message-avatar img[alt="Eno"]')).toBeVisible();
   await page.getByRole('button', { name: 'Enable Eno voice', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-spoken-text', /What should I call you/);
   await expect(page.getByRole('button', { name: 'Mute Eno voice', exact: true })).toHaveAttribute('aria-pressed', 'true');
