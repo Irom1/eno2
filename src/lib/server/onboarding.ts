@@ -47,11 +47,14 @@ const responseSchema = {
 export function reconcileOnboarding(request: OnboardingRequest, raw: unknown) {
   const result = outputSchema.parse(raw);
   const answers = { ...request.answers };
+  let invalidAnswer = '';
   for (const key of SIGNUP_FIELDS) {
     const extracted = result.updates[key];
     if (extracted === null || !extracted.trim()) continue;
     const value = key === 'state' ? normalizeState(extracted) : extracted.trim();
-    if (!validateAnswer(key, value)) answers[key] = value;
+    const error = validateAnswer(key, value);
+    answers[key] = error ? '' : value;
+    if (error && !invalidAnswer) invalidAnswer = error;
   }
   const complete = customerCreateSchema.safeParse(customerFromAnswers(answers)).success;
   const previouslyComplete = customerCreateSchema.safeParse(customerFromAnswers(request.answers)).success;
@@ -72,12 +75,17 @@ export function reconcileOnboarding(request: OnboardingRequest, raw: unknown) {
   const reviewed = request.reviewedFingerprint === reviewFingerprint(request.answers, request.accountChoice, request.spending, request.includeCreditCard);
   const approval = isAffirmative(request.message) || (result.confirmed && canAcceptModelApproval(request.message));
   const confirmed = reviewed && approval && ready && previouslyComplete && unchanged;
-  let message = result.reply;
-  if (stage === 'spending' && !/spend|categor|dining|grocer|travel/i.test(message)) message += '\n\nWhat spending matters most to you? Pick your favorites below, or tell me in your own words.';
-  if (stage === 'accounts' && !/checking|savings|account/i.test(message)) message += '\n\nI’ve preselected 360 Checking, 360 Performance Savings, and your matching card. You can uncheck any you don’t want.';
+  const message = invalidAnswer || result.reply;
   const recommendedCard = recommendDemoCard(spending);
   return { message, answers, accountChoice, spending, includeCreditCard, recommendedCard, card: includeCreditCard === false ? null : recommendedCard, stage, ready, confirmed };
 
+}
+
+/** Add the next question only after the route has verified the address gate. */
+export function onboardingStageMessage(message: string, stage: OnboardingStage): string {
+  if (stage === 'spending' && !/spend|categor|dining|grocer|travel/i.test(message)) return message + '\n\nWhat spending matters most to you? Pick your favorites below, or tell me in your own words.';
+  if (stage === 'accounts' && !/checking|savings|account/i.test(message)) return message + '\n\nI’ve preselected 360 Checking, 360 Performance Savings, and your matching Capital One card. You can uncheck any you don’t want.';
+  return message;
 }
 
 export async function runOnboarding(runtime: RuntimeEnv, request: OnboardingRequest) {
@@ -86,7 +94,7 @@ export async function runOnboarding(runtime: RuntimeEnv, request: OnboardingRequ
 
 You quietly collect ONLY these Nessie CustomerCreate fields: first_name, last_name, street_number, street_name (include apartment/unit), city, state (US two-letter code), zip (5 digits or ZIP+4). Extract ALL useful details the user voluntarily provides, even out of order or several in one message. A full address can fill multiple fields at once. Normalize obvious spelling mistakes like 'masachusets' to MA and recognizable city typos to the intended city; do not demand perfectly formatted input. Never invent missing details, infer someone’s address from unrelated examples, or change personal names based on a guess. For genuinely ambiguous details, ask a friendly clarifying question. Never request email, password, SSN, date of birth, bank credentials, balances, or account numbers. Missing fields can be gathered casually in one or two related questions. Do not recite field names to the user.
 
-The app checks addresses and offers corrections. When someone confirms the displayed mailing address with yes, yep, correct, sure, or another clear affirmative, USE that address and move on. Never ask them to type the address or confirm it again. If a street address is already in Known details, do not ask whether it is right again.
+The app checks addresses and offers corrections. Finish the current question before asking the next: never ask about spending or accounts while asking for a missing, invalid, or corrected name/address, or while waiting for address confirmation. When someone confirms the displayed mailing address with yes, yep, correct, sure, or another clear affirmative, USE that address and move on. Never ask them to type the address or confirm it again. If a street address is already in Known details, do not ask whether it is right again.
 
 When first asking for their mailing address, soften the bigger question with ONE brief, gentle joke, such as “Mine’s mostly ones and zeroes.” Work it naturally into your own words. Do not repeat the joke on corrections or follow-up address questions, make jokes about their actual home or personal details, imply that you will visit, or make privacy promises you cannot guarantee.
 

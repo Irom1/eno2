@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	import type { CategoryId } from './emissions';
-	export type IconId = CategoryId | 'green' | 'mixed' | 'heavy' | 'sun' | 'moon' | 'arrow' | 'chevron' | 'chat' | 'calendar' | 'leaf' | 'sparkle' | 'chart' | 'receipt';
+	export type IconId = CategoryId | 'green' | 'mixed' | 'heavy' | 'sun' | 'moon' | 'arrow' | 'chevron' | 'chat' | 'calendar' | 'leaf' | 'sparkle' | 'chart' | 'receipt' | 'portrait' | 'landscape';
 </script>
 
 <script lang="ts">
@@ -24,7 +24,9 @@
 		leaf: 'M5 19c0-8 5-13 14-14 0 9-5 14-13 14zM5 19l7-7',
 		sparkle: 'M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7z',
 		chart: 'M5 19V9M12 19V5M19 19v-7',
-		receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h4'
+		receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h4',
+		portrait: 'M8.5 3h7A1.5 1.5 0 0 1 17 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 7 19.5v-15A1.5 1.5 0 0 1 8.5 3z',
+		landscape: 'M3 8.5A1.5 1.5 0 0 1 4.5 7h15A1.5 1.5 0 0 1 21 8.5v7a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 15.5z'
 	};
 </script>
 

@@ -11,6 +11,7 @@ export interface TransactionCardPayload {
   /** Set by anomaly inference only; present_card transactions have no flag. */
   flag?: 'duplicate' | 'unusual';
   duplicateOf?: string;
+  comparisonScope?: 'merchant' | 'account';
   transactionId: string;
   accountId?: string;
   customerId?: string;
@@ -432,6 +433,7 @@ export function anomalyTransactionCards(
       if (typeof finding.duplicateOf === 'string') {
         payload.duplicateOf = finding.duplicateOf;
       }
+      if (flag === 'unusual') payload.comparisonScope = typeof finding.reason === 'string' && /merchant/i.test(finding.reason) ? 'merchant' : 'account';
 
       const entityId = transactionId || entityIdFor(type || 'unusual', payload);
 
@@ -1688,14 +1690,15 @@ function anchorCandidates(card: EntityCard): string[][] {
 
 /**
  * Reposition entity cards after the mention they introduce: transactions and
- * recurring charges after their description, bills after their payee, accounts
+ * recurring charges after their description, bills after their complete paragraph, accounts
  * after their nickname (falling back to type), loans after their type,
  * locations after their name, rewards after their label, cashflow after its
  * period, and merchants/profiles after their name. Returns copies; cards with
  * no mention keep their existing `afterText`. Non-anchored kinds (lists, pies,
- * goals) are left unchanged.
+ * goals) are left unchanged. Pending bill paragraphs stay buffered until a
+ * paragraph boundary arrives, so their cards never interrupt streamed context.
  */
-export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard[] {
+export function anchorEntityCards(text: string, cards: EntityCard[], options: { pending?: boolean } = {}): EntityCard[] {
   const source = typeof text === 'string' ? text : '';
   const list = Array.isArray(cards) ? cards : [];
 
@@ -1731,12 +1734,21 @@ export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard
       }
 
       if (!match) {
-        anchored.push({ ...card });
+        anchored.push(card.kind === 'bill' ? { ...card, afterText: options.pending ? Number.MAX_SAFE_INTEGER : source.length } : { ...card });
         continue;
       }
 
       const last = textTokens[match.index + match.length - 1];
-      const offset = anchorEnd(source, last.end);
+      let offset = anchorEnd(source, last.end);
+      if (card.kind === 'bill') {
+        // A bill follows its complete paragraph/list item, never just its payee.
+        const boundary = /\n[ \t]*\n|\n(?=[ \t]*(?:[-*]|\d+[.)])\s)/.exec(source.slice(last.end));
+        offset = boundary ? last.end + boundary.index : options.pending ? Number.MAX_SAFE_INTEGER : source.length;
+      } else if (card.kind === 'transaction' && card.payload.flag) {
+        const explanation = anomalyContextSentence(card);
+        const explanationAt = source.indexOf(explanation);
+        if (explanationAt >= 0) offset = explanationAt + explanation.length;
+      }
       anchored.push({ ...card, afterText: offset });
       cursor = match.index + match.length;
     }
@@ -1757,19 +1769,37 @@ export function anchorTransactionCards(text: string, cards: EntityCard[]): Entit
   return anchorEntityCards(text, cards);
 }
 
-function anomalyPhrase(card: TransactionEntityCard): string {
-  const description =
-    typeof card.payload?.description === 'string' ? card.payload.description.trim() : '';
-  const at = description ? ` at ${description}` : '';
+export function anomalyContextSentence(card: TransactionEntityCard): string {
+  const description = card.payload.description.trim() || 'This charge';
   if (card.payload?.flag === 'duplicate') {
-    return `a possible duplicate transaction${at}`;
+    return `${description} is a possible duplicate because the same merchant charged the same amount again within three days.`;
   }
-  return `a suspiciously large transaction${at}`;
+  const comparison = card.payload.comparisonScope === 'merchant' ? 'your usual purchases at this merchant' : 'your recent purchases on this account';
+  return `${description} is an unusually large purchase compared with ${comparison}.`;
+}
+
+/** Keep model prose, adding a grounded reason for any flagged charge it missed. */
+export function completeAnomalyContext(text: string, cards: EntityCard[]): string {
+  const source = typeof text === 'string' ? text : '';
+  const segments = source.split(/\n\s*\n|(?<=[.!?])\s+(?=[A-Z])/);
+  const additions: string[] = [];
+  for (const card of cards) {
+    if (card.kind !== 'transaction' || !card.payload.flag) continue;
+    const keys = descriptionTokens(card.payload.description);
+    const token = firstMeaningfulToken(keys);
+    const reason = card.payload.flag === 'duplicate'
+      ? /same (?:amount|merchant)|charged (?:twice|again)|(?:duplicate|repeat).{0,80}(?:days?|twice|again|amount)/i
+      : /(?:larger|higher|large|high).{0,80}(?:usual|typical|recent|other|normal)|(?:usual|typical|recent|other|normal).{0,80}(?:larger|higher|large|high)/i;
+    const explained = segments.some((segment) => findTokenMatch(tokenize(segment), keys, 0) !== null && reason.test(segment)) ||
+      (!!token && segments.some((segment) => findTokenMatch(tokenize(segment), [token], 0) !== null && reason.test(segment)));
+    if (!explained) additions.push(anomalyContextSentence(card));
+  }
+  return [source.trim(), ...new Set(additions)].filter(Boolean).join('\n\n');
 }
 
 /**
  * Deterministic explanation for anomaly cards, used when the model returned no
- * prose. Names the merchants only; amounts and dates stay in the cards.
+ * prose. Every displayed finding gets a reason; amounts and dates stay in cards.
  */
 export function anomalyExplanation(cards: EntityCard[]): string {
   try {
@@ -1780,9 +1810,9 @@ export function anomalyExplanation(cards: EntityCard[]): string {
           Boolean(card) &&
           typeof card === 'object' &&
           !Array.isArray(card) &&
-          card.kind === 'transaction'
+          card.kind === 'transaction' && !!card.payload.flag
       )
-      .slice(0, 2);
+      .slice(0, 8);
     if (transactions.length === 0) return '';
 
     // Lead with the unusual amount, matching the prose rhythm.
@@ -1790,14 +1820,7 @@ export function anomalyExplanation(cards: EntityCard[]): string {
       ...transactions.filter((card) => card.payload?.flag !== 'duplicate'),
       ...transactions.filter((card) => card.payload?.flag === 'duplicate')
     ];
-    const phrases = ordered.map(anomalyPhrase);
-    const tip =
-      transactions.length > 1
-        ? 'Review both charges and report anything you don’t recognize.'
-        : 'Review the charge and report anything you don’t recognize.';
-
-    if (phrases.length === 1) return `You have ${phrases[0]}. ${tip}`;
-    return `You have ${phrases[0]} and ${phrases[1]}. ${tip}`;
+    return `${completeAnomalyContext('', ordered)}\n\nYou can review these charges and report anything you don’t recognize.`;
   } catch {
     return '';
   }

@@ -98,7 +98,7 @@ describe("buildSystemInstruction", () => {
       'Do not repeat information already visible in a card: amounts, balances, dates, names, statuses, or rows.'
     );
     expect(instruction).toContain(
-      'You have a suspiciously large transaction at APPLE and a possible duplicate transaction at Netflix.'
+      'APPLE stands out because it is much larger than your recent purchases; Netflix may be a duplicate because the same merchant charged the same amount again within three days.'
     );
     expect(instruction).toContain(
       'Put the reason in the prose; the transaction card shows only the transaction details.'

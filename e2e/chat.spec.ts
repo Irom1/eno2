@@ -101,33 +101,55 @@ async function expectFollowupsMatchBubble(page: Page): Promise<void> {
 
   const chips = followups.locator('.follow-up');
   expect(
-    await followups.locator('.follow-up-arrow').count(),
-    'every follow-up has a trailing arrow'
+    await followups.locator('.follow-up-elbow').count(),
+    'every follow-up has a leading elbow arrow'
   ).toBe(await chips.count());
+  expect(
+    await followups.locator('.follow-up-arrow').count(),
+    'no follow-up has a trailing right arrow'
+  ).toBe(0);
+
+  const alignments = await chips.evaluateAll((elements) =>
+    elements.map((element) => {
+      const elbow = element.querySelector('.follow-up-elbow');
+      const label = element.querySelector('.follow-up-label');
+      const elbowRect = elbow?.getBoundingClientRect();
+      const labelRect = label?.getBoundingClientRect();
+      return {
+        hasElbow: Boolean(elbowRect),
+        elbowLeftOfLabel: Boolean(
+          elbowRect && labelRect && elbowRect.right <= labelRect.left + 1
+        )
+      };
+    })
+  );
+  alignments.forEach((alignment) => {
+    expect(alignment.hasElbow, 'each row has an elbow arrow').toBe(true);
+    expect(alignment.elbowLeftOfLabel, 'the elbow sits left of the label').toBe(true);
+  });
 }
 
-/** Follow-up rows use straight hairline dividers, with none above the first. */
+/** Follow-up rows are borderless: no dividers between rows. */
 async function expectFollowupBorders(page: Page): Promise<void> {
   const rows = await page.locator('.follow-up').evaluateAll((elements) =>
     elements.map((element) => {
       const style = getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
       return {
         top: style.borderTopWidth,
-        radius: style.borderRadius,
-        width: rect.width
+        right: style.borderRightWidth,
+        bottom: style.borderBottomWidth,
+        left: style.borderLeftWidth,
+        radius: style.borderRadius
       };
     })
   );
   expect(rows.length, 'follow-up rows are present').toBeGreaterThan(0);
-  rows.forEach((row, index) => {
+  rows.forEach((row) => {
     expect(row.radius, 'follow-up corners are square').toBe('0px');
-    if (index === 0) {
-      expect(row.top, 'the first row has no top divider').toBe('0px');
-    } else {
-      expect(row.top, 'subsequent rows have a hairline divider').toBe('1px');
-      expect(row.width, 'the divider spans the row').toBeGreaterThan(0);
-    }
+    expect(row.top, 'rows have no top border').toBe('0px');
+    expect(row.right, 'rows have no right border').toBe('0px');
+    expect(row.bottom, 'rows have no bottom border').toBe('0px');
+    expect(row.left, 'rows have no left border').toBe('0px');
   });
 }
 
@@ -733,49 +755,77 @@ test.describe('chat prompts', () => {
     await expectFollowupsMatchBubble(page);
     await expectFollowupBorders(page);
 
-    // Transparent rows with a trailing arrow that points the way forward.
+    // Transparent, borderless rows with a leading elbow arrow.
     const rowStyles = await chips.evaluateAll((elements) =>
       elements.map((element) => {
-        const arrow = element.querySelector('.follow-up-arrow');
+        const elbow = element.querySelector('.follow-up-elbow');
         const label = element.querySelector('.follow-up-label');
-        const arrowRect = arrow?.getBoundingClientRect();
+        const elbowRect = elbow?.getBoundingClientRect();
         const labelRect = label?.getBoundingClientRect();
         return {
           background: getComputedStyle(element).backgroundColor,
-          hasArrow: Boolean(arrow),
-          arrowRightOfLabel: Boolean(
-            arrowRect && labelRect && arrowRect.left >= labelRect.right
+          hasElbow: Boolean(elbow),
+          hasArrow: Boolean(element.querySelector('.follow-up-arrow')),
+          elbowLeftOfLabel: Boolean(
+            elbowRect && labelRect && elbowRect.right <= labelRect.left + 1
           )
         };
       })
     );
-    expect(await page.locator('.follow-up-arrow').count()).toBe(3);
+    expect(await page.locator('.follow-up-elbow').count()).toBe(3);
+    expect(await page.locator('.follow-up-arrow').count()).toBe(0);
     for (const style of rowStyles) {
       expect(style.background, 'follow-up rows are transparent').toBe('rgba(0, 0, 0, 0)');
-      expect(style.hasArrow, 'each row has a trailing arrow').toBe(true);
-      expect(style.arrowRightOfLabel, 'arrow sits after the label').toBe(true);
+      expect(style.hasElbow, 'each row has a leading elbow arrow').toBe(true);
+      expect(style.hasArrow, 'rows have no trailing right arrow').toBe(false);
+      expect(style.elbowLeftOfLabel, 'elbow sits before the label').toBe(true);
     }
 
     const firstRow = chips.first();
-    const firstArrow = firstRow.locator('.follow-up-arrow');
-    expect(await firstArrow.evaluate((element) => getComputedStyle(element).transform)).toBe(
+    const firstElbow = firstRow.locator('.follow-up-elbow');
+    expect(await firstElbow.evaluate((element) => getComputedStyle(element).transform)).toBe(
       'none'
     );
-    await firstRow.hover();
-    const readTranslateX = (element: Element): number => {
-      const matrix = /matrix\(([^)]+)\)/.exec(getComputedStyle(element).transform);
-      return Number.parseFloat((matrix?.[1] ?? '').split(',')[4] ?? '0');
+    const firstLabel = firstRow.locator('.follow-up-label');
+    const decorationFor = (element: Element): string => {
+      const style = getComputedStyle(element);
+      return `${style.textDecorationLine} ${style.backgroundImage}`;
     };
-    await expect
-      .poll(() => firstArrow.evaluate(readTranslateX))
-      .toBeGreaterThanOrEqual(2);
-    const translateX = await firstArrow.evaluate(readTranslateX);
-    expect(translateX).toBeGreaterThanOrEqual(2);
-    expect(translateX).toBeLessThanOrEqual(3.5);
     expect(
       await firstRow.evaluate((element) => getComputedStyle(element).backgroundColor),
-      'hover must not add a background'
+      'rows are transparent at rest'
     ).toBe('rgba(0, 0, 0, 0)');
+    expect(await firstLabel.evaluate(decorationFor)).toBe('none none');
+    await firstRow.hover();
+    await expect
+      .poll(() =>
+        firstRow.evaluate((element) => getComputedStyle(element).backgroundColor)
+      )
+      .not.toBe('rgba(0, 0, 0, 0)');
+    expect(
+      await firstRow.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          top: style.borderTopWidth,
+          right: style.borderRightWidth,
+          bottom: style.borderBottomWidth,
+          left: style.borderLeftWidth
+        };
+      }),
+      'hover must not add a border'
+    ).toEqual({ top: '0px', right: '0px', bottom: '0px', left: '0px' });
+    expect(
+      await firstElbow.evaluate((element) => getComputedStyle(element).transform),
+      'hover must not translate the elbow'
+    ).toBe('none');
+    expect(
+      await firstLabel.evaluate(decorationFor),
+      'hover must not underline the label'
+    ).toBe('none none');
+    expect(
+      await firstRow.evaluate((element) => getComputedStyle(element).backgroundColor),
+      'hover adds a subtle link tint'
+    ).not.toBe('rgba(0, 0, 0, 0)');
 
     const turnsBefore = await page.locator('.assistant-turn').count();
     const chatResponse = page.waitForResponse(
@@ -1711,7 +1761,7 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.transaction-card[data-flag]')).toHaveCount(0);
 
     // Each anomaly card links to its transaction with the finding _id.
-    const cardLinks = cards.locator('a.transaction-link');
+    const cardLinks = page.locator('a.transaction-card.transaction-link');
     await expect(cardLinks).toHaveCount(count);
     const cardHrefs = await cardLinks.evaluateAll((elements) =>
       elements.map((element) => ({
@@ -1737,7 +1787,7 @@ test.describe('chat prompts', () => {
       elements.map((element) => Boolean(element.closest('.bubble.assistant')))
     );
     expect(insideBubble.every(Boolean), 'every transaction card sits inside a bubble').toBe(true);
-    await expect(page.locator('.bubble.assistant .transaction-card a.transaction-link')).toHaveCount(
+    await expect(page.locator('.bubble.assistant a.transaction-card.transaction-link')).toHaveCount(
       count
     );
     await expect(page.locator('.chat-card .transaction-card')).toHaveCount(0);
@@ -1751,7 +1801,7 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(page.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
 
-    // Prose carries the explanation; cards sit after their merchant mention.
+    // Prose carries a separate reason; each card follows its complete explanation.
     const prose = (await assistantText(page)).trim();
     expect(prose.length, 'assistant prose explains the finding').toBeGreaterThan(0);
     expect(prose).toMatch(/duplicate|large|suspicious/i);

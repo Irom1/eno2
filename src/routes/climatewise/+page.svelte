@@ -5,6 +5,7 @@
 
 	let customerId = $derived(page.url.searchParams.get('customer'));
 	let dashboardHref = $derived(customerHref('/dashboard', customerId));
+	let chatHref = $derived(customerHref('/chat', customerId));
 </script>
 
 <svelte:head><title>ClimateWise | Eno</title></svelte:head>
@@ -12,5 +13,5 @@
 <ClimateWisePage
 	{customerId}
 	backHref={dashboardHref}
-	enoHref={(prompt) => `${dashboardHref}${customerId ? '&' : '?'}ask=${encodeURIComponent(prompt)}`}
+	enoHref={(prompt) => `${chatHref}${customerId ? '&' : '?'}ask=${encodeURIComponent(prompt)}`}
 />

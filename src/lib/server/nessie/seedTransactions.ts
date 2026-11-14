@@ -2,6 +2,7 @@ import type { RuntimeEnv } from '../env';
 import type { FetchLike } from './client';
 import type { SpendingCategory } from '../../spending';
 import { GREEN_DEMO_MERCHANTS, NON_GREEN_DEMO_MERCHANTS } from '../../transactionImpact';
+import { merchantOutlierBaseline } from './tools/insights';
 
 export type DemoAccountType = 'Checking' | 'Savings' | 'Credit Card';
 
@@ -45,10 +46,13 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
     if (type === 'Credit Card') {
       const category = categories.length ? categories[index % 5 < 3 ? 0 : index % categories.length] : 'other';
       const merchants = cardMerchants[category];
+      const merchant = merchants[index % merchants.length];
+      const amount = index === 0 ? 1000 : merchant === 'SHELL OIL' ? random(30, 65) : random(110, 280);
+      const payment = random(35, 100);
       // Purchases exceed payments throughout the history, yielding a positive
       // balance owed. Card payments are Nessie deposits; purchases withdrawals.
-      result.push({ kind: 'withdrawal', medium: 'balance', transaction_date: date, status: 'completed', amount: index === 0 ? 1000 : random(110, 280), description: index === 0 ? 'DEMO OPENING PURCHASE' : merchants[index % merchants.length] });
-      result.push({ kind: 'deposit', medium: 'balance', transaction_date: date, status: 'completed', amount: random(35, 100), description: 'DEMO CREDIT CARD PAYMENT' });
+      result.push({ kind: 'withdrawal', medium: 'balance', transaction_date: date, status: 'completed', amount, description: index === 0 ? 'DEMO OPENING PURCHASE' : merchant });
+      result.push({ kind: 'deposit', medium: 'balance', transaction_date: date, status: 'completed', amount: merchant === 'SHELL OIL' ? Math.min(payment, Math.floor(amount * 0.6)) : payment, description: 'DEMO CREDIT CARD PAYMENT' });
       continue;
     }
     result.push({
@@ -79,12 +83,18 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
     ['LOCAL BOOKSTORE', 15, 55], ['CVS PHARMACY', 9, 65],
     ['MBTA TRANSIT', 10, 35], ['WHOLE FOODS MARKET', 35, 95]
   ] as const;
-  const candidates = [...unusualMerchants];
+  // Exactly one possible gas outlier in ~30% of histories; the other examples
+  // come from non-gas merchants so fuel does not dominate every ClimateWise score.
+  const includeGas = random(0, 99) < 30;
+  const candidates = unusualMerchants.filter(([description]) => description !== 'SHELL GAS STATION');
+  const unusualPurchases: DemoTransaction[] = [];
   for (let index = 0; index < 2; index++) {
-    const [description, min, max] = candidates.splice(random(0, candidates.length - 1), 1)[0];
+    const [description, min, max] = index === 0 && includeGas ? unusualMerchants[0] : candidates.splice(random(0, candidates.length - 1), 1)[0];
     Object.assign(withdrawals[1 + index * 2], { description, amount: random(min, Math.floor((min + max) / 2)) });
     Object.assign(withdrawals[2 + index * 2], { description, amount: random(Math.floor((min + max) / 2) + 1, max) });
-    Object.assign(withdrawals[random(30 + index * 5, 33 + index * 5)], { description, amount: random(1200, 2200) });
+    const purchase = withdrawals[random(30 + index * 5, 33 + index * 5)];
+    Object.assign(purchase, { description, amount: 0 });
+    unusualPurchases.push(purchase);
   }
   const dateAgo = (days: number) => new Date(today - days * 86_400_000).toISOString().slice(0, 10);
   // Only two deliberate duplicate pairs among 100 total records.
@@ -95,6 +105,15 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
   // Six recent unsettled records stay visible but do not affect posted totals.
   for (let index = 46; index < 50; index++) Object.assign(withdrawals[index], { status: 'pending', transaction_date: dateAgo(index % 2) });
   for (let index = 48; index < 50; index++) Object.assign(credits[index], { status: 'pending', transaction_date: dateAgo(index % 2) });
+  for (const purchase of unusualPurchases) {
+    const ordinary = withdrawals.filter((item) => item !== purchase && item.description === purchase.description && item.status === 'completed').map((item) => item.amount);
+    const largest = Math.max(...ordinary, 1);
+    // Evaluate the baseline with this purchase above its normal peers. The
+    // actual sample sits just past that threshold, rather than costing thousands
+    // at a gas station and overwhelming the spend-based ClimateWise estimate.
+    const { threshold } = merchantOutlierBaseline([...ordinary, largest * 1000]);
+    purchase.amount = Math.ceil(Math.max(threshold, largest)) + random(25, 75);
+  }
   return result;
 }
 
