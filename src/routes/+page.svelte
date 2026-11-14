@@ -245,10 +245,9 @@
 
       <div class="foreground">
         <img class="hills" src="/rolling-hills.svg" alt="" width="1440" height="340" />
-        <a class="account-link" href="/chat?topic=open-account">
-          I’d like to open an account <span aria-hidden="true">↑</span>
+        <a class="account-link" href="/signup">
+          I'd like to open my first account <span aria-hidden="true">↑</span>
         </a>
-        <a class="sign-up" href="/signup">Sign up</a>
       </div>
     </section>
   </main>
@@ -516,8 +515,6 @@
     font-weight: 650;
     box-shadow: 0 8px 30px #14302155;
   }
-  .sign-up { color: #102321; background: #fff; border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 650; }
-  .sign-up:hover { text-decoration: underline; }
   .account-link:hover { background: #203f36; }
   .account-link span {
     display: grid;

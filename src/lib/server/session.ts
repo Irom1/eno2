@@ -106,6 +106,12 @@ export function destroySession(id: string | undefined | null): boolean {
   return store().delete(id);
 }
 
+export function destroyCustomerSessions(customerId: string): void {
+  for (const [id, session] of store()) {
+    if (session.customer.id === customerId) store().delete(id);
+  }
+}
+
 const isFunctionResponsePart = (part: ContentPart): boolean =>
   Boolean(part.functionResponse) && !part.text && !part.functionCall;
 
