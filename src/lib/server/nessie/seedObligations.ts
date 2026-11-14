@@ -1,3 +1,4 @@
+import { loanProductName } from '../../products';
 import type { RuntimeEnv } from '../env';
 import type { FetchLike } from './client';
 import type { DemoAccountType } from './seedTransactions';
@@ -11,7 +12,16 @@ export function buildDemoObligations(type: DemoAccountType, balance: number, now
     { status: 'recurring', payee: 'Demo energy cooperative', nickname: 'Sample energy bill', payment_date: date(12), payment_amount: 92 },
     { status: 'recurring', payee: 'Demo home internet', nickname: 'Sample monthly internet', payment_date: date(20), recurring_date: Number(date(20).slice(-2)), payment_amount: 79 }
   ].map((bill) => ({ ...bill, recurring_date: bill.recurring_date ?? Number(bill.payment_date.slice(-2)) }));
-  const loan = { type: type === 'Checking' ? 'auto' : 'personal', status: 'approved', credit_score: 740, monthly_payment: type === 'Checking' ? 285 : 120, amount: type === 'Checking' ? 12000 : 3500, description: type === 'Checking' ? 'Fictional demo auto loan' : 'Fictional demo personal loan' };
+  const auto = type === 'Checking';
+  const loanType = auto ? 'auto' : 'personal';
+  const loan = {
+    type: loanType,
+    status: 'approved',
+    credit_score: 740,
+    monthly_payment: auto ? 285 : 120,
+    amount: auto ? 12000 : 3500,
+    description: loanProductName(loanType)
+  };
   return { bills, loan };
 }
 

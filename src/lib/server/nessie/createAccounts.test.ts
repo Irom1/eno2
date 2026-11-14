@@ -47,6 +47,7 @@ it('opens only the chosen accounts and saves 100 Nessie transactions for each', 
   expect(accountCalls).toHaveLength(2);
   for (const [, init] of accountCalls) {
     const account = JSON.parse(String(init?.body));
+    expect(account.nickname).toBe(account.type === 'Checking' ? '360 Checking' : '360 Performance Savings');
     const calls = transport.mock.calls.filter(([url]) => new URL(String(url)).pathname.startsWith(`/accounts/${account.type.toLowerCase()}-id/`) && /\/(?:deposits|withdrawals)$/.test(new URL(String(url)).pathname));
     let balance = 0; let spending = 0;
     for (const [url, transactionInit] of calls) {
@@ -79,7 +80,7 @@ it('stops and reports uncertainty without retrying an account write', async () =
 it('resolves text-only creation acknowledgements before writing demo history', async () => {
   const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     if (new URL(String(url)).pathname.startsWith('/customers/')) {
-      return init?.method === 'POST' ? new Response('Account created', { status: 201 }) : Response.json([{ _id: 'new-checking', type: 'Checking', nickname: 'Everyday Checking' }]);
+      return init?.method === 'POST' ? new Response('Account created', { status: 201 }) : Response.json([{ _id: 'new-checking', type: 'Checking', nickname: '360 Checking' }]);
     }
     if (init?.method !== 'POST') return Response.json([]);
     return Response.json({ code: 201 }, { status: 201 });

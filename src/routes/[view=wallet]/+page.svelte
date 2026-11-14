@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { accountProduct } from '$lib/products';
   import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
-  import { orderCustomers, savedCustomerId, rememberCustomerId } from '$lib/customerSelection';
+  import { customerHref, orderCustomers, savedCustomerId, rememberCustomerId } from '$lib/customerSelection';
   import { demoCreditScore, creditScoreRating } from '$lib/creditWise';
-  import { afterNavigate, beforeNavigate, goto, replaceState } from '$app/navigation';
+  import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
   import { GUEST_CUSTOMER_ID, OPEN_ACCOUNT_MESSAGE } from '$lib/chat/guest';
@@ -10,7 +11,6 @@
   import {
     accountEnding,
     accountKind,
-    accountTint,
     formatAmount,
     isCredit,
     scheduledTotal,
@@ -18,7 +18,6 @@
     type WalletAccount,
     type WalletBill,
     type WalletCustomer,
-    type WalletLoan,
     type WalletTransaction
   } from '$lib/wallet';
   import AccountDetailView from './AccountDetailView.svelte';
@@ -26,6 +25,9 @@
   import ChatPanel from './ChatPanel.svelte';
   import CapitalOneLogo from './CapitalOneLogo.svelte';
   import ClimateWiseWidget from '$lib/climate/ClimateWiseWidget.svelte';
+  import ScoreCard from '$lib/components/ScoreCard.svelte';
+  import creditWiseLogoLight from '$lib/assets/creditwise-card-logo-light.png';
+  import creditWiseLogoDark from '$lib/assets/creditwise-card-logo-dark.png';
 
   type ChatPanelApi = { ask: (text: string) => Promise<void> };
 
@@ -42,19 +44,14 @@
 
   const helpCenter = 'https://www.capitalone.com/help-center/';
 
-  interface OverviewSnapshot {
-    overview?: { totalRewards?: number } | null;
-  }
-
   interface AccountsSnapshot {
     customer?: WalletCustomer;
     accounts?: WalletAccount[];
     bills?: WalletBill[];
-    loans?: WalletLoan[];
     recentActivity?: WalletTransaction[];
   }
 
-  type WalletTab = 'activity' | 'details' | 'bills' | 'loans';
+  type WalletTab = 'activity' | 'details' | 'bills';
   let theme = $state<Theme>('system');
   let systemPrefersDark = $state(false);
   let effectiveTheme = $derived(
@@ -83,9 +80,7 @@
   let liveCustomer = $state<WalletCustomer | null>(null);
   let liveAccounts = $state<WalletAccount[]>([]);
   let liveBills = $state<WalletBill[]>([]);
-  let loans = $state<WalletLoan[]>([]);
   let recentActivity = $state<WalletTransaction[]>([]);
-  let snapshotOverview = $state<OverviewSnapshot | null>(null);
   // Bumped after each successful load, so widgets that fetch their own data (ClimateWise) refetch for the new session.
   let snapshotVersion = $state(0);
   let snapshotLoading = $state(true);
@@ -97,9 +92,20 @@
   let closingProfile = $state(false);
   let closeProfileError = $state('');
   let snapshotSeq = 0;
-  let walletView = $state<{ accountId: string; tab: WalletTab } | null>(null);
-  let focusTransactionId = $state('');
-  let deepLinkHandled = false;
+  let snapshotCustomerId = $state('');
+  let walletView = $derived.by(() => {
+    if (page.params.view !== 'dashboard' || !activeCustomerId ||
+        page.url.searchParams.get('customer') !== activeCustomerId ||
+        snapshotCustomerId !== activeCustomerId) return null;
+    const accountId = page.url.searchParams.get('account');
+    if (!accountId || !liveAccounts.some((account) => account.id === accountId)) return null;
+    const requestedTab = page.url.searchParams.get('tab');
+    const tab: WalletTab = requestedTab === 'details' || requestedTab === 'bills'
+      ? requestedTab
+      : 'activity';
+    return { accountId, tab };
+  });
+  let focusTransactionId = $derived(page.url.searchParams.get('txn') ?? '');
 
   let displayAccounts = $derived.by(() => {
     const rank = (type: string): number => {
@@ -112,15 +118,16 @@
     return [...liveAccounts]
       .sort((a, b) => rank(a.type) - rank(b.type) || a.nickname.localeCompare(b.nickname))
       .map((account) => {
+        const product = accountProduct(account.type, account.nickname);
         const credit = isCredit(account.type);
         const scheduled = credit ? scheduledTotal(liveBills, account.id) : 0;
         return {
           id: account.id,
-          name: account.nickname || account.type,
+          name: product?.name ?? (account.nickname || account.type),
           ending: accountEnding(account),
           balance: formatAmount(account.balance),
           kind: accountKind(account.type),
-          tint: accountTint(account.type),
+          product,
           credit,
           scheduled:
             scheduled > 0
@@ -136,15 +143,6 @@
       liveAccounts[0]?.id ??
       ''
   );
-  let firstCredit = $derived(
-    liveAccounts.find((account) => account.rewards > 0) ?? liveAccounts.find((account) => isCredit(account.type)) ?? null
-  );
-  let creditRewards = $derived(
-    liveAccounts
-      .reduce((sum, account) => sum + account.rewards, 0)
-  );
-  let rewardPoints = $derived(snapshotOverview?.overview?.totalRewards ?? creditRewards);
-
   function focusActiveOption(): void {
     const active = accountMenuEl?.querySelector<HTMLElement>(
       '.account-option[aria-checked="true"]'
@@ -189,23 +187,43 @@
     }
   }
 
-  async function selectCustomer(id: string): Promise<void> {
-    activeCustomerId = id;
+  function customerUrl(id: string): URL {
+    const url = new URL(page.url);
+    const previousId = url.searchParams.get('customer');
+    url.searchParams.set('customer', id);
+    if (previousId && previousId !== id) {
+      url.searchParams.delete('account');
+      url.searchParams.delete('tab');
+      url.searchParams.delete('txn');
+    }
+    return url;
+  }
+
+  function activateCustomer(id: string): void {
+    if (id !== activeCustomerId) {
+      snapshotCustomerId = '';
+      liveCustomer = null;
+      liveAccounts = [];
+      liveBills = [];
+      recentActivity = [];
+      accountNotice = '';
+      activeCustomerId = id;
+    }
     rememberCustomerId(id);
-    const next = new URL(page.url);
-    next.searchParams.set('customer', id);
-    next.searchParams.delete('account');
-    next.searchParams.delete('txn');
-    replaceState(next, page.state);
-    accountNotice = '';
-    accountOpen = false;
-    walletView = null;
-    await tick();
-    accountButton?.focus();
     void loadSnapshot(id);
   }
 
+  async function selectCustomer(id: string): Promise<void> {
+    accountOpen = false;
+    if (id !== activeCustomerId) {
+      await goto(customerUrl(id), { replaceState: true, noScroll: true, keepFocus: true });
+    }
+    accountButton?.focus();
+  }
+
+  let customersSeq = 0;
   async function loadCustomers() {
+    const seq = ++customersSeq;
     customersLoading = true;
     customersError = false;
     try {
@@ -219,9 +237,11 @@
       const currentSession = sessionResponse?.ok
         ? await sessionResponse.json() as { customer?: Customer }
         : null;
+      if (seq !== customersSeq || guestChat) return;
+      const sessionCustomerId = currentSession?.customer?.id;
       const requestedCustomerId = page.url.searchParams.get('customer') ||
-        savedCustomerId() ||
-        (currentSession?.customer?.id === GUEST_CUSTOMER_ID ? undefined : currentSession?.customer?.id);
+        (sessionCustomerId === GUEST_CUSTOMER_ID ? '' : sessionCustomerId) ||
+        savedCustomerId();
       if (requestedCustomerId && !list.some((customer) => customer.id === requestedCustomerId)) {
         const selectedResponse = await fetch(`/api/customers?customer=${encodeURIComponent(requestedCustomerId)}`);
         if (!selectedResponse.ok) throw new Error('Could not load selected customer.');
@@ -229,30 +249,26 @@
         const selected = selectedPayload.customers?.find((customer) => customer.id === requestedCustomerId);
         if (selected) list.push(selected);
       }
+      if (seq !== customersSeq || guestChat) return;
       customers = orderCustomers(list);
       const preferred =
         customers.find((customer) => customer.id === requestedCustomerId) ?? customers[0];
       if (preferred) {
-        activeCustomerId = preferred.id;
-        rememberCustomerId(preferred.id);
-        if (requestedCustomerId && requestedCustomerId !== preferred.id) {
-          const next = new URL(page.url);
-          next.searchParams.set('customer', preferred.id);
-          next.searchParams.delete('account');
-          next.searchParams.delete('txn');
-          replaceState(next, page.state);
+        activateCustomer(preferred.id);
+        if (page.url.searchParams.get('customer') !== preferred.id) {
+          await goto(customerUrl(preferred.id), { replaceState: true, noScroll: true, keepFocus: true });
         }
-        void loadSnapshot(preferred.id);
       } else {
         snapshotLoading = false;
       }
     } catch {
+      if (seq !== customersSeq) return;
       customers = [];
       customersError = true;
       snapshotError = "We couldn't load your accounts.";
       snapshotLoading = false;
     } finally {
-      customersLoading = false;
+      if (seq === customersSeq) customersLoading = false;
     }
   }
 
@@ -272,29 +288,25 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ customerId })
       });
+      if (seq !== snapshotSeq) return;
       if (!sessionResponse.ok) throw new Error('Could not start a session.');
 
-      const [accountsResponse, overviewResponse] = await Promise.all([
-        fetch('/api/accounts'),
-        fetch('/api/overview')
-      ]);
+      const accountsResponse = await fetch('/api/accounts');
       if (seq !== snapshotSeq) return;
       if (!accountsResponse.ok) throw new Error('Could not load accounts.');
 
       const snapshot = (await accountsResponse.json()) as AccountsSnapshot;
-      const overview = overviewResponse.ok
-        ? ((await overviewResponse.json()) as OverviewSnapshot)
-        : null;
       if (seq !== snapshotSeq) return;
+      if (snapshot.customer?.id && snapshot.customer.id !== customerId) {
+        throw new Error('Account data belongs to a different customer.');
+      }
 
       liveCustomer = snapshot.customer ?? null;
       liveAccounts = Array.isArray(snapshot.accounts) ? snapshot.accounts : [];
       liveBills = Array.isArray(snapshot.bills) ? snapshot.bills : [];
-      loans = Array.isArray(snapshot.loans) ? snapshot.loans : [];
       recentActivity = Array.isArray(snapshot.recentActivity) ? snapshot.recentActivity : [];
-      snapshotOverview = overview;
+      snapshotCustomerId = customerId;
       snapshotVersion++;
-      if (seq === snapshotSeq) openDeepLinkedAccount();
     } catch {
       if (seq !== snapshotSeq) return;
       snapshotError = "We couldn't load your accounts.";
@@ -303,12 +315,16 @@
     }
   }
 
-  function openAccountView(accountId: string, tab: WalletTab): void {
-    if (!accountId) return;
+  function openAccountView(accountId: string, tab: WalletTab, transactionId?: string): void {
+    if (!accountId || !activeCustomerId || routeCustomerId !== activeCustomerId) return;
     accountNotice = '';
     accountOpen = false;
-    focusTransactionId = '';
-    walletView = { accountId, tab };
+    const url = new URL(dashboardHref, page.url);
+    url.searchParams.set('account', accountId);
+    url.searchParams.set('tab', tab);
+    if (transactionId) url.searchParams.set('txn', transactionId);
+    if (url.href === page.url.href) return;
+    void goto(url, { replaceState: walletView !== null, noScroll: true, keepFocus: true });
   }
 
   function confirmProfileClosure(): void {
@@ -346,23 +362,8 @@
     }
   }
 
-  function openDeepLinkedAccount(): void {
-    if (deepLinkHandled) return;
-    const accountId = page.url.searchParams.get('account') ?? '';
-    const txn = page.url.searchParams.get('txn') ?? '';
-    if (!accountId) return;
-    if (!liveAccounts.some((account) => account.id === accountId)) return;
-    deepLinkHandled = true;
-    focusTransactionId = txn;
-    walletView = { accountId, tab: 'activity' };
-  }
-
-  function closeAccountView(): void {
-    walletView = null;
-    focusTransactionId = '';
-    if (page.url.searchParams.has('account') || page.url.searchParams.has('txn')) {
-      void goto('/dashboard', { replaceState: true, noScroll: true });
-    }
+  function closeAccountView(): Promise<void> {
+    return goto(dashboardHref, { replaceState: true, noScroll: true });
   }
 
   async function handleAccountDeleted(accountId: string): Promise<void> {
@@ -370,9 +371,7 @@
     if (primaryCheckingId === accountId) recentActivity = [];
     liveAccounts = liveAccounts.filter((account) => account.id !== accountId);
     liveBills = liveBills.filter((bill) => bill.accountId !== accountId);
-    loans = loans.filter((loan) => loan.accountId !== accountId);
-    snapshotOverview = null;
-    closeAccountView();
+    await closeAccountView();
     accountNotice = 'Account deleted.';
     void loadSnapshot(activeCustomerId);
     await tick();
@@ -380,6 +379,8 @@
   }
   let inChat = $derived(page.params.view === 'chat');
   let guestChat = $derived(inChat && page.url.searchParams.get('topic') === 'open-account');
+  let routeCustomerId = $derived(guestChat ? '' : page.url.searchParams.get('customer') || activeCustomerId);
+  let dashboardHref = $derived(customerHref('/dashboard', routeCustomerId));
   let query = $state('');
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
   let promptSeq = 0;
@@ -420,7 +421,23 @@
     }
   });
 
-  afterNavigate(({ from }) => {
+  afterNavigate(({ from, to }) => {
+    const requestedId = to?.url.searchParams.get('customer');
+    const customerChanged = requestedId && requestedId !== activeCustomerId &&
+      requestedId !== from?.url.searchParams.get('customer');
+    if (!guestChat && (from?.route.id !== to?.route.id || customerChanged)) {
+      if (requestedId && customers.some((customer) => customer.id === requestedId)) {
+        customersSeq++;
+        customersLoading = false;
+        activateCustomer(requestedId);
+      } else {
+        void loadCustomers();
+      }
+    } else if (!guestChat && from?.url.searchParams.get('topic') === 'open-account') {
+      if (activeCustomerId) void loadSnapshot(activeCustomerId);
+      else void loadCustomers();
+    }
+
     if (guestChat && from?.url.searchParams.get('topic') !== 'open-account') {
       chatPrompt = { text: OPEN_ACCOUNT_MESSAGE, id: ++promptSeq };
     }
@@ -458,7 +475,7 @@
 
 
   function openChat() {
-    if (!inChat) void goto('/chat', { keepFocus: true });
+    if (!inChat) void goto(customerHref('/chat', routeCustomerId), { keepFocus: true });
   }
 
   function send(text: string) {
@@ -492,21 +509,13 @@
       send(query);
     }
   }
-  let customersRequested = false;
-  $effect(() => {
-    if (!guestChat && !customersRequested) {
-      customersRequested = true;
-      void loadCustomers();
-    }
-  });
-
   onMount(() => {
     // ClimateWise "Make a plan with Eno" links arrive as /dashboard?ask=<prompt>.
     const ask = page.url.searchParams.get('ask')?.trim();
     if (ask) {
       // Replace the ?ask= history entry so Back doesn't re-send the prompt.
       chatPrompt = { text: ask, id: ++promptSeq };
-      void goto('/chat', { replaceState: true, keepFocus: true });
+      void goto(customerHref('/chat', page.url.searchParams.get('customer')), { replaceState: true, keepFocus: true });
     }
 
     try {
@@ -550,6 +559,10 @@
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M8 6h10v10"/></svg>
 {/snippet}
 
+{#snippet chevronIcon()}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+{/snippet}
+
 <svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
 
 <div class="dashboard" class:chat={inChat} class:view-open={walletView !== null} data-theme={theme}>
@@ -557,7 +570,7 @@
     <div class="wallet-band" style:--composer-half-height={`${composerHeight / 2}px`}>
       <div class="wallet-gradient" bind:this={gradient} aria-hidden="true"></div>
       <div class="container header-inner">
-        <a class="brand" href="/"><CapitalOneLogo label="Capital One home" /></a>
+        <a class="brand" href={customerHref('/', routeCustomerId)}><CapitalOneLogo label="Capital One home" /></a>
         <div class="header-actions">
           {#if guestChat}
             <div class="profile">
@@ -600,7 +613,7 @@
           </button>
         </div>
         {#if inChat}
-          <a class="return-dashboard" href="/dashboard">
+          <a class="return-dashboard" href={dashboardHref}>
             <span class="avatar" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
             </span>
@@ -616,7 +629,7 @@
             initialPrompt={chatPrompt}
             bind:canSend
             variant={isDark ? 'dark' : 'light'}
-            onClose={() => void goto('/dashboard')}
+            onClose={() => void goto(dashboardHref)}
           />
         </main>
         <div class="composer-area">
@@ -637,7 +650,7 @@
         style:--dashboard-header-height={`${dashboardHeaderHeight}px`}>
         <div class="container content">
           <section class="stack" aria-labelledby="accounts-title">
-            <h2 id="accounts-title" class="section-title">Your accounts <span class="count">{displayAccounts.length}</span></h2>
+            <h2 id="accounts-title" class="section-title">Your accounts</h2>
             <div role="status" class="account-notice">{accountNotice}</div>
 
             {#if snapshotError}
@@ -662,22 +675,22 @@
             {:else}
               {#each displayAccounts as account (account.id)}
                 {@const [dollars, cents] = account.balance.split('.')}
-                <article class="account {account.tint}" id={'account-' + account.id}>
+                <article class="account" style:--product-gradient={account.product?.gradient} style:--product-ink={account.product?.ink} id={'account-' + account.id}>
                   <div class="account-top">
-                    <h2>{account.name} <span>•• {account.ending}</span></h2>
+                    <h3>{account.name} <span>•• {account.ending}</span></h3>
+                    <div class="card-actions">
+                      <button class="pill" onclick={() => openAccountView(account.id, 'activity')}>{@render arrowIcon()} View activity</button>
+                      <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account settings</button>
+                    </div>
                     {#if account.scheduled}
                       <p class="account-note">{account.scheduled}</p>
                     {/if}
                   </div>
                   <div class="account-balance">
-                    <div class="balance-label">{account.kind}</div>
                     <div class="balance" aria-live="polite">
                       ${dollars}<span class="cents">.{cents}</span>
                     </div>
-                  </div>
-                  <div class="card-actions">
-                    <button class="pill" onclick={() => openAccountView(account.id, 'activity')}>{@render arrowIcon()} View activity</button>
-                    <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account settings</button>
+                    <div class="balance-label">{account.kind}</div>
                   </div>
                 </article>
               {/each}
@@ -691,7 +704,7 @@
                 </div>
                 <div class="activity-rows">
                   {#each recentActivity as transaction (transaction.id)}
-                    <button class="activity-row" onclick={() => openAccountView(primaryCheckingId, 'activity')}>
+                    <button class="activity-row" onclick={() => openAccountView(primaryCheckingId, 'activity', transaction.id)}>
                       <span class="activity-main">
                         <strong>{transaction.description || 'Transaction'}</strong>
                         <small>{dateLabel(transaction.date)} · {transaction.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}{#if transaction.status.toLowerCase() === 'pending'} · Pending{/if}</small>
@@ -704,14 +717,8 @@
                 </div>
               </article>
             {/if}
-          </section>
 
-          <section class="stack tools" aria-labelledby="tools-title">
-            <h2 id="tools-title" class="section-title">Your tools</h2>
-
-            {#if liveAccounts.length > 0}
-
-            {#if upcoming.length}
+            {#if liveAccounts.length > 0 && upcoming.length}
               <article class="panel bills-panel">
                 <div class="panel-heading">
                   <h2>Upcoming bills</h2>
@@ -730,32 +737,36 @@
                 </div>
               </article>
             {/if}
+          </section>
 
-            <article class="panel feature reward">
-              <div class="feature-main">
-                <div><h2>Explore rewards and benefits</h2><p class="reward-amount">{rewardPoints.toLocaleString('en-US')} pts</p><p class="muted">Rewards points</p></div>
-                <button class="primary" disabled={!firstCredit} onclick={() => firstCredit && openAccountView(firstCredit.id, 'details')}>View rewards</button>
-              </div>
-              <div class="panel-footer">
-                <a class="link" href="https://travel.capitalone.com/">Travel {@render arrowIcon()}</a>
-                <a class="link" href="https://capitalone.com/entertainment/">Entertainment {@render arrowIcon()}</a>
-              </div>
-            </article>
+          <section class="stack tools" aria-labelledby="tools-title">
+            <h2 id="tools-title" class="section-title">Your tools</h2>
+
+            {#if liveAccounts.length > 0}
+            <div class="score-cards">
+              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} />
+              <ScoreCard
+                title="CreditWise"
+                logoLight={creditWiseLogoLight}
+                logoDark={creditWiseLogoDark}
+                score={creditScore}
+                rating={creditRating.label}
+                scoreLabel={`Demo credit score: ${creditScore} out of 850, ${creditRating.label}`}
+                color={creditRating.color}
+                progress={creditGaugeProgress}
+                note="Demo score"
+                href="https://www.capitalone.com/creditwise/"
+                linkLabel="Check your FICO® Score"
+              >
+                {#snippet description()}Review your credit report for signs of error, theft or fraud.{/snippet}
+              </ScoreCard>
+            </div>
             <article class="panel feature products">
               <div class="feature-main">
                 <div><h2>Explore other products</h2><p class="muted">Find an account that’s right for you.</p></div>
-                <a class="primary" href="https://www.capitalone.com/">Open a new account</a>
+                <a class="link" href="https://www.capitalone.com/">Open a new account {@render chevronIcon()}</a>
               </div>
             </article>
-            <article class="panel utility">
-              <h2>CreditWise</h2>
-              <div class="credit">
-                <div class="gauge" role="img" aria-label={`Demo credit score: ${creditScore} out of 850, ${creditRating.label}`} style={`--score-color: ${creditRating.color}; --score-progress: ${creditGaugeProgress}%`}><div><strong>{creditScore}</strong><small>{creditRating.label}</small></div></div>
-                <div><p>Review your credit report for signs of error, theft or fraud.</p><small class="muted">Demo score</small></div>
-              </div>
-              <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
-            </article>
-            <ClimateWiseWidget refresh={snapshotVersion} />
             {:else if !snapshotLoading && !snapshotError}
               <article class="panel utility getting-started">
                 <h2>Make yourself at home.</h2>
@@ -767,7 +778,7 @@
               <article class="panel feature">
                 <div class="feature-main">
                   <div><h2>Close profile</h2><p class="muted">Close this demo profile and all its accounts.</p></div>
-                  <button class="close-profile-button" onclick={confirmProfileClosure}>Close profile</button>
+                  <button class="link" onclick={confirmProfileClosure}>Close profile {@render chevronIcon()}</button>
                 </div>
               </article>
             {/if}
@@ -813,18 +824,18 @@
   </dialog>
 
   {#if walletView}
-    {@const cardActivity = walletView.tab === 'activity' && displayAccounts.some(
-      (account) => account.id === walletView?.accountId && account.credit
-    )}
-    <ViewShell title={walletView.tab === 'details' ? 'Account settings' : 'Account details'} subtitle={activeName} onBack={closeAccountView}
-      {cardActivity} profileName={activeFirstName}>
-      <AccountDetailView
-        accountId={walletView.accountId}
-        initialTab={walletView.tab}
-        {cardActivity}
-        {focusTransactionId}
-        onAccountDeleted={handleAccountDeleted}
-      />
+    {@const { accountId, tab } = walletView}
+    <ViewShell title={tab === 'details' ? 'Account settings' : 'Account details'} subtitle={activeName} onBack={closeAccountView}>
+      {#snippet children(heading)}
+        <AccountDetailView
+          {accountId}
+          {tab}
+          {heading}
+          onTabChange={(nextTab) => openAccountView(accountId, nextTab)}
+          {focusTransactionId}
+          onAccountDeleted={handleAccountDeleted}
+        />
+      {/snippet}
     </ViewShell>
   {/if}
 </div>
@@ -838,16 +849,16 @@
     --dark: ;
     --light: initial;
     --shadow: 0 2px 4px #12273408;
-    --surface: var(--dark, #18252d) var(--light, #fff);
-    --ink: var(--dark, #ecf3f6) var(--light, #142632);
-    --muted: var(--dark, #b1c3cc) var(--light, #50636e);
-    --border: var(--dark, #31444f) var(--light, #dae3e8);
+    --surface: var(--dark, #242424) var(--light, #fff);
+    --ink: var(--dark, #f2f2f2) var(--light, #142632);
+    --muted: var(--dark, #bdbdbd) var(--light, #50636e);
+    --border: var(--dark, #414141) var(--light, #dae3e8);
     --link: var(--dark, #9fdbf0) var(--light, #075e80);
-    --button: var(--dark, #bde7f5) var(--light, #123f56);
-    --button-text: var(--dark, #142632) var(--light, #fff);
-    --page: var(--dark, #10191f) var(--light, #f4f6f8);
+    --button: var(--dark, #e5e5e5) var(--light, #123f56);
+    --button-text: var(--dark, #202020) var(--light, #fff);
+    --page: var(--dark, #171717) var(--light, #f4f6f8);
     --glow: var(--dark, #21475f) var(--light, #c6e5fc);
-    --banner: var(--dark, #1b313b) var(--light, #ecf4f7);
+    --banner: var(--dark, #333333) var(--light, #ecf4f7);
     min-height: 100vh;
     background: var(--page);
     color: var(--ink);
@@ -900,7 +911,7 @@
   .brand { display: inline-flex; flex: none; padding: 3px 8px; margin-left: -8px; border-radius: 8px; color: var(--dark, #fff) var(--light, #013d5b); }
   .brand :global(svg) { display: block; width: 122px; height: 44px; }
   .link { background: transparent; border: 0; padding: 0; }
-  a.link:hover, footer a:hover { text-decoration: underline; }
+  footer a:hover { text-decoration: underline; }
   button.link:hover { color: var(--ink); }
   .profile, .return-dashboard {
     display: inline-flex;
@@ -915,6 +926,14 @@
     font-size: 13px;
     font-weight: 650;
     white-space: nowrap;
+  }
+  :is(.header-actions, .return-dashboard) {
+    --page: var(--dark, #10191f) var(--light, #f4f6f8);
+    --surface: var(--dark, #18252d) var(--light, #fff);
+    --border: var(--dark, #31444f) var(--light, #dae3e8);
+    --ink: var(--dark, #ecf3f6) var(--light, #142632);
+    --banner: var(--dark, #1b313b) var(--light, #ecf4f7);
+    color: var(--ink);
   }
   .header-actions {
     grid-column: 3;
@@ -947,6 +966,8 @@
   .wallet-band { --composer-bottom-padding: 28px; }
   .chat .wallet-band { --composer-bottom-padding: max(24px, env(safe-area-inset-bottom)); }
   .wallet-gradient {
+    --page: var(--dark, #10191f) var(--light, #f4f6f8);
+    --border: var(--dark, #31444f) var(--light, #dae3e8);
     position: absolute;
     inset: 0 0 auto;
     height: 100%;
@@ -995,7 +1016,7 @@
   .composer .send { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; padding: 0; }
   .send:disabled { opacity: .55; cursor: default; }
   .link { display: inline-flex; align-items: center; gap: 5px; color: var(--link); font-weight: 650; text-align: left; }
-  .link svg { width: 15px; height: 15px; }
+  .link :global(svg) { width: 15px; height: 15px; }
 
   .content {
     display: grid;
@@ -1005,10 +1026,9 @@
     padding-block: 24px 40px;
   }
   .content > footer { grid-column: 1 / -1; }
-  .tools .feature-main { flex-wrap: wrap; }
   .stack { display: grid; gap: 14px; }
+  .score-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .section-title { font-size: 23px; }
-  .section-title .count { color: var(--muted); font-size: 15px; font-weight: 500; }
   .skeleton-card {
     height: 108px;
     border: 1px solid var(--border);
@@ -1066,42 +1086,42 @@
   .account {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px 20px;
-    padding: 14px 20px;
+    align-items: start;
+    column-gap: 20px;
+    padding: 18px 20px 16px;
     border-radius: 15px;
-    color: #fff;
-    background:
-      radial-gradient(ellipse at 90% 0%, #ffffff13, transparent 65%),
-      linear-gradient(112deg, var(--account-start), var(--account-end));
+    color: var(--product-ink, #fff);
+    background: var(--product-gradient, linear-gradient(115deg, #252525, #484848));
     scroll-margin-top: 18px;
   }
-  .aqua { --account-start: #062f4c; --account-end: #126379; }
-  .slate { --account-start: #28354d; --account-end: #505f78; }
-  .peach { --account-start: #752d27; --account-end: #a74829; }
-  .rose { --account-start: #54253b; --account-end: #924536; }
-  .account-top h2 { font-size: 21px; font-weight: 550; }
-  .account-top h2 span { font-size: 12px; margin-left: 4px; white-space: nowrap; }
-  .balance-label { font-size: 12px; }
-  .account :is(a, button):focus-visible { outline-color: #fff; }
-  .balance, .reward-amount { font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.055em; }
-  .balance { font-size: clamp(26px, 4vw, 36px); line-height: 1; font-weight: 450; }
-  .cents { color: #ffffffe0; font-size: .69em; letter-spacing: -.03em; }
-  .card-actions, .panel-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .account-balance { text-align: right; }
-  .card-actions { grid-column: 1 / -1; }
+  .account-top h3 { margin: 0; font-size: 21px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+  .account-top h3 span { color: currentColor; font-size: 12px; margin-left: 4px; white-space: nowrap; }
+  .account-balance { display: grid; gap: 4px; text-align: right; }
+  .balance-label { color: currentColor; font-size: 12px; }
+  .account :is(a, button):focus-visible { outline-color: currentColor; }
+  .balance { font-size: clamp(26px, 4vw, 36px); line-height: 1; font-weight: 550; font-variant-numeric: tabular-nums; letter-spacing: -.045em; }
+  .cents { color: currentColor; font-size: .69em; letter-spacing: -.03em; }
+  .card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 8px;
+  }
   .card-actions .pill { width: 10rem; max-width: 100%; }
   .pill, .primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 13px; min-height: 38px; font-size: 13px; font-weight: 650; }
-  .pill { background: transparent; border: 1px solid #ffffffcb; border-radius: 5px; }
-  .pill:hover { background: #ffffff25; }
+  .pill { background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 50%, transparent); border-radius: 8px; }
+  .pill:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
   .primary { background: var(--button); border: 1px solid transparent; color: var(--button-text); border-radius: 10px; text-align: center; }
   .primary:hover { opacity: .88; }
   .primary:disabled { opacity: .55; cursor: default; }
-  .account-note { margin-top: 4px; font-size: 12px; }
+  .account-note { margin-top: 4px; color: currentColor; font-size: 12px; }
 
   .panel { background: var(--surface); border-radius: 16px; overflow: hidden; }
   .feature { display: flex; flex-direction: column; }
-  .feature-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px; flex: 1; }
+  .feature-main { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 20px 22px; flex: 1; }
+  .feature-main .link { color: var(--link); font-size: 13px; }
+  .feature-main .link:hover { text-decoration: underline; }
   .close-profile-button {
     padding: 9px 14px;
     border: 1px solid transparent;
@@ -1119,24 +1139,13 @@
     background: var(--surface);
     color: var(--ink);
   }
-  .close-profile-dialog::backdrop { background: #0b182399; }
+  .close-profile-dialog::backdrop { background: var(--dark, #0009) var(--light, #0b182399); }
   .close-profile-dialog p { margin-top: 12px; }
   .close-profile-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }
   .close-profile-actions button:disabled { opacity: 0.65; cursor: default; }
-  .products .feature-main { align-items: flex-start; }
   .products p { margin-top: 5px; }
-  .reward { background: var(--banner); }
-  .reward-amount { font-size: 33px; line-height: 1.15; margin-top: 7px; }
   .muted, footer { color: var(--muted); }
-  .panel-footer { gap: 20px; padding: 10px 22px; border-top: 1px solid var(--border); font-size: 13px; }
   .utility { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 17px; min-height: 172px; }
-  .credit p { font-size: 14px; color: var(--muted); }
-  .utility > .link { margin-top: auto; font-size: 13px; }
-  .credit { display: flex; align-items: center; gap: 12px; }
-  .gauge { flex: none; width: 78px; height: 78px; padding: 4px; border-radius: 50%; background: conic-gradient(from 225deg, var(--score-color) 0 var(--score-progress), var(--border) var(--score-progress) 75%, transparent 75%); }
-  .gauge div { display: grid; width: 100%; height: 100%; place-content: center; text-align: center; border-radius: 50%; background: var(--surface); }
-  .gauge strong { font-size: 24px; line-height: 1; }
-  .gauge small { font-size: 10px; color: var(--muted); }
   footer { margin-top: 8px; padding-top: 17px; border-top: 1px solid var(--border); font-size: 13px; }
   footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 8px; }
   footer a { font-weight: 650; }
@@ -1171,7 +1180,8 @@
     .brand :global(svg) { width: 94px; height: 36px; }
     .content { padding-top: 18px; gap: 12px; }
     .account { padding-inline: 14px; column-gap: 9px; }
-    .account-top h2 { font-size: 18px; }
+    .account-top h3 { font-size: 18px; }
+    .card-actions .pill { flex: 1 1 8rem; width: auto; }
     .feature-main { padding-inline: 17px; }
   }
 </style>

@@ -8,10 +8,12 @@
 	type Theme = 'light' | 'dark' | 'system';
 
 	let {
+		customerId = null,
 		backHref = '/dashboard',
 		enoHref = (prompt: string) => `/dashboard?ask=${encodeURIComponent(prompt)}`,
 		theme = $bindable<Theme>(readTheme())
 	}: {
+		customerId?: string | null;
 		backHref?: string;
 		enoHref?: (prompt: string) => string;
 		/** Pass the dashboard's theme in (bind:theme) to keep both pages in sync. */
@@ -51,19 +53,42 @@
 	let selected = $state<string | null>(null);
 	let showInfo = $state(false);
 
+	async function loadReport(id: string | null, signal: AbortSignal) {
+		if (id) {
+			const response = await fetch('/api/session', { signal });
+			const session = response.ok ? await response.json() : null;
+			if (session?.customer?.id !== id) {
+				const selected = await fetch('/api/session', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ customerId: id }),
+					signal
+				});
+				if (!selected.ok) throw new Error('Could not select the customer.');
+			}
+		}
+		const response = await fetch(`/api/climate?days=${DAYS}`, { signal });
+		if (!response.ok) throw new Error('Could not load the report.');
+		return response.json() as Promise<{ report: ClimateReport; customer: typeof customer }>;
+	}
+
 	$effect(() => {
 		attempt;
-		let cancelled = false;
+		const controller = new AbortController();
 		error = '';
-		fetch(`/api/climate?days=${DAYS}`)
-			.then((r) => (r.ok ? r.json() : Promise.reject(new Error('Request failed'))))
+		report = null;
+		customer = null;
+		selected = null;
+		loadReport(customerId, controller.signal)
 			.then((data) => {
-				if (cancelled) return;
+				if (controller.signal.aborted) return;
 				report = data.report;
 				customer = data.customer;
 			})
-			.catch(() => !cancelled && (error = 'We couldn’t load your ClimateWise report.'));
-		return () => (cancelled = true);
+			.catch(() => {
+				if (!controller.signal.aborted) error = 'We couldn’t load your ClimateWise report.';
+			});
+		return () => controller.abort();
 	});
 
 	// Theme-aware category colors, from the single source in emissions.ts
@@ -297,16 +322,16 @@
 	.cw {
 		--dark: ;
 		--light: initial;
-		--page: var(--dark, #060c13) var(--light, #eef2f6);
-		--glass: var(--dark, rgba(10, 22, 40, 0.55)) var(--light, rgba(255, 255, 255, 0.62));
-		--glass-strong: var(--dark, rgba(16, 30, 44, 0.78)) var(--light, rgba(255, 255, 255, 0.85));
+		--page: var(--dark, #171717) var(--light, #eef2f6);
+		--glass: var(--dark, rgba(30, 30, 30, 0.94)) var(--light, rgba(255, 255, 255, 0.62));
+		--glass-strong: var(--dark, rgba(36, 36, 36, 0.96)) var(--light, rgba(255, 255, 255, 0.85));
 		--glass-edge: var(--dark, rgba(255, 255, 255, 0.08)) var(--light, rgba(255, 255, 255, 0.75));
-		--surface: var(--dark, #13232f) var(--light, #ffffff);
+		--surface: var(--dark, #242424) var(--light, #ffffff);
 		--sunken: var(--dark, rgba(255, 255, 255, 0.05)) var(--light, rgba(16, 39, 58, 0.04));
-		--ink: var(--dark, #eef4f8) var(--light, #10273a);
-		--muted: var(--dark, #a3b6c4) var(--light, #5a6b79);
+		--ink: var(--dark, #f2f2f2) var(--light, #10273a);
+		--muted: var(--dark, #bdbdbd) var(--light, #5a6b79);
 		--border: var(--dark, rgba(255, 255, 255, 0.1)) var(--light, rgba(16, 39, 58, 0.1));
-		--line: var(--dark, rgba(190, 215, 235, 0.32)) var(--light, rgba(16, 39, 58, 0.28));
+		--line: var(--dark, rgba(215, 215, 215, 0.32)) var(--light, rgba(16, 39, 58, 0.28));
 		--track: var(--dark, rgba(255, 255, 255, 0.1)) var(--light, rgba(16, 39, 58, 0.08));
 		--link: var(--dark, #7cc8f2) var(--light, #0276b1);
 		--navy: var(--dark, #0d2b40) var(--light, #013d5b);
@@ -385,7 +410,7 @@
 	.theme-toggle:hover { background: var(--surface); }
 	.icon-btn { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
 	.icon-btn:hover { background: var(--sunken); color: var(--ink); }
-	.brand { display: grid; justify-items: center; gap: 2px; padding: 22px 16px 0; text-align: center; }
+	.brand { color: var(--dark, #eef4f8) var(--light, #10273a); display: grid; justify-items: center; gap: 2px; padding: 22px 16px 0; text-align: center; }
 	.logo { display: grid; width: 168px; margin: 4px 0 6px; }
 	.logo img { grid-area: 1 / 1; width: 100%; height: auto; }
 	.logo-light { opacity: var(--dark, 0) var(--light, 1); }
@@ -434,7 +459,7 @@
 	.pop {
 		position: absolute; left: 0; right: 0; bottom: calc(100% + 10px); z-index: 5;
 		padding: 18px 18px 14px; border-radius: 22px; border: 1px solid var(--glass-edge);
-		background: var(--dark, rgba(16, 28, 44, 0.9)) var(--light, rgba(255, 255, 255, 0.9));
+		background: var(--dark, rgba(36, 36, 36, 0.98)) var(--light, rgba(255, 255, 255, 0.9));
 		backdrop-filter: blur(24px) saturate(1.3);
 		box-shadow: 0 1px 2px rgba(10, 25, 40, 0.05), 0 16px 40px rgba(10, 25, 40, 0.14);
 		opacity: 0; visibility: hidden; transform: translateY(6px);

@@ -73,13 +73,21 @@
     }
   }
 
-  async function toggleAccounts(): Promise<void> {
-    accountsOpen = !accountsOpen;
+  async function setAccountsOpen(open: boolean): Promise<void> {
+    accountsOpen = open;
     if (accountsOpen && products) products.open = false;
     if (accountsOpen) {
       await tick();
       accountList?.querySelector<HTMLElement>('a, button')?.focus();
     }
+  }
+
+  function openAccountsFromHero(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    signInButton.scrollIntoView({ block: 'nearest' });
+    signInButton.focus({ preventScroll: true });
+    void setAccountsOpen(true);
   }
 
   function handleWindowClick(event: MouseEvent): void {
@@ -168,7 +176,7 @@
 
       <div class="nav-actions">
         <div class="sign-in-area" bind:this={signInArea}>
-          <button type="button" class="sign-in" disabled={!ready} bind:this={signInButton} aria-label="Sign in" aria-expanded={accountsOpen} aria-controls="account-list" onclick={toggleAccounts}>
+          <button type="button" id="sign-in" class="sign-in" disabled={!ready} bind:this={signInButton} aria-label="Sign in" aria-expanded={accountsOpen} aria-controls="account-list" onclick={() => setAccountsOpen(!accountsOpen)}>
             <span class="profile" aria-hidden="true">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="12" cy="8" r="4" />
@@ -225,6 +233,9 @@
         <a class="account-link" href="/signup">
           I'd like to open my first account <span aria-hidden="true">↑</span>
         </a>
+        <a class="existing-account-link" href="#sign-in" onclick={openAccountsFromHero}>
+          Already have an account? <strong>Sign in <span aria-hidden="true">→</span></strong>
+        </a>
       </div>
     </section>
   </main>
@@ -257,9 +268,14 @@
 
   .site.dark {
     color-scheme: dark;
-    --page: #101c27;
-    --ink: #f3f7fc;
-    --muted: #c2d1dc;
+    --page: #171717;
+    --ink: #f5f5f5;
+    --muted: #c7c7c7;
+    --focus: #d6d6d6;
+  }
+
+  .dark header {
+    color: #f3f7fc;
     --brand: #d5eeff;
     --surface: #1d2e3e;
     --border: #465f72;
@@ -393,10 +409,15 @@
   }
 
   .dark .hero {
-    background: radial-gradient(ellipse at 18% 75%, #504468, transparent 65%), linear-gradient(165deg, #132946, #244769);
+    --muted: #c2d1dc;
+    color: #f3f7fc;
+    background:
+      url('/images/hero-stars.svg') center top,
+      radial-gradient(ellipse at 18% 75%, #504468, transparent 65%),
+      linear-gradient(165deg, #132946, #244769);
   }
   .dark .intro p, .dark article p { color: var(--muted); }
-  .dark article { background: #182e43; border-color: #50708a; }
+  .dark article { background: #242424; border-color: #454545; }
   .dark .hills { filter: brightness(0.58) saturate(0.78); }
 
   .intro {
@@ -504,6 +525,11 @@
     font-size: 1.45rem;
     line-height: 1;
   }
+
+  .existing-account-link {
+    font-size: 0.9rem;
+  }
+  .existing-account-link strong { text-decoration: underline; text-underline-offset: 3px; }
 
   footer {
     display: flex;

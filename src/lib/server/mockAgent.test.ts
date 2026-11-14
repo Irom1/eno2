@@ -295,7 +295,7 @@ describe("mockAgent", () => {
       });
     });
 
-    expect(text).toContain("Auto Loan");
+    expect(text).toContain("Capital One Auto Finance");
     expect(text).toContain("Student Loan");
     expect(text).toContain("$30,900");
     expect(text).toContain("$592");

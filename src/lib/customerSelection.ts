@@ -18,3 +18,7 @@ export function rememberCustomerId(id: string): void {
   try { localStorage.setItem(SELECTED_CUSTOMER_KEY, id); }
   catch { /* The URL and session still preserve the selection when storage is unavailable. */ }
 }
+
+export function customerHref(path: string, customerId: string | null): string {
+  return customerId ? `${path}?customer=${encodeURIComponent(customerId)}` : path;
+}

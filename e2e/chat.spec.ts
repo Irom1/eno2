@@ -2567,7 +2567,7 @@ test.describe('primitive bill and account cards', () => {
     await expect(card).toHaveAttribute('data-kind', 'account');
 
     const text = await card.innerText();
-    expect(text).toContain('Everyday Checking');
+    expect(text).toContain('360 Checking');
     expect(text).toContain('Checking');
     expect(text).toContain('•••• 4212');
     expect(text, 'balance is shown').toContain('$4,218.00');
@@ -2636,7 +2636,7 @@ test.describe('primitive bill and account cards', () => {
 
     const card = page.locator('.account-card');
     await expect(card).toHaveCount(1, { timeout: 20_000 });
-    await expect(card).toContainText('Everyday Checking');
+    await expect(card).toContainText('360 Checking');
     await expect(card).toContainText('•••• 4212');
     await expect(page.locator('.chat-card')).toHaveCount(0);
 

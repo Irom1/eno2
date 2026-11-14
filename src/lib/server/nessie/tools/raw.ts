@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { maskAccountNumber, type NessieClient } from "../client";
 import { clampRows, safeJson, toMoney, truncateText } from "../format";
+import { accountProduct, loanProductName } from '../../../products';
 
 export const READ_ONLY_ANNOTATIONS = {
   readOnlyHint: true,
@@ -54,7 +55,7 @@ const accountSummary = (value: unknown) => {
   return {
     _id: account._id,
     type: account.type,
-    nickname: account.nickname,
+    nickname: accountProduct(account.type, account.nickname)?.name ?? account.nickname,
     balance: toMoney(num(account.balance)),
     rewards: num(account.rewards),
     accountNumber: maskAccountNumber(account.account_number),
@@ -112,7 +113,7 @@ const loanSummary = (value: unknown) => {
     status: loan.status,
     monthlyPayment: toMoney(num(loan.monthly_payment)),
     amount: toMoney(num(loan.amount)),
-    description: text(loan.description),
+    description: loanProductName(loan.type) ?? text(loan.description),
     creditScore: num(loan.credit_score),
     creationDate: loan.creation_date,
     accountId: loan.account_id,

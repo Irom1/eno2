@@ -61,21 +61,11 @@ export interface WalletTransaction {
   demoImpact?: 'green' | 'non-green';
 }
 
-export type AccountTint = 'aqua' | 'slate' | 'peach' | 'rose';
-
 const typeOf = (type: string): string => String(type ?? '').toLowerCase();
 
 export function accountEnding(account: Pick<WalletAccount, 'accountNumber'>): string {
   const digits = String(account.accountNumber ?? '').replace(/\D+/g, '');
   return digits.slice(-4);
-}
-
-export function accountTint(type: string): AccountTint {
-  const normalized = typeOf(type);
-  if (normalized.includes('checking')) return 'aqua';
-  if (normalized.includes('savings')) return 'slate';
-  if (normalized.includes('credit')) return 'peach';
-  return 'rose';
 }
 
 export function isCredit(type: string): boolean {

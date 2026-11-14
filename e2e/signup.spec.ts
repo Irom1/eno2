@@ -149,8 +149,8 @@ for (const selection of [
     for (const checkbox of await accounts.getByRole('checkbox').all()) await expect(checkbox).toBeChecked();
     await expect(page.getByRole('link', { name: 'About Capital One Savor' })).toHaveAttribute('href', card.url);
     expect(turns[1].selectedSpending).toEqual(['dining', 'groceries']);
-    await accounts.getByRole('checkbox', { name: /^Checking account/ }).setChecked(selection.checking);
-    await accounts.getByRole('checkbox', { name: /^Savings account/ }).setChecked(selection.savings);
+    await accounts.getByRole('checkbox', { name: /^360 Checking/ }).setChecked(selection.checking);
+    await accounts.getByRole('checkbox', { name: /^360 Performance Savings/ }).setChecked(selection.savings);
     await accounts.getByRole('checkbox', { name: /^Capital One Savor credit card/ }).setChecked(selection.creditCard);
     if (selection.checkboxApproval) await say(page, selection.checkboxApproval);
     else await page.getByRole('button', { name: 'Confirm selected accounts' }).click();

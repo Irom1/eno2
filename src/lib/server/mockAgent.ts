@@ -1,3 +1,4 @@
+import { loanProductName } from '../products';
 /**
  * Deterministic offline agent (`LLM=mock`). It uses the real MCP tools, routes
  * by keyword, and composes answers from tool payloads only. No LLM calls.
@@ -343,7 +344,7 @@ function loansAnswer(data: unknown): string {
   const total = loans.reduce((sum, loan) => sum + num(loan.amount), 0);
   const monthly = loans.reduce((sum, loan) => sum + num(loan.monthlyPayment), 0);
   const names = loans
-    .map((loan) => String(loan.type ?? loan.description ?? "Loan"))
+    .map((loan) => String(loanProductName(loan.type) ?? loan.type ?? loan.description ?? "Loan"))
     .join(", ");
   return `You have ${loans.length} loans: ${names}. Their balances total ${money(
     total

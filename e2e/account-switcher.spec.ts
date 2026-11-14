@@ -67,6 +67,7 @@ for (const view of ['dashboard', 'chat']) {
     await page.route('**/api/session', (route) => route.fulfill({ json: { customer: null, accounts: [] } }));
     await page.goto(`/${view}`);
     await expect(page.locator('.profile-name')).toHaveText('Future');
+    await expect(page).toHaveURL(new RegExp(`/${view}\\?customer=future$`));
   });
 }
 
@@ -103,4 +104,70 @@ test('a removed remembered profile falls back to Maya and repairs the URL', asyn
   await expect(page).toHaveURL(/\/dashboard\?customer=maya$/);
   await page.reload();
   await expect(page.locator('.profile-name')).toHaveText('Maya');
+});
+
+
+test('wallet navigation keeps the customer and restores card tabs from the URL', async ({ page }) => {
+  await fixtures(page);
+  const card = {
+    id: 'credit',
+    customerId: future.id,
+    nickname: 'Future Rewards',
+    type: 'Credit Card',
+    accountNumber: '5678',
+    balance: 50,
+    rewards: 120
+  };
+  await page.route('**/api/accounts', (route) => route.fulfill({
+    json: { customer: future, accounts: [card] }
+  }));
+  await page.route('**/api/accounts/credit', (route) => route.fulfill({
+    json: {
+      customer: future,
+      account: card,
+      transactions: [
+        { id: 'purchase', kind: 'withdrawal', description: 'Coffee shop', amount: 4, date: '2026-11-01', status: 'completed' }
+      ]
+    }
+  }));
+
+  await page.goto('/dashboard?customer=future');
+  await expect(page.locator('.profile-name')).toHaveText('Future');
+  await page.getByRole('textbox', { name: 'Ask Capital One' }).focus();
+  await expect(page).toHaveURL(/\/chat\?customer=future$/);
+  await page.getByRole('link', { name: 'Return to dashboard' }).click();
+  await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
+  const climateLink = page.getByRole('link', { name: 'Check your LORAX® score' });
+  await expect(climateLink).toHaveAttribute('href', '/climatewise?customer=future');
+  await climateLink.click();
+  await expect(page).toHaveURL(/\/climatewise\?customer=future$/);
+  await page.getByRole('link', { name: 'Close and go back to dashboard' }).click();
+  await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
+
+  const dashboardCard = page.locator('article.account', { hasText: card.nickname });
+  await dashboardCard.getByRole('button', { name: 'View activity' }).click();
+  await expect(page).toHaveURL(/\/dashboard\?customer=future&account=credit&tab=activity$/);
+  const accountView = page.locator('.view-shell');
+  await expect(accountView.getByRole('button', { name: /Coffee shop/ })).toBeVisible();
+  await expect(accountView.locator('.tabs button')).toHaveCount(4);
+  await page.goBack();
+  await expect(accountView).toBeHidden();
+  await page.goForward();
+  await expect(accountView.getByRole('button', { name: /Coffee shop/ })).toBeVisible();
+
+  await accountView.getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\?customer=future&account=credit&tab=details$/);
+  await page.reload();
+  await expect(accountView.getByRole('button', { name: 'Delete account' })).toBeVisible();
+  await accountView.getByRole('button', { name: 'Back to dashboard' }).click();
+  await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
+
+  await dashboardCard.getByRole('button', { name: 'Account settings' }).click();
+  await expect(page).toHaveURL(/\/dashboard\?customer=future&account=credit&tab=details$/);
+  await page.goto('/dashboard?customer=future&account=credit&txn=purchase');
+  await expect(accountView.locator('[data-transaction-id="purchase"]')).toHaveClass(/highlight/);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(accountView.getByRole('searchbox', { name: 'Search transactions' })).toBeVisible();
+  expect(await accountView.evaluate((view) => view.scrollWidth)).toBeLessThanOrEqual(390);
 });
