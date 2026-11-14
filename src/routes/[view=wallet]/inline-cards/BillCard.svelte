@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { dateLabel, money } from '$lib/format.js';
+  import { money } from '$lib/format.js';
   import {
     accountHref,
     type BillEntityCard
   } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
+  import DateText from './primitives/DateText.svelte';
+  import MoneyText from './primitives/MoneyText.svelte';
   import OpenIcon from './OpenIcon.svelte';
   import StatusChip from './StatusChip.svelte';
 
@@ -15,7 +17,6 @@
   let { card }: Props = $props();
 
   const payload = $derived(card.payload);
-  const dueText = $derived(payload.dueDate ? dateLabel(payload.dueDate) : '');
   const amountText = $derived(
     payload.amount === null ? '' : money(payload.amount, { decimals: 2 })
   );
@@ -31,12 +32,12 @@
     {/if}
   </div>
   <div class="bill-meta">
-    {#if dueText}
-      <span class="due">Due {dueText}</span>
+    {#if payload.dueDate}
+      <span class="due">Due <DateText value={payload.dueDate} /></span>
     {/if}
     <span class="side">
-      {#if amountText}
-        <span class="amount">{amountText}</span>
+      {#if payload.amount !== null}
+        <span class="amount"><MoneyText amount={payload.amount} decimals={2} /></span>
       {/if}
       {#if linked}
         <OpenIcon />

@@ -1,10 +1,10 @@
 /**
- * Client-safe suggested follow-ups: one-click prompts relevant to the cards
- * that were just shown (or, when there are no cards, to the asked question).
- * Pure functions, no server imports, never throws.
+ * Client-safe suggested follow-ups: one-click prompts relevant to the entity
+ * cards that were just shown (or, when there are no cards, to the asked
+ * question). Pure functions, no server imports, never throws.
  */
-import type { ChatCard, ChatCardKind } from './cards.js';
-import { classifyIntents, type Intent } from './relevance.js';
+import type { EntityCard } from './entityCards.js';
+import { classifyIntents, type Intent } from './intents.js';
 
 /** Topics the suggestion matrix is keyed by. */
 type Topic =
@@ -133,23 +133,20 @@ const PRIORITY: readonly Topic[] = [
   'merchants'
 ];
 
-const KIND_TOPIC: Readonly<Partial<Record<ChatCardKind, Topic>>> = {
-  overview: 'overview',
-  accounts: 'accounts',
-  account: 'accounts',
-  transactions: 'transactions',
+const KIND_TOPIC: Readonly<Record<EntityCard['kind'], Topic>> = {
   transaction: 'transactions',
-  bills: 'bills',
-  loans: 'loans',
+  'transaction-list': 'transactions',
+  bill: 'bills',
+  account: 'accounts',
+  loan: 'loans',
+  'spending-pie': 'spending',
   recurring: 'recurring',
-  spending: 'spending',
-  cashflow: 'cashflow',
-  anomalies: 'anomalies',
-  rewards: 'rewards',
-  locations: 'locations',
+  reward: 'rewards',
+  location: 'locations',
   goal: 'goal',
-  customer: 'customer',
-  merchants: 'merchants'
+  cashflow: 'cashflow',
+  merchant: 'merchants',
+  profile: 'customer'
 };
 
 const INTENT_TOPIC: Readonly<Record<Intent, Topic>> = {
@@ -178,19 +175,10 @@ const normalize = (value: unknown): string =>
     .trim()
     .toLowerCase();
 
-/** A single-account card for a credit line behaves like a rewards/credit card. */
-function topicForCard(card: ChatCard): Topic | undefined {
-  const kind = card?.kind;
-  if (!kind) return undefined;
-  if (kind === 'account') {
-    const payload = card.payload;
-    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-      const data = payload as Record<string, unknown>;
-      const type = normalize(data.type ?? data.accountType);
-      if (type.includes('credit')) return 'rewards';
-    }
-  }
-  return KIND_TOPIC[kind];
+/** Resolve the suggestion topic for a rendered entity card. */
+function topicForCard(card: EntityCard | null | undefined): Topic | undefined {
+  if (!card || typeof card !== 'object') return undefined;
+  return KIND_TOPIC[card.kind];
 }
 
 /**
@@ -198,13 +186,13 @@ function topicForCard(card: ChatCard): Topic | undefined {
  * exact question that was just asked. Falls back to intent wording, then to a
  * generic banking set. Never throws and never repeats a prompt.
  */
-export function followUpsFor(cards: ChatCard[], prompt: string): string[] {
+export function followUpsFor(cards: EntityCard[], prompt: string): string[] {
   const asked = normalize(prompt);
   const topics = new Set<Topic>();
 
   const list = Array.isArray(cards) ? cards : [];
   for (const card of list) {
-    const topic = card ? topicForCard(card) : undefined;
+    const topic = topicForCard(card);
     if (topic) topics.add(topic);
   }
 

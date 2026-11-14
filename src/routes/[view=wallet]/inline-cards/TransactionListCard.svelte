@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { dateLabel, money, titleCase } from '$lib/format.js';
+  import { titleCase } from '$lib/format.js';
   import {
     transactionHref,
     type TransactionListEntityCard,
     type TransactionRow
   } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
+  import DateText from './primitives/DateText.svelte';
+  import MoneyText from './primitives/MoneyText.svelte';
   import OpenIcon from './OpenIcon.svelte';
+  import TruncationFooter from './primitives/TruncationFooter.svelte';
 
   interface Props {
     card: TransactionListEntityCard;
@@ -26,21 +29,20 @@
 </script>
 
 {#snippet content(row: TransactionRow, linked: boolean)}
-  {@const dateText = row.date ? dateLabel(row.date) : ''}
-  {@const amountText = row.amount === null ? '' : money(row.amount, { decimals: 2 })}
+  {@const hasDate = Boolean(row.date)}
   <div class="details">
     <span class="description">{row.description}</span>
-    {#if dateText || row.status}
+    {#if hasDate || row.status}
       <span class="meta">
-        {#if dateText}{dateText}{/if}
-        {#if dateText && row.status} · {/if}
+        {#if hasDate}<DateText value={row.date} />{/if}
+        {#if hasDate && row.status} · {/if}
         {#if row.status}{titleCase(row.status)}{/if}
       </span>
     {/if}
   </div>
   <span class="side">
-    {#if amountText}
-      <span class="amount">{amountText}</span>
+    {#if row.amount !== null}
+      <span class="amount"><MoneyText amount={row.amount} decimals={2} /></span>
     {/if}
     {#if linked}
       <OpenIcon />
@@ -73,7 +75,7 @@
       {/each}
     </ul>
     {#if more > 0}
-      <p class="more">{more} more</p>
+      <TruncationFooter {more} />
     {/if}
   </div>
 </CardFrame>
@@ -145,11 +147,5 @@
     color: var(--ink);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-  }
-  .more {
-    margin: 8px 0 0;
-    color: var(--muted);
-    font-size: 11.5px;
-    line-height: 1.35;
   }
 </style>

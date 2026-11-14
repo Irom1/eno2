@@ -1,9 +1,8 @@
 /**
- * Client-safe splitting of assistant prose around inline cards (legacy chat
- * cards or normalized entity cards).
+ * Client-safe splitting of assistant prose around inline entity cards.
  * Pure functions only: no server or DOM imports.
  */
-import type { ChatCard } from './cards.js';
+import type { EntityCard } from './entityCards.js';
 
 export interface InlineTextBlock {
   type: 'text';
@@ -15,7 +14,7 @@ export interface InlineCardsBlock<T> {
   cards: T[];
 }
 
-export type InlineBlock<T = ChatCard> = InlineTextBlock | InlineCardsBlock<T>;
+export type InlineBlock<T = EntityCard> = InlineTextBlock | InlineCardsBlock<T>;
 
 interface PlacedCard<T> {
   card: T;

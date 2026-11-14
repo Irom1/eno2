@@ -18,4 +18,12 @@ Inline, single-entity cards are specified in [`docs/plans/inline-entity-cards.md
 
 ## Data/registry
 
-The existing card data layer (`src/lib/chat/cards.ts`, relevance, dedupe, and follow-ups) is **temporarily retained** so follow-ups and the future migration keep working. It is scheduled for removal/rework in Phase 4 of the plan.
+The legacy registry (`cards.ts`), including `ChatCard`/`ChatCardKind`, `chatCardKind`, `transactionKind`, the `asItems`/`asRecord` helpers, and the labels, now lives **in this archive directory** (`src/lib/chat/archive/legacy-cards/cards.ts`). The frozen components import it relatively (`./cards.js`).
+
+It is **archive-only**. Active app code does not import it:
+- Shared payload helpers used by active code moved to `src/lib/chat/payloads.ts`.
+- Intent classification moved to `src/lib/chat/intents.ts` without card-relevance filtering.
+- Follow-ups consume normalized `EntityCard` values from `src/lib/chat/entityCards.ts`.
+- Client-side prose dedupe and relevance filtering were removed; prompt-level rules and primitive builders replaced them.
+
+Do not add new imports of this registry.

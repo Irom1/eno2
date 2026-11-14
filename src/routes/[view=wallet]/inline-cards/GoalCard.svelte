@@ -4,6 +4,7 @@
   import CardFrame from './CardFrame.svelte';
   import EntityKeyValue from './EntityKeyValue.svelte';
   import OpenIcon from './OpenIcon.svelte';
+  import ProgressMeter from './primitives/ProgressMeter.svelte';
 
   interface Props {
     card: GoalEntityCard;
@@ -44,6 +45,11 @@
       <EntityKeyValue label="Projected date" value={projectedText} />
     {/if}
   </div>
+  {#if payload.target > 0}
+    <div class="goal-meter">
+      <ProgressMeter value={payload.current} max={payload.target} />
+    </div>
+  {/if}
 {/snippet}
 
 <CardFrame {label}>
@@ -82,5 +88,8 @@
   }
   .goal-rows {
     min-width: 0;
+  }
+  .goal-meter {
+    margin-top: 8px;
   }
 </style>

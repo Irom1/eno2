@@ -6,6 +6,9 @@
  * module from client code.
  */
 import { env as privateEnv } from '$env/dynamic/private';
+import { cardsMode, type CardsMode } from './cardsMode';
+
+export { cardsMode };
 
 export interface RuntimeEnv {
   NESSIE_API_KEY: string;
@@ -13,6 +16,8 @@ export interface RuntimeEnv {
   GEMINI_API_KEY: string;
   GEMINI_MODEL: string;
   LLM: 'gemini' | 'mock';
+  /** Cards v2 pipeline: `off` keeps today's client-only inference. Defaults to `v2`. */
+  CARDS_MODE?: CardsMode;
 }
 
 const DEFAULT_BASE_URL = 'https://prod-api.nessieisreal.com';
@@ -41,5 +46,8 @@ export function resolveEnv(platform?: App.Platform): RuntimeEnv {
   const LLM: RuntimeEnv['LLM'] =
     requested === 'mock' ? 'mock' : requested === 'gemini' ? 'gemini' : GEMINI_API_KEY ? 'gemini' : 'mock';
 
-  return { NESSIE_API_KEY, NESSIE_BASE_URL, GEMINI_API_KEY, GEMINI_MODEL, LLM };
+  const CARDS_MODE: RuntimeEnv['CARDS_MODE'] =
+    read(sources, 'CARDS_MODE').toLowerCase() === 'off' ? 'off' : 'v2';
+
+  return { NESSIE_API_KEY, NESSIE_BASE_URL, GEMINI_API_KEY, GEMINI_MODEL, LLM, CARDS_MODE };
 }
