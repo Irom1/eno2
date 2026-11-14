@@ -150,6 +150,56 @@ describe("agent loop", () => {
     expect(modelTurn?.parts[0]?.thoughtSignature).toBe("sig-1");
   });
 
+  it("forces insight_anomalies to the routed account scope", async () => {
+    const { session, events, emit } = capture();
+    const callTool = vi.fn(async () => ({
+      ok: true,
+      data: {
+        count: 0,
+        duplicateCount: 0,
+        outlierCount: 0,
+        summary: "Nothing unusual stood out.",
+        findings: []
+      },
+      text: JSON.stringify({ count: 0, findings: [] })
+    }));
+
+    await runGeminiAgent({
+      session,
+      message: "Any suspicious transactions?",
+      emit,
+      runtime,
+      mcp,
+      deps: baseDeps({
+        stream: async () => ({
+          text: "",
+          parts: [
+            {
+              functionCall: {
+                name: "insight_anomalies",
+                args: { accountId: "checking-id" }
+              },
+              thoughtSignature: "sig-anomaly"
+            }
+          ],
+          functionCalls: [
+            { name: "insight_anomalies", args: { accountId: "checking-id" } }
+          ]
+        }),
+        callTool,
+        now: () => 1_000_000
+      })
+    });
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(callTool).toHaveBeenCalledWith("insight_anomalies", { customerId: "cust-1" });
+    const text = events
+      .filter((event): event is Extract<AgentEvent, { type: "text" }> => event.type === "text")
+      .map((event) => event.delta)
+      .join("");
+    expect(text).toContain("Nothing unusual stood out across your accounts.");
+  });
+
   it("emits an insight event for a raw nessie tool payload", async () => {
     let streamCalls = 0;
     const { session, events, emit } = capture();

@@ -254,51 +254,81 @@ describe("mockAgent", () => {
     expect(text).not.toContain("600");
   });
 
-  it("explains every anomaly card without restating card data", async () => {
+  it("explains every anomaly across accounts with a synopsis", async () => {
     const findings = [
       {
         type: "duplicate",
-        description: "NETFLIX",
+        description: "NETFLIX.COM",
         amount: 19,
         date: "2026-10-28",
-        duplicateOf: "2026-10-27"
+        duplicateOf: "2026-10-27",
+        accountId: "card-1",
+        accountLabel: "Venture",
+        accountType: "credit card"
       },
       {
         type: "duplicate",
         description: "LOCAL BOOKSTORE",
         amount: 47,
         date: "2026-11-05",
-        duplicateOf: "2026-11-04"
+        duplicateOf: "2026-11-04",
+        accountId: "acct-1",
+        accountLabel: "Everyday Checking",
+        accountType: "checking"
       },
       {
         type: "outlier",
-        description: "APPLE ELECTRONICS PURCHASE",
+        description: "APPLE STORE",
         amount: 1800,
-        date: "2026-10-13"
+        date: "2026-10-13",
+        accountId: "acct-1",
+        accountLabel: "Everyday Checking",
+        accountType: "checking"
       },
       {
         type: "outlier",
         description: "OVERSEAS ELECTRONICS PURCHASE",
         amount: 1250,
-        date: "2026-10-21"
+        date: "2026-10-21",
+        accountId: "card-1",
+        accountLabel: "Venture",
+        accountType: "credit card"
       },
       {
         type: "outlier",
         description: "EXPRESS AIR FREIGHT",
         amount: 925,
-        date: "2026-09-21"
+        date: "2026-09-21",
+        accountId: "acct-1",
+        accountLabel: "Everyday Checking",
+        accountType: "checking"
       }
     ];
-    const { events, text } = await run("Anything weird in my transactions?", async (name) => {
-      expect(name).toBe("insight_anomalies");
-      return ok({ count: findings.length, findings });
-    });
-
-    expect(text).toContain("A few charges need a closer look.");
-    expect(text).toContain("NETFLIX and LOCAL BOOKSTORE each look like possible duplicates.");
-    expect(text).toContain(
-      "APPLE ELECTRONICS PURCHASE, OVERSEAS ELECTRONICS PURCHASE, and EXPRESS AIR FREIGHT are unusually large purchases."
+    const { events, text } = await run(
+      "Anything weird in my transactions?",
+      async (name, args) => {
+        expect(name).toBe("insight_anomalies");
+        expect(args).toEqual({ customerId: "cust-1" });
+        return ok({
+          count: findings.length,
+          duplicateCount: 2,
+          outlierCount: 3,
+          summary: "There are several unusually large purchases and several possible duplicates.",
+          findings
+        });
+      }
     );
+
+    expect(text).toContain(
+      "There are several unusually large purchases and several possible duplicates."
+    );
+    expect(text).toContain("NETFLIX.COM on your Venture card");
+    expect(text).toContain("LOCAL BOOKSTORE on your Everyday Checking");
+    expect(text).toContain("each look like possible duplicates.");
+    expect(text).toContain("APPLE STORE on your Everyday Checking");
+    expect(text).toContain("OVERSEAS ELECTRONICS PURCHASE on your Venture card");
+    expect(text).toContain("EXPRESS AIR FREIGHT on your Everyday Checking");
+    expect(text).toContain("are unusually large purchases.");
     for (const finding of findings) {
       expect(text).toContain(finding.description);
     }
@@ -325,13 +355,16 @@ describe("mockAgent", () => {
     const insight = events.find(
       (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
     );
-    expect(insight?.accountId).toBe("acct-1");
+    expect(insight?.accountId).toBeUndefined();
   });
 
-  it("explains a single duplicate and a single outlier", async () => {
+  it("explains a single duplicate and a single outlier without an account label", async () => {
     const { text } = await run("Anything weird?", async () =>
       ok({
         count: 2,
+        duplicateCount: 1,
+        outlierCount: 1,
+        summary: "There is an unusually large purchase and a possible duplicate.",
         findings: [
           {
             type: "duplicate",
@@ -350,8 +383,10 @@ describe("mockAgent", () => {
       })
     );
 
-    expect(text).toContain("NETFLIX looks like a possible duplicate.");
+    expect(text).toContain("There is an unusually large purchase and a possible duplicate.");
+    expect(text).toContain("NETFLIX is a possible duplicate.");
     expect(text).toContain("APPLE STORE is an unusually large purchase.");
+    expect(text).not.toContain("on your");
     expect(text).not.toContain("$15");
     expect(text).not.toContain("$1,200");
     expect(text).not.toContain("2026-10-02");
@@ -362,7 +397,7 @@ describe("mockAgent", () => {
   it("reports an empty anomaly result without a dispute next step", async () => {
     const { text } = await run("Anything weird?", async () => ok({ count: 0, findings: [] }));
 
-    expect(text).toContain("Nothing unusual stood out in this account.");
+    expect(text).toContain("Nothing unusual stood out across your accounts.");
     expect(text).not.toContain("review and dispute");
     expect(text).not.toContain("Tip:");
     expect(text).not.toContain("Insight:");
@@ -557,6 +592,51 @@ describe("mockAgent", () => {
     expect(routeIntent("Anything strange?").tool).toBe("insight_anomalies");
     expect(routeIntent("Any odd charges?").tool).toBe("insight_anomalies");
     expect(routeIntent("Did I get double charged?").tool).toBe("insight_anomalies");
+  });
+
+  it("scans all accounts for broad anomaly questions and one account for named ones", () => {
+    const session = createSession(customer, [
+      {
+        id: "checking-id",
+        type: "Checking",
+        nickname: "Everyday Checking",
+        balance: 4218,
+        rewards: 0,
+        accountNumber: "****1234"
+      },
+      {
+        id: "savings-id",
+        type: "Savings",
+        nickname: "Rainy Day",
+        balance: 12000,
+        rewards: 0,
+        accountNumber: "****5678"
+      },
+      {
+        id: "card-id",
+        type: "Credit Card",
+        nickname: "Venture",
+        balance: -450,
+        rewards: 1200,
+        accountNumber: "****9012"
+      }
+    ]);
+
+    expect(routeIntent("Anything weird in my transactions?").args(session)).toEqual({
+      customerId: "cust-1"
+    });
+    expect(routeIntent("Any suspicious credit card charges?").args(session)).toEqual({
+      customerId: "cust-1",
+      accountId: "card-id"
+    });
+    expect(routeIntent("Suspicious checking transactions?").args(session)).toEqual({
+      customerId: "cust-1",
+      accountId: "checking-id"
+    });
+    expect(routeIntent("Anything odd on my Rainy Day account?").args(session)).toEqual({
+      customerId: "cust-1",
+      accountId: "savings-id"
+    });
   });
 
   it("routes ranked category and merchant purchase questions to top transactions", () => {

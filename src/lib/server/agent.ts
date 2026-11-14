@@ -372,6 +372,16 @@ export async function runGeminiAgent({
 
         emit({ type: 'tool_start', name: call.name, label: toolLabel(call.name) });
 
+        // The model sometimes narrows a broad suspicious-activity question to
+        // checking. Force the routed scope so broad questions scan every
+        // account and named account/card questions scan that account.
+        if (call.name === 'insight_anomalies') {
+          const intent = routeIntent(message);
+          if (intent.tool === 'insight_anomalies') {
+            call.args = intent.args(session);
+          }
+        }
+
         const guard = assertToolArgsAllowed(call.args, allowlist);
         const callStarted = deps.now();
 

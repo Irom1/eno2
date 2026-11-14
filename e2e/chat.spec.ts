@@ -2115,6 +2115,9 @@ test.describe('chat prompts', () => {
       accountId: 'acct-checking',
       payload: {
         count: 5,
+        duplicateCount: 2,
+        outlierCount: 3,
+        summary: 'There are several unusually large purchases and several possible duplicates.',
         findings: [
           {
             _id: 'txn-netflix',
@@ -2122,7 +2125,10 @@ test.describe('chat prompts', () => {
             description: 'NETFLIX',
             amount: 19,
             date: '2026-10-28',
-            duplicateOf: '2026-10-27'
+            duplicateOf: '2026-10-27',
+            accountId: 'acct-venture',
+            accountLabel: 'Venture',
+            accountType: 'credit card'
           },
           {
             _id: 'txn-bookstore',
@@ -2130,28 +2136,40 @@ test.describe('chat prompts', () => {
             description: 'LOCAL BOOKSTORE',
             amount: 47,
             date: '2026-11-05',
-            duplicateOf: '2026-11-04'
+            duplicateOf: '2026-11-04',
+            accountId: 'acct-checking',
+            accountLabel: 'Everyday Checking',
+            accountType: 'checking'
           },
           {
             _id: 'txn-apple',
             type: 'outlier',
             description: 'APPLE ELECTRONICS PURCHASE',
             amount: 1800,
-            date: '2026-10-13'
+            date: '2026-10-13',
+            accountId: 'acct-checking',
+            accountLabel: 'Everyday Checking',
+            accountType: 'checking'
           },
           {
             _id: 'txn-overseas',
             type: 'outlier',
             description: 'OVERSEAS ELECTRONICS PURCHASE',
             amount: 1250,
-            date: '2026-10-21'
+            date: '2026-10-21',
+            accountId: 'acct-venture',
+            accountLabel: 'Venture',
+            accountType: 'credit card'
           },
           {
             _id: 'txn-freight',
             type: 'outlier',
             description: 'EXPRESS AIR FREIGHT',
             amount: 925,
-            date: '2026-09-21'
+            date: '2026-09-21',
+            accountId: 'acct-checking',
+            accountLabel: 'Everyday Checking',
+            accountType: 'checking'
           }
         ]
       }
@@ -2165,7 +2183,7 @@ test.describe('chat prompts', () => {
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
         delta:
-          'A few charges need a closer look. NETFLIX and LOCAL BOOKSTORE each look like possible duplicates, and APPLE ELECTRONICS PURCHASE, OVERSEAS ELECTRONICS PURCHASE, and EXPRESS AIR FREIGHT are unusually large purchases. If you don’t recognize a charge, you can review and dispute it in the app.'
+          'There are several unusually large purchases and several possible duplicates. NETFLIX on your Venture card and LOCAL BOOKSTORE on your Everyday Checking each look like possible duplicates. APPLE ELECTRONICS PURCHASE on your Everyday Checking, OVERSEAS ELECTRONICS PURCHASE on your Venture card, and EXPRESS AIR FREIGHT on your Everyday Checking are unusually large purchases. If you don’t recognize a charge, you can review and dispute it in the app.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -2190,14 +2208,20 @@ test.describe('chat prompts', () => {
     }
 
     const prose = (await assistantText(page)).trim();
-    expect(prose).toContain('A few charges need a closer look.');
-    expect(prose).toContain('NETFLIX and LOCAL BOOKSTORE each look like possible duplicates.');
     expect(prose).toContain(
-      'APPLE ELECTRONICS PURCHASE, OVERSEAS ELECTRONICS PURCHASE, and EXPRESS AIR FREIGHT are unusually large purchases.'
+      'There are several unusually large purchases and several possible duplicates.'
+    );
+    expect(prose).toContain(
+      'NETFLIX on your Venture card and LOCAL BOOKSTORE on your Everyday Checking each look like possible duplicates.'
+    );
+    expect(prose).toContain(
+      'APPLE ELECTRONICS PURCHASE on your Everyday Checking, OVERSEAS ELECTRONICS PURCHASE on your Venture card, and EXPRESS AIR FREIGHT on your Everyday Checking are unusually large purchases.'
     );
     for (const name of names) {
       expect(prose).toContain(name);
     }
+    expect(prose).toContain('Venture');
+    expect(prose).toContain('Everyday Checking');
     expect(prose).toContain('possible duplicate');
     expect(prose).toContain('unusually large');
     for (const amount of ['19', '47', '1,800', '1,250', '925']) {
@@ -2216,6 +2240,18 @@ test.describe('chat prompts', () => {
     }
     expect(prose).not.toContain('Tip:');
     expect(prose).not.toContain('Insight:');
+
+    // Each card deep-links to the account that owns its finding.
+    const cardHrefs = await cards
+      .locator('a.transaction-link')
+      .evaluateAll((elements) => elements.map((element) => element.getAttribute('href') ?? ''));
+    expect(cardHrefs).toEqual([
+      expect.stringMatching(/account=acct-venture&txn=txn-netflix$/),
+      expect.stringMatching(/account=acct-checking&txn=txn-bookstore$/),
+      expect.stringMatching(/account=acct-checking&txn=txn-apple$/),
+      expect.stringMatching(/account=acct-venture&txn=txn-overseas$/),
+      expect.stringMatching(/account=acct-checking&txn=txn-freight$/)
+    ]);
 
     const insideBubble = await cards.evaluateAll((elements) =>
       elements.map((element) => Boolean(element.closest('.bubble.assistant')))

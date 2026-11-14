@@ -235,6 +235,21 @@ export function computeMedian(values: readonly number[]): number {
   return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
 }
 
+/**
+ * One-sentence synopsis of the unusual-activity pattern counts, shared by the
+ * tool payload and deterministic narration.
+ */
+export function summarizeAnomalyPatterns(duplicateCount: number, outlierCount: number): string {
+  const parts: string[] = [];
+  if (outlierCount === 1) parts.push("an unusually large purchase");
+  else if (outlierCount > 1) parts.push("several unusually large purchases");
+  if (duplicateCount === 1) parts.push("a possible duplicate");
+  else if (duplicateCount > 1) parts.push("several possible duplicates");
+  if (parts.length === 0) return "Nothing unusual stood out.";
+  if (parts.length === 1) return `There is ${parts[0]}.`;
+  return `There are ${parts[0]} and ${parts[1]}.`;
+}
+
 export interface DuplicateFinding {
   type: "duplicate";
   _id: string;
@@ -1143,18 +1158,90 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
     "insight_anomalies",
     {
       description:
-        "Detect duplicate charges (same description+amount within 3 days) and amount outliers (above median + 3x MAD over the trailing 90 days).",
+        "Detect duplicate charges (same description+amount within 3 days) and amount outliers (above median + 3x MAD over the trailing 90 days). Pass customerId to scan all accounts (checking, savings, credit cards); pass accountId to scan one. Findings carry account ids/labels for card deep links.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: { accountId: idParam },
+      inputSchema: {
+        customerId: idParam.optional().describe("Customer id; scans every customer account when accountId is omitted"),
+        accountId: idParam.optional().describe("Single account id to scan"),
+      },
     },
-    async ({ accountId }) => {
+    async ({ customerId, accountId }) => {
       const asOf = todayUTC();
-      const transactions = await fetchTransactions(client, accountId);
-      const withdrawals = transactions.filter((tx) => tx.kind === "withdrawal");
-      const duplicates = detectDuplicateCharges(withdrawals);
-      const outliers = detectOutliers(withdrawals, asOf);
-      const findings = [...duplicates, ...outliers];
-      return ok({ count: findings.length, findings });
+
+      if (!customerId && !accountId) {
+        return ok({
+          count: 0,
+          duplicateCount: 0,
+          outlierCount: 0,
+          summary: summarizeAnomalyPatterns(0, 0),
+          findings: [],
+          message: "Pass customerId to scan all accounts or accountId to scan one.",
+        });
+      }
+
+      const targets: Array<{ id: string; label: string; type: string }> = [];
+      if (accountId) {
+        let account: AnyRecord | null = null;
+        if (customerId) {
+          const accounts = await fetchCustomerAccounts(client, customerId);
+          account = accounts.find((entry) => String(entry._id ?? "") === accountId) ?? null;
+        }
+        if (!account) {
+          try {
+            account = rec(await client.get(`/accounts/${encodeURIComponent(accountId)}`));
+          } catch {
+            account = null;
+          }
+        }
+        targets.push({
+          id: accountId,
+          label: account ? String(account.nickname ?? account.type ?? "").trim() : "",
+          type: account ? accountType(account) : "",
+        });
+      } else if (customerId) {
+        for (const account of await fetchCustomerAccounts(client, customerId)) {
+          const id = String(account._id ?? "");
+          if (!id) continue;
+          targets.push({
+            id,
+            label: String(account.nickname ?? account.type ?? "").trim(),
+            type: accountType(account),
+          });
+        }
+      }
+
+      // Detection stays per account: a checking charge and a card charge are not
+      // duplicates of each other just because the description and amount match.
+      const perAccount = await Promise.all(
+        targets.map(async (target) => {
+          try {
+            const transactions = await fetchTransactions(client, target.id);
+            const withdrawals = transactions.filter((tx) => tx.kind === "withdrawal");
+            const duplicates = detectDuplicateCharges(withdrawals);
+            const outliers = detectOutliers(withdrawals, asOf);
+            const tag = (finding: DuplicateFinding | OutlierFinding) => ({
+              ...finding,
+              accountId: target.id,
+              ...(target.label ? { accountLabel: target.label } : {}),
+              ...(target.type ? { accountType: target.type } : {}),
+            });
+            return [...duplicates.map(tag), ...outliers.map(tag)];
+          } catch {
+            return [];
+          }
+        }),
+      );
+
+      const findings = perAccount.flat();
+      const duplicateCount = findings.filter((finding) => finding.type === "duplicate").length;
+      const outlierCount = findings.filter((finding) => finding.type === "outlier").length;
+      return ok({
+        count: findings.length,
+        duplicateCount,
+        outlierCount,
+        summary: summarizeAnomalyPatterns(duplicateCount, outlierCount),
+        findings,
+      });
     },
   );
 

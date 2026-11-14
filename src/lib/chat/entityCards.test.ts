@@ -85,8 +85,45 @@ describe('anomalyTransactionCards', () => {
     expect(cards[1]?.payload).not.toHaveProperty('duplicateOf');
   });
 
-  it('maps every non-duplicate type to unusual', () => {
+  it('deep-links each finding to its own account when findings span accounts', () => {
     const cards = anomalyTransactionCards(
+      payload([
+        {
+          type: 'duplicate',
+          description: 'NETFLIX.COM',
+          amount: 19,
+          date: '2026-11-02',
+          accountId: 'checking-id'
+        },
+        {
+          type: 'outlier',
+          description: 'APPLE STORE',
+          amount: 1800,
+          date: '2026-11-03',
+          accountId: 'card-id'
+        }
+      ]),
+      0,
+      1,
+      { accountId: 'context-id', customerId: 'cust-1' }
+    );
+
+    expect(cards.map((card) => card.payload.accountId)).toEqual(['checking-id', 'card-id']);
+    expect(cards.map((card) => card.payload.customerId)).toEqual(['cust-1', 'cust-1']);
+  });
+
+  it('falls back to the context account when a finding has no accountId', () => {
+    const cards = anomalyTransactionCards(
+      payload([{ type: 'outlier', description: 'APPLE STORE', amount: 1800, date: '2026-11-03' }]),
+      0,
+      1,
+      { accountId: 'context-id' }
+    );
+
+    expect(cards[0]?.payload.accountId).toBe('context-id');
+  });
+
+  it('maps every non-duplicate type to unusual', () => {    const cards = anomalyTransactionCards(
       payload([
         { type: 'outlier', description: 'A', amount: 1, date: '2026-01-01' },
         { type: 'mystery', description: 'B', amount: 2, date: '2026-01-02' },

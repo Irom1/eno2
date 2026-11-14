@@ -7,6 +7,7 @@ import { GUEST_CUSTOMER_ID } from "../chat/guest";
 import type { AgentEvent, Emit } from "./events";
 import { trimContents, type Session } from "./session";
 import { summarizeToolResult, toolLabel } from "./toolBridge";
+import { summarizeAnomalyPatterns } from "./nessie/tools/insights";
 import { extractLocation } from "./locationQuery";
 
 export { extractLocation } from "./locationQuery";
@@ -107,6 +108,37 @@ function checkingAccountId(session: Session): string {
   return (checking ?? session.accounts[0])?.id ?? "";
 }
 
+/**
+ * Account/card named in a suspicious-activity question, or "" for a broad
+ * all-accounts question. Nicknames win; then card/credit, checking, savings.
+ */
+function anomalyAccountId(text: string, session: Session): string {
+  const named = session.accounts.find((account) => {
+    const nickname = account.nickname.trim().toLowerCase();
+    return nickname.length > 0 && text.includes(nickname);
+  });
+  if (named) return named.id;
+
+  const byType = (predicate: (type: string) => boolean): string => {
+    const account = session.accounts.find((entry) => predicate(entry.type.toLowerCase()));
+    return account?.id ?? "";
+  };
+
+  if (/\b(?:credit ?card|card)\b/.test(text)) {
+    const credit = byType((type) => type.includes("credit"));
+    if (credit) return credit;
+  }
+  if (/\bchecking\b/.test(text)) {
+    const checking = byType((type) => type === "checking");
+    if (checking) return checking;
+  }
+  if (/\bsavings?\b/.test(text)) {
+    const savings = byType((type) => type === "savings");
+    if (savings) return savings;
+  }
+  return "";
+}
+
 /** Spending category named in a prompt, matching the insight tool's buckets. */
 export function detectSpendingCategory(text: string): string | null {
   const value = String(text ?? "").toLowerCase();
@@ -166,7 +198,12 @@ export function routeIntent(message: string): {
   if (/\b(?:weird|anomal\w*|duplicate|suspicious|charg\w*|unusual|strange|odd|double)\b/.test(text)) {
     return {
       tool: "insight_anomalies",
-      args: (session) => ({ accountId: checkingAccountId(session) })
+      args: (session) => {
+        const accountId = anomalyAccountId(text, session);
+        return accountId
+          ? { customerId: session.customer.id, accountId }
+          : { customerId: session.customer.id };
+      }
     };
   }
   if (/\btransaction|\bactivity\b|\bpurchases?\b|\bdeposits?\b|\bwithdrawals?\b|\bhistory\b/.test(text)) {
@@ -278,25 +315,28 @@ function joinNames(names: string[]): string {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
-/** Unique, non-empty merchant names in finding order. */
-function findingNames(findings: AnyRecord[]): string[] {
-  const seen = new Set<string>();
-  const names: string[] = [];
-  for (const finding of findings) {
-    const name = String(finding.description ?? "").trim();
-    const key = name.toLowerCase();
-    if (!name || seen.has(key)) continue;
-    seen.add(key);
-    names.push(name);
+/** " on your Venture card" / " on your Everyday Checking" for a finding. */
+function findingAccountPhrase(finding: AnyRecord): string {
+  const label = String(finding.accountLabel ?? "").trim();
+  if (!label) return "";
+  const type = String(finding.accountType ?? "").toLowerCase();
+  if (type.includes("credit")) {
+    return /card$/i.test(label) ? ` on your ${label}` : ` on your ${label} card`;
   }
-  return names;
+  return ` on your ${label}`;
+}
+
+/** Merchant plus its account label, e.g. "NETFLIX.COM on your Venture card". */
+function findingLabel(finding: AnyRecord): string {
+  const name = String(finding.description ?? "").trim() || "A charge";
+  return `${name}${findingAccountPhrase(finding)}`;
 }
 
 function anomaliesAnswer(data: unknown): string {
   const payload = rec(data);
   const findings = Array.isArray(payload.findings) ? payload.findings.map(rec) : [];
   if (findings.length === 0) {
-    return "Nothing unusual stood out in this account.";
+    return "Nothing unusual stood out across your accounts.";
   }
 
   // Match the client's anomaly-card cap so every merchant named in prose has a
@@ -307,35 +347,46 @@ function anomaliesAnswer(data: unknown): string {
   const others = visible.filter(
     (finding) => finding.type !== "duplicate" && finding.type !== "outlier"
   );
+  const duplicateCount =
+    typeof payload.duplicateCount === "number"
+      ? payload.duplicateCount
+      : findings.filter((finding) => finding.type === "duplicate").length;
+  const outlierCount =
+    typeof payload.outlierCount === "number"
+      ? payload.outlierCount
+      : findings.filter((finding) => finding.type === "outlier").length;
 
-  const parts: string[] = [
-    visible.length === 1 ? "One charge needs a closer look." : "A few charges need a closer look."
-  ];
+  const summary =
+    typeof payload.summary === "string" && payload.summary.trim()
+      ? payload.summary.trim()
+      : summarizeAnomalyPatterns(duplicateCount, outlierCount);
 
-  const duplicateNames = findingNames(duplicates);
-  if (duplicateNames.length > 0) {
+  const parts: string[] = [summary];
+
+  const duplicateLabels = duplicates.map(findingLabel);
+  if (duplicateLabels.length > 0) {
     parts.push(
-      duplicateNames.length === 1
-        ? `${duplicateNames[0]} looks like a possible duplicate.`
-        : `${joinNames(duplicateNames)} each look like possible duplicates.`
+      duplicateLabels.length === 1
+        ? `${duplicateLabels[0]} is a possible duplicate.`
+        : `${joinNames(duplicateLabels)} each look like possible duplicates.`
     );
   }
 
-  const outlierNames = findingNames(outliers);
-  if (outlierNames.length > 0) {
+  const outlierLabels = outliers.map(findingLabel);
+  if (outlierLabels.length > 0) {
     parts.push(
-      outlierNames.length === 1
-        ? `${outlierNames[0]} is an unusually large purchase.`
-        : `${joinNames(outlierNames)} are unusually large purchases.`
+      outlierLabels.length === 1
+        ? `${outlierLabels[0]} is an unusually large purchase.`
+        : `${joinNames(outlierLabels)} are unusually large purchases.`
     );
   }
 
-  const otherNames = findingNames(others);
-  if (otherNames.length > 0) {
+  const otherLabels = others.map(findingLabel);
+  if (otherLabels.length > 0) {
     parts.push(
-      otherNames.length === 1
-        ? `${otherNames[0]} also looks unusual.`
-        : `${joinNames(otherNames)} also look unusual.`
+      otherLabels.length === 1
+        ? `${otherLabels[0]} also looks unusual.`
+        : `${joinNames(otherLabels)} also look unusual.`
     );
   }
 

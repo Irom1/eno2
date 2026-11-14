@@ -237,6 +237,8 @@ export function summarizeToolResult(name: string, data: unknown): string {
       return `${accountCount} accounts · liquid $${formatMoney(payload.liquidTotal)}`;
     }
     case "insight_anomalies": {
+      const summary = typeof payload.summary === "string" ? payload.summary.trim() : "";
+      if (summary) return summary;
       const count = num(payload.count);
       if (count === 0) return "No anomalies found";
       const findings = Array.isArray(payload.findings) ? payload.findings.map(rec) : [];

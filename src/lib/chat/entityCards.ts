@@ -417,13 +417,16 @@ export function anomalyTransactionCards(
         typeof finding._id === 'string' || typeof finding._id === 'number'
           ? String(finding._id)
           : '';
+      const findingAccountId =
+        typeof finding.accountId === 'string' ? finding.accountId.trim() : '';
       const payload: TransactionCardPayload = {
         description,
         amount,
         date,
         flag,
         transactionId,
-        ...contextIds
+        ...contextIds,
+        ...(findingAccountId ? { accountId: findingAccountId } : {})
       };
 
       if (typeof finding.duplicateOf === 'string') {
