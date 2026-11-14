@@ -9,11 +9,14 @@
     anomalyExplanation,
     anomalyTransactionCards,
     billCard,
+    cashflowCard,
+    goalCard,
     loanCard,
     locationCard,
     mergeEntityCards,
     mergeTransactionListCards,
     recurringCard,
+    rewardCard,
     spendingPieCard,
     transactionListCard,
     type EntityCard,
@@ -31,7 +34,7 @@
     THINKING_COMPOSING,
     type ThinkingState
   } from '$lib/chat/thinking.js';
-  import { visibleCards } from '$lib/chat/relevance.js';
+  import { classifyIntents, visibleCards } from '$lib/chat/relevance.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
   import FollowUps from './FollowUps.svelte';
@@ -43,6 +46,9 @@
   import LoanCard from './inline-cards/LoanCard.svelte';
   import LocationCard from './inline-cards/LocationCard.svelte';
   import RecurringChargeCard from './inline-cards/RecurringChargeCard.svelte';
+  import RewardCard from './inline-cards/RewardCard.svelte';
+  import GoalCard from './inline-cards/GoalCard.svelte';
+  import CashflowPointCard from './inline-cards/CashflowPointCard.svelte';
 
   interface Props {
     open: boolean;
@@ -195,6 +201,22 @@
     return messages.find((message) => message.id === id);
   }
 
+  /** Keep one card per kind in a turn: later insights replace, never stack. */
+  function replaceInlineCard(message: ChatMessage, incoming: EntityCard): void {
+    const current = message.inlineCards ?? [];
+    const exists = current.some((card) => card.kind === incoming.kind);
+    message.inlineCards = exists
+      ? current.map((card) => (card.kind === incoming.kind ? incoming : card))
+      : [...current, incoming];
+    cardSeq = Math.max(cardSeq, incoming.id);
+  }
+
+  function positiveTotalRewards(payload: unknown): boolean {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+    const total = (payload as Record<string, unknown>).totalRewards;
+    return typeof total === 'number' && Number.isFinite(total) && total > 0;
+  }
+
   /** Fill empty assistant prose with a deterministic explanation for its cards. */
   function ensureExplanation(message: ChatMessage): void {
     const cards = message.inlineCards ?? [];
@@ -273,6 +295,7 @@
             }
             const payload = data.payload;
             const accountId = typeof data.accountId === 'string' ? data.accountId : '';
+            const intents = classifyIntents(message.prompt ?? '');
             const fingerprint = `${data.kind}:${JSON.stringify(payload)}`;
             const existing = message.cards ?? [];
             if (
@@ -415,6 +438,36 @@
                   : [...(message.inlineCards ?? []), incoming];
                 cardSeq = Math.max(cardSeq, incoming.id);
               }
+            }
+            if (
+              intents.has('rewards') &&
+              (chatCardKind(data.kind) === 'accounts' ||
+                (data.kind === 'insight_financial_overview' && positiveTotalRewards(payload)))
+            ) {
+              // One primitive reward card per turn: the highest credit-account
+              // reward, or the overview total. Later rewards replace it.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = rewardCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (data.kind === 'insight_goal_projection') {
+              // One primitive goal card per turn; a later projection replaces it.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = goalCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (
+              data.kind === 'insight_financial_overview' &&
+              (intents.has('cashflow') || intents.has('overview'))
+            ) {
+              // One primitive cashflow month per turn: the latest complete
+              // month, replaced rather than stacked if the insight repeats.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = cashflowCard(payload, anchor, cardSeq + 1);
+              if (incoming) replaceInlineCard(message, incoming);
             }
             if (chatCardKind(data.kind) === 'transactions') {
               // Deposits and withdrawals in one turn share a single merged list.
@@ -629,6 +682,12 @@
                         <LocationCard {card} />
                       {:else if card.kind === 'recurring'}
                         <RecurringChargeCard {card} />
+                      {:else if card.kind === 'reward'}
+                        <RewardCard {card} />
+                      {:else if card.kind === 'goal'}
+                        <GoalCard {card} />
+                      {:else if card.kind === 'cashflow'}
+                        <CashflowPointCard {card} />
                       {/if}
                     {/each}
                   {/if}

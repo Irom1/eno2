@@ -7,22 +7,28 @@ import {
   anomalyExplanation,
   anomalyTransactionCards,
   billCard,
+  cashflowCard,
+  goalCard,
   loanCard,
   locationCard,
   mergeEntityCards,
   mergeTransactionListCards,
   normalizeMaskedAccountNumber,
   recurringCard,
+  rewardCard,
   spendingPieCard,
   spendingPiePeriod,
   transactionHref,
   transactionListCard,
   type AccountEntityCard,
   type BillEntityCard,
+  type CashflowPointEntityCard,
   type EntityCard,
+  type GoalEntityCard,
   type LoanEntityCard,
   type LocationEntityCard,
   type RecurringChargeEntityCard,
+  type RewardEntityCard,
   type SpendingPieEntityCard,
   type TransactionEntityCard,
   type TransactionListEntityCard
@@ -1354,6 +1360,273 @@ describe('recurringCard', () => {
   });
 });
 
+describe('rewardCard', () => {
+  it('selects the credit account with the highest positive rewards', () => {
+    const card = rewardCard(
+      {
+        accounts: [
+          { _id: 'acct-checking', type: 'Checking', nickname: 'Everyday', rewards: 900 },
+          { _id: 'acct-venture', type: 'Credit Card', nickname: 'Venture Rewards', rewards: 24850 },
+          { _id: 'acct-quick', type: 'Credit Card', nickname: 'Quicksilver', rewards: 31200 }
+        ],
+        extra: 'do not leak'
+      },
+      42,
+      7,
+      { customerId: 'cust-1' }
+    );
+
+    expect(card).toMatchObject({
+      id: 7,
+      entityId: 'reward:acct-quick',
+      kind: 'reward',
+      afterText: 42,
+      payload: {
+        rewardId: 'acct-quick',
+        label: 'Quicksilver',
+        points: 31200,
+        accountId: 'acct-quick',
+        customerId: 'cust-1'
+      }
+    });
+    expect(Object.keys(card!.payload).sort()).toEqual([
+      'accountId',
+      'customerId',
+      'label',
+      'points',
+      'rewardId'
+    ]);
+    expect(card!.payload).not.toHaveProperty('balance');
+    expect(card!.payload).not.toHaveProperty('type');
+  });
+
+  it('falls back to nickname missing and ignores zero or non-credit rewards', () => {
+    const card = rewardCard(
+      {
+        accounts: [
+          { _id: 'acct-zero', type: 'Credit Card', nickname: 'Zero', rewards: 0 },
+          { _id: 'acct-check', type: 'Checking', nickname: 'Checking', rewards: 5000 },
+          { _id: 'credit-1', type: 'credit card', rewards: 1200 }
+        ]
+      },
+      0,
+      1
+    );
+    expect(card?.payload).toMatchObject({
+      rewardId: 'credit-1',
+      label: 'credit card',
+      points: 1200,
+      accountId: 'credit-1'
+    });
+  });
+
+  it('builds a total-rewards card when the payload has no account rows', () => {
+    const card = rewardCard({ totalRewards: 24850, accounts: [] }, 10, 3, {
+      customerId: 'cust-1'
+    });
+
+    expect(card).toMatchObject({
+      id: 3,
+      entityId: 'reward:total',
+      kind: 'reward',
+      afterText: 10,
+      payload: {
+        rewardId: 'total',
+        label: 'Total rewards',
+        points: 24850,
+        customerId: 'cust-1'
+      }
+    });
+    expect(card!.payload).not.toHaveProperty('accountId');
+  });
+
+  it('returns null when no reward is positive', () => {
+    expect(rewardCard({ accounts: [{ type: 'Checking', rewards: 0 }] }, 0, 1)).toBeNull();
+    expect(rewardCard({ totalRewards: 0 }, 0, 1)).toBeNull();
+    expect(rewardCard({ totalRewards: -10 }, 0, 1)).toBeNull();
+    expect(rewardCard(null, 0, 1)).toBeNull();
+    expect(rewardCard(undefined, 0, 1)).toBeNull();
+    expect(rewardCard('rewards', 0, 1)).toBeNull();
+    expect(rewardCard({ count: 0, message: 'No accounts' }, 0, 1)).toBeNull();
+  });
+});
+
+describe('goalCard', () => {
+  const projection = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    asOf: '2026-11-14',
+    accountId: 'acct-savings',
+    currentBalance: 12640,
+    targetAmount: 20000,
+    monthlyNet: 1840,
+    monthsInAverage: 3,
+    monthsToTarget: 4,
+    projections: [{ months: 3, projectedBalance: 18160 }],
+    onTrack: true,
+    ...overrides
+  });
+
+  it('builds one goal with a projected date and no advice fields', () => {
+    const card = goalCard(projection(), 30, 4, { customerId: 'cust-1' });
+
+    expect(card).toMatchObject({
+      id: 4,
+      entityId: 'goal:acct-savings:20000',
+      kind: 'goal',
+      afterText: 30,
+      payload: {
+        goalId: 'goal:acct-savings:20000',
+        accountId: 'acct-savings',
+        target: 20000,
+        current: 12640,
+        monthsToTarget: 4,
+        projectedDate: '2027-03-14',
+        customerId: 'cust-1'
+      }
+    });
+    expect(Object.keys(card!.payload).sort()).toEqual([
+      'accountId',
+      'current',
+      'customerId',
+      'goalId',
+      'monthsToTarget',
+      'projectedDate',
+      'target'
+    ]);
+    expect(card!.payload).not.toHaveProperty('onTrack');
+    expect(card!.payload).not.toHaveProperty('monthlyNet');
+    expect(card!.payload).not.toHaveProperty('projections');
+  });
+
+  it('omits the projected date when monthsToTarget is null or negative', () => {
+    const noMonths = goalCard(projection({ monthsToTarget: null }), 0, 1);
+    expect(noMonths?.payload.monthsToTarget).toBeNull();
+    expect(noMonths?.payload).not.toHaveProperty('projectedDate');
+
+    const negative = goalCard(projection({ monthsToTarget: -2 }), 0, 1);
+    expect(negative?.payload.monthsToTarget).toBeNull();
+    expect(negative?.payload).not.toHaveProperty('projectedDate');
+  });
+
+  it('projects from a zero-month target and tolerates a missing account id', () => {
+    const card = goalCard(
+      projection({ monthsToTarget: 0, currentBalance: 21000, accountId: undefined }),
+      0,
+      1
+    );
+    expect(card?.entityId).toBe('goal:account:20000');
+    expect(card?.payload.monthsToTarget).toBe(0);
+    expect(card?.payload.projectedDate).toBe('2026-11-14');
+    expect(card?.payload.accountId).toBeUndefined();
+  });
+
+  it('rejects invalid targets, balances, and malformed payloads', () => {
+    expect(goalCard(projection({ targetAmount: 0 }), 0, 1)).toBeNull();
+    expect(goalCard(projection({ targetAmount: -1 }), 0, 1)).toBeNull();
+    expect(goalCard(projection({ currentBalance: -1 }), 0, 1)).toBeNull();
+    expect(goalCard(projection({ currentBalance: undefined }), 0, 1)).toBeNull();
+    expect(goalCard(projection({ asOf: 'not-a-date' }), 0, 1)?.payload).not.toHaveProperty(
+      'projectedDate'
+    );
+    expect(goalCard(null, 0, 1)).toBeNull();
+    expect(goalCard('goal', 0, 1)).toBeNull();
+  });
+});
+
+describe('cashflowCard', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('chooses the latest complete month and formats the period', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T12:00:00Z'));
+
+    const card = cashflowCard(
+      {
+        monthlyCashflow: [
+          { month: '2026-09', inflow: 5200, outflow: 4100, net: 1100 },
+          { month: '2026-10', inflow: 6100, outflow: 4800, net: 1300 },
+          { month: '2026-11', inflow: 900, outflow: 300, net: 600 }
+        ]
+      },
+      25,
+      9
+    );
+
+    expect(card).toMatchObject({
+      id: 9,
+      entityId: 'cashflow:2026-10',
+      kind: 'cashflow',
+      afterText: 25,
+      payload: {
+        period: 'October 2026',
+        inflow: 6100,
+        outflow: 4800,
+        net: 1300
+      }
+    });
+  });
+
+  it('computes net from inflow and outflow when net is missing', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T12:00:00Z'));
+
+    const card = cashflowCard(
+      {
+        monthlyCashflow: [
+          { month: '2026-09', inflow: 1000, outflow: 1500 },
+          { month: '2026-10', inflow: 2000, outflow: 1200, net: 'nope' }
+        ]
+      },
+      0,
+      1
+    );
+    expect(card?.payload.net).toBe(800);
+  });
+
+  it('falls back to the last entry when no month is complete', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T12:00:00Z'));
+
+    const card = cashflowCard(
+      {
+        monthlyCashflow: [
+          { month: '2026-11', inflow: 900, outflow: 300, net: 600 },
+          { month: '2026-12', inflow: 700, outflow: 100, net: 600 }
+        ]
+      },
+      0,
+      1
+    );
+    expect(card?.entityId).toBe('cashflow:2026-12');
+    expect(card?.payload.period).toBe('December 2026');
+  });
+
+  it('skips malformed rows and returns null when nothing is valid', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T12:00:00Z'));
+
+    const card = cashflowCard(
+      {
+        monthlyCashflow: [
+          null,
+          'nope',
+          { month: 'September 2026', inflow: 1, outflow: 1 },
+          { month: '2026-10', inflow: 'x', outflow: 1 },
+          { month: '2026-09', inflow: 10, outflow: 4 }
+        ]
+      },
+      0,
+      1
+    );
+    expect(card?.entityId).toBe('cashflow:2026-09');
+
+    expect(cashflowCard({ monthlyCashflow: [] }, 0, 1)).toBeNull();
+    expect(cashflowCard({ monthlyCashflow: 'nope' }, 0, 1)).toBeNull();
+    expect(cashflowCard(null, 0, 1)).toBeNull();
+  });
+});
+
 describe('anchorEntityCards', () => {
   function bill(id: number, payee: string, afterText?: number): BillEntityCard {
     return {
@@ -1464,6 +1737,45 @@ describe('anchorEntityCards', () => {
     expect(anchorEntityCards(null as unknown as string, [bill(1, 'City Power')])).toHaveLength(1);
     expect(anchorEntityCards('text', null as unknown as EntityCard[])).toEqual([]);
     expect(anchorEntityCards('text', [null as unknown as EntityCard])).toEqual([]);
+  });
+
+  it('anchors rewards after their label and cashflow after the period', () => {
+    const reward: RewardEntityCard = {
+      id: 1,
+      entityId: 'reward:acct-1',
+      kind: 'reward',
+      payload: { rewardId: 'acct-1', label: 'Venture Rewards', points: 24850 }
+    };
+    const cashflow: CashflowPointEntityCard = {
+      id: 2,
+      entityId: 'cashflow:2026-10',
+      kind: 'cashflow',
+      payload: { period: 'October 2026', inflow: 6100, outflow: 4800, net: 1300 }
+    };
+    const goal: GoalEntityCard = {
+      id: 3,
+      entityId: 'goal:acct-1:20000',
+      kind: 'goal',
+      payload: {
+        goalId: 'goal:acct-1:20000',
+        target: 20000,
+        current: 12640,
+        monthsToTarget: 4
+      },
+      afterText: 77
+    };
+
+    const rewardText = 'Your Venture Rewards balance is growing.';
+    const [anchoredReward] = anchorEntityCards(rewardText, [reward]);
+    expect(anchoredReward?.afterText).toBe(rewardText.indexOf('balance'));
+
+    const cashflowText = 'In October 2026, you had more coming in.';
+    const [anchoredCashflow] = anchorEntityCards(cashflowText, [cashflow]);
+    expect(anchoredCashflow?.afterText).toBe(cashflowText.indexOf(',') + 1);
+
+    const goalText = 'Your savings goal is within reach.';
+    const [anchoredGoal] = anchorEntityCards(goalText, [goal]);
+    expect(anchoredGoal?.afterText).toBe(77);
   });
 
   it('preserves bill and account cards through mergeEntityCards without counting the cap', () => {

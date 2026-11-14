@@ -153,6 +153,55 @@ export interface RecurringChargeEntityCard {
   afterText?: number;
 }
 
+export interface RewardCardPayload {
+  rewardId: string;
+  label: string; // account nickname or "Total rewards"
+  points: number;
+  accountId?: string;
+  customerId?: string;
+}
+
+export interface RewardEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'reward';
+  payload: RewardCardPayload;
+  afterText?: number;
+}
+
+export interface GoalCardPayload {
+  goalId: string;
+  accountId?: string;
+  target: number;
+  current: number;
+  monthsToTarget: number | null;
+  projectedDate?: string; // ISO if monthsToTarget is finite
+  customerId?: string;
+}
+
+export interface GoalEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'goal';
+  payload: GoalCardPayload;
+  afterText?: number;
+}
+
+export interface CashflowPointCardPayload {
+  period: string; // e.g. "September 2026"
+  inflow: number;
+  outflow: number;
+  net: number;
+}
+
+export interface CashflowPointEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'cashflow';
+  payload: CashflowPointCardPayload;
+  afterText?: number;
+}
+
 export type EntityCard =
   | TransactionEntityCard
   | TransactionListEntityCard
@@ -161,7 +210,10 @@ export type EntityCard =
   | AccountEntityCard
   | LoanEntityCard
   | LocationEntityCard
-  | RecurringChargeEntityCard;
+  | RecurringChargeEntityCard
+  | RewardEntityCard
+  | GoalEntityCard
+  | CashflowPointEntityCard;
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
 export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
@@ -958,6 +1010,231 @@ export function recurringCard(
   }
 }
 
+function isCreditAccountType(value: string): boolean {
+  const type = value.trim().toLowerCase();
+  return type === 'credit card' || type === 'credit';
+}
+
+/**
+ * Build one primitive reward card. Account lists show the credit account with
+ * the highest positive rewards; otherwise a positive `totalRewards` becomes a
+ * "Total rewards" card. Points are never converted into an invented dollar
+ * value.
+ */
+export function rewardCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): RewardEntityCard | null {
+  try {
+    const items = asItems(payload);
+    const customerId = optionalTrimmed(context?.customerId);
+
+    interface Candidate {
+      index: number;
+      accountId: string;
+      label: string;
+      points: number;
+    }
+
+    const candidates: Candidate[] = [];
+    const hasRewardRows = items.some((item) => 'rewards' in item);
+    if (hasRewardRows) {
+      for (let index = 0; index < items.length; index += 1) {
+        const item = items[index];
+        if (!isCreditAccountType(trimmedString(item.type))) continue;
+        const points = finiteNumberOrNull(item.rewards);
+        if (points === null || points <= 0) continue;
+
+        const rawId = item._id ?? item.id;
+        const accountId =
+          (typeof rawId === 'string' || typeof rawId === 'number') &&
+          String(rawId).trim().length > 0
+            ? String(rawId).trim()
+            : '';
+        if (!accountId) continue;
+        const label = trimmedString(item.nickname) || trimmedString(item.type) || 'Credit card';
+        candidates.push({ index, accountId, label, points });
+      }
+    }
+
+    let payloadOut: RewardCardPayload;
+    if (candidates.length > 0) {
+      const selected = candidates.reduce((best, entry) => {
+        if (entry.points !== best.points) return entry.points > best.points ? entry : best;
+        return entry.index < best.index ? entry : best;
+      });
+      payloadOut = {
+        rewardId: selected.accountId || 'total',
+        label: selected.label,
+        points: selected.points,
+        ...(selected.accountId ? { accountId: selected.accountId } : {}),
+        ...(customerId ? { customerId } : {})
+      };
+    } else {
+      if (hasRewardRows) return null;
+      const total = isRecord(payload) ? finiteNumberOrNull(payload.totalRewards) : null;
+      if (total === null || total <= 0) return null;
+      payloadOut = {
+        rewardId: 'total',
+        label: 'Total rewards',
+        points: total,
+        ...(customerId ? { customerId } : {})
+      };
+    }
+
+    const card: RewardEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: `reward:${payloadOut.accountId ?? 'total'}`,
+      kind: 'reward',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function addMonthsISODate(iso: string, months: number): string | undefined {
+  const match = ISO_DATE.exec(iso);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1 + months, day));
+  if (Number.isNaN(date.getTime())) return undefined;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    date.getUTCDate()
+  ).padStart(2, '0')}`;
+}
+
+function monthsToTargetOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Build one primitive goal card from `insight_goal_projection`. The card shows
+ * target, current balance, months to target, and a projected date when the
+ * projection is finite. No advice, progress narrative, or on-track copy.
+ */
+export function goalCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): GoalEntityCard | null {
+  try {
+    if (!isRecord(payload)) return null;
+
+    const target = finiteNumberOrNull(payload.targetAmount);
+    const current = finiteNumberOrNull(payload.currentBalance);
+    if (target === null || target <= 0) return null;
+    if (current === null || current < 0) return null;
+
+    const accountId = optionalTrimmed(payload.accountId);
+    const monthsToTarget = monthsToTargetOf(payload.monthsToTarget);
+    const asOf = trimmedString(payload.asOf);
+    const projectedDate =
+      monthsToTarget === null ? undefined : addMonthsISODate(asOf, monthsToTarget);
+
+    const customerId = optionalTrimmed(context?.customerId);
+    const goalId = `goal:${accountId ?? 'account'}:${target}`;
+    const payloadOut: GoalCardPayload = {
+      goalId,
+      target,
+      current,
+      monthsToTarget,
+      ...(accountId ? { accountId } : {}),
+      ...(projectedDate ? { projectedDate } : {}),
+      ...(customerId ? { customerId } : {})
+    };
+
+    const card: GoalEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: goalId,
+      kind: 'goal',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+interface CashflowCandidate {
+  month: string;
+  inflow: number;
+  outflow: number;
+  net: number;
+}
+
+/**
+ * Build one primitive monthly cashflow card. The latest complete month wins;
+ * when none is complete the last valid entry is used. At most one month is
+ * shown, with no interpretation or comparison copy.
+ */
+export function cashflowCard(
+  payload: unknown,
+  afterText: number,
+  startId: number
+): CashflowPointEntityCard | null {
+  try {
+    if (!isRecord(payload) || !Array.isArray(payload.monthlyCashflow)) return null;
+
+    const candidates: CashflowCandidate[] = [];
+    for (const entry of payload.monthlyCashflow) {
+      if (!isRecord(entry)) continue;
+      const month = trimmedString(entry.month);
+      if (!MONTH_KEY.test(month)) continue;
+      const inflow = finiteNumberOrNull(entry.inflow);
+      const outflow = finiteNumberOrNull(entry.outflow);
+      if (inflow === null || outflow === null) continue;
+      const providedNet = finiteNumberOrNull(entry.net);
+      candidates.push({
+        month,
+        inflow,
+        outflow,
+        net: providedNet === null ? inflow - outflow : providedNet
+      });
+    }
+    if (candidates.length === 0) return null;
+
+    const currentKey = utcMonthKey(new Date());
+    const complete = candidates.filter((entry) => entry.month < currentKey);
+    const selected =
+      complete.length > 0
+        ? complete.reduce((best, entry) => (entry.month > best.month ? entry : best))
+        : candidates[candidates.length - 1];
+
+    const card: CashflowPointEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: `cashflow:${selected.month}`,
+      kind: 'cashflow',
+      payload: {
+        period: spendingPiePeriod(selected.month),
+        inflow: selected.inflow,
+        outflow: selected.outflow,
+        net: selected.net
+      }
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Merge rows into a single list card, dedupe by transaction id, cap the rows,
  * and keep the earliest anchor (a real anchor beats end-of-text).
@@ -1148,15 +1425,28 @@ function anchorCandidates(card: EntityCard): string[][] {
     return candidates;
   }
 
+  if (card.kind === 'reward') {
+    const label = typeof card.payload?.label === 'string' ? card.payload.label : '';
+    const keys = tokenize(label).map((token) => token.norm);
+    return keys.length > 0 ? [keys] : [];
+  }
+
+  if (card.kind === 'cashflow') {
+    const period = typeof card.payload?.period === 'string' ? card.payload.period : '';
+    const keys = tokenize(period).map((token) => token.norm);
+    return keys.length > 0 ? [keys] : [];
+  }
+
   return [];
 }
 
 /**
  * Reposition entity cards after the mention they introduce: transactions and
  * recurring charges after their description, bills after their payee, accounts
- * after their nickname (falling back to type), loans after their type, and
- * locations after their name. Returns copies; cards with no mention keep their
- * existing `afterText`. Non-anchored kinds (lists, pies) are left unchanged.
+ * after their nickname (falling back to type), loans after their type,
+ * locations after their name, rewards after their label, and cashflow after
+ * its period. Returns copies; cards with no mention keep their existing
+ * `afterText`. Non-anchored kinds (lists, pies, goals) are left unchanged.
  */
 export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard[] {
   const source = typeof text === 'string' ? text : '';
@@ -1176,7 +1466,9 @@ export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard
         card.kind !== 'account' &&
         card.kind !== 'loan' &&
         card.kind !== 'location' &&
-        card.kind !== 'recurring'
+        card.kind !== 'recurring' &&
+        card.kind !== 'reward' &&
+        card.kind !== 'cashflow'
       ) {
         anchored.push({ ...card });
         continue;

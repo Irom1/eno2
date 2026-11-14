@@ -15,18 +15,19 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
 - [x] `LoanCard` — one loan: type/description, balance, monthly payment, factual status chip; optional account link; no credit score.
 - [x] `LocationCard` — one ATM or branch: name, street address when the data has one, hours when present; no distance.
 - [x] `RecurringChargeCard` — one recurring charge: description, average amount, months seen, last date; no invented cadence or next date.
+- [x] `RewardCard` — one reward balance: label and points from the highest credit-account rewards, or the overview total; no invented dollar value.
+- [x] `GoalCard` — one goal projection: target, current, months to target, projected date; no on-track or advice copy.
+- [x] `CashflowPointCard` — one complete month: period, inflow, outflow, net; no interpretation.
 - [x] Shared `StatusChip` primitive — factual state only, theme-aware, never colour-only.
+- [x] Shared `EntityKeyValue` primitive — one compact label/value row, theme-aware and tabular; used by `GoalCard` and `CashflowPointCard`.
 - [x] Buffering, markdown-safe anchoring, and deep links — `revealInlineCards`, `inlineBlocks`, `anchorEntityCards`, `transactionHref`, `accountHref`.
-- [x] Prompt rules for primitive cards and the single-bill/single-account/single-loan/location/recurring-charge rules.
+- [x] Prompt rules for primitive cards and the single-bill/single-account/single-loan/location/recurring-charge/reward/goal/cashflow rules.
 
 ## Remaining
 
-- [ ] `RewardCard` — one reward balance or offer: label, points, optional value.
-- [ ] `GoalCard` — one goal: label, target, current, projected date.
-- [ ] `CashflowPointCard` — one month/point: period, inflow, outflow.
 - [ ] `MerchantCard` — one merchant: name, amount, count.
 - [ ] `ProfileCard` — one customer: name and optional safe contact fields only, no sensitive identifiers.
-- [ ] Shared primitives still planned in `CARD_PLAN.md` §6: `DateLabel`/`RelativeDate`, `AccountTag`, `EntityKeyValue`, `ProgressMeter`, `ShareBar`, `DeltaBadge`, `Sparkline`, `InlineAction`, `TruncationFooter`, `InlineEmpty`, `ExpandRow`, `DefinitionHint`, `BufferedPlaceholder` (plus promoting `Money`/`SignedAmount`).
+- [ ] Shared primitives still planned in `CARD_PLAN.md` §6: `DateLabel`/`RelativeDate`, `AccountTag`, `ProgressMeter`, `ShareBar`, `DeltaBadge`, `Sparkline`, `InlineAction`, `TruncationFooter`, `InlineEmpty`, `ExpandRow`, `DefinitionHint`, `BufferedPlaceholder` (plus promoting `Money`/`SignedAmount`).
 - [ ] `present_card` tool, ownership validation, normalized `card` SSE event, and the `off`/`v2` flag.
 - [ ] Phase 4 cleanup: remove legacy registry/relevance coupling, migrate follow-ups to `EntityCard`, rewrite stale E2E card assertions.
 

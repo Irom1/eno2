@@ -166,6 +166,198 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('a rewards payload renders one primitive reward card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Your Venture Rewards balance is '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_list_customer_accounts',
+        payload: {
+          accounts: [
+            { _id: 'acct-checking', type: 'Checking', nickname: 'Everyday Checking', rewards: 0 },
+            { _id: 'acct-venture', type: 'Credit Card', nickname: 'Venture Rewards', rewards: 24850 },
+            { _id: 'acct-quick', type: 'Credit Card', nickname: 'Quicksilver', rewards: 5000 }
+          ],
+          extra: 'do not leak'
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'the highest across your cards.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my credit card rewards');
+
+    const card = page.locator('.reward-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'reward');
+
+    const text = await card.innerText();
+    expect(text).toContain('Venture Rewards');
+    expect(text).toContain('24,850 pts');
+    // Primitive: points are never converted into an invented dollar value.
+    expect(text, 'no invented dollar value for points').not.toContain('$');
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .reward-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the reward card is standalone'
+    ).toBe(false);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('a goal projection renders one primitive goal card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is the projection for your savings goal: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_goal_projection',
+        payload: {
+          asOf: '2026-11-14',
+          accountId: 'acct-savings',
+          currentBalance: 12640,
+          targetAmount: 20000,
+          monthlyNet: 1840,
+          monthsToTarget: 4,
+          projections: [{ months: 3, projectedBalance: 18160 }],
+          onTrack: true,
+          extra: 'do not leak'
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'the prose carries the progress narrative.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Help me plan a savings goal');
+
+    const card = page.locator('.goal-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'goal');
+
+    const text = await card.innerText();
+    expect(text).toContain('Target');
+    expect(text).toContain('$20,000.00');
+    expect(text).toContain('Current');
+    expect(text).toContain('$12,640.00');
+    expect(text).toContain('Months to target');
+    expect(text).toContain('Projected date');
+    expect(text.toLowerCase(), 'no advice or on-track copy').not.toMatch(
+      /on track|recommend|you should|tip:/
+    );
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .goal-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the goal card is standalone'
+    ).toBe(false);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('an overview prompt renders one primitive cashflow month', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Your latest complete month: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_financial_overview',
+        payload: {
+          totalRewards: 0,
+          accounts: [],
+          monthlyCashflow: [
+            { month: '2020-01', inflow: 5000, outflow: 4200, net: 800 },
+            { month: '2020-02', inflow: 6100, outflow: 4800, net: 1300 },
+            { month: '2020-03', inflow: 900, outflow: 300, net: 600 }
+          ]
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'the prose compares it with the other months.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Give me a snapshot of my finances');
+
+    const card = page.locator('.cashflow-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'cashflow');
+
+    const text = await card.innerText();
+    expect(text).toContain('February 2020');
+    expect(text).toContain('Inflow');
+    expect(text).toContain('$6,100.00');
+    expect(text).toContain('Outflow');
+    expect(text).toContain('$4,800.00');
+    expect(text).toContain('Net');
+    expect(text).toContain('+$1,300.00');
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .cashflow-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the cashflow card is standalone'
+    ).toBe(false);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
   test('opens with one friendly intro and no chat request', async ({ page }) => {
     test.setTimeout(120_000);
     const errors = collectErrors(page);
