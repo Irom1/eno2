@@ -1,3 +1,4 @@
+import { products } from '../../products';
 import { demoCardNicknames } from '../../spending';
 type Row = Record<string, unknown>;
 const isRow = (value: unknown): value is Row => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -6,8 +7,8 @@ const isRow = (value: unknown): value is Row => !!value && typeof value === 'obj
  * Nessie does not update metadata when deposit/withdrawal records are created. */
 export async function reconcileDemoAccount(value: unknown, read: (path: string) => Promise<unknown>): Promise<unknown> {
   if (!isRow(value) || typeof value._id !== 'string' ||
-      !((value.type === 'Checking' && value.nickname === 'Everyday Checking') ||
-        (value.type === 'Savings' && value.nickname === 'My Savings') ||
+      !((value.type === 'Checking' && (value.nickname === 'Everyday Checking' || value.nickname === products.checking.name)) ||
+        (value.type === 'Savings' && (value.nickname === 'My Savings' || value.nickname === products.savings.name)) ||
         (value.type === 'Credit Card' && typeof value.nickname === 'string' && demoCardNicknames.includes(value.nickname)))) return value;
   const path = `/accounts/${encodeURIComponent(value._id)}`;
   const deposits = await read(`${path}/deposits`);

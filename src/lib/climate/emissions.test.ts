@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mergeTransactions } from '../server/accounts';
-import { buildDemoTransactions } from '../server/nessie/seedTransactions';
+import { buildDemoTransactions, demoAccountTotals } from '../server/nessie/seedTransactions';
 import { buildReport, CATEGORIES, classify, fromNessiePurchase, scoreFor, tierFor, US_AVG_TONNES } from './emissions';
 
 // Raw Nessie deposits/withdrawals, run through the same normalizer /api/accounts/:id uses,
@@ -20,6 +20,26 @@ const asOf = new Date('2026-11-14T12:00:00Z');
 const transactions = mergeTransactions(deposits, withdrawals, 1000);
 
 describe('ClimateWise report', () => {
+  it('avoids the score floor when all three generated accounts have a suspicious gas purchase', () => {
+    for (const category of ['dining', 'groceries', 'entertainment', 'travel', 'shopping', 'gas', 'bills', 'other'] as const) {
+      for (let profile = 0; profile < 10; profile++) {
+        const activity = (['Checking', 'Savings', 'Credit Card'] as const).flatMap((type) => {
+          let attempt = 0;
+          let history;
+          do {
+            history = buildDemoTransactions(type, `climate-${category}-${profile}-${type}-${attempt++}`, asOf, [category]);
+          } while (!history.some((item) => item.description === 'SHELL GAS STATION' && item.amount > 100) && attempt < 100);
+          expect(history.some((item) => item.description === 'SHELL GAS STATION' && item.amount > 100)).toBe(true);
+          const raw = history.map((item, index) => ({ ...item, _id: `${type}-${index}` }));
+          return mergeTransactions(raw.filter((item) => item.kind === 'deposit'), raw.filter((item) => item.kind === 'withdrawal'), demoAccountTotals(history, type).balance, type === 'Credit Card');
+        });
+        const report = buildReport(activity, { days: 90, asOf });
+        const withoutGasOutliers = buildReport(activity.filter((item) => !(item.description === 'SHELL GAS STATION' && item.amount > 100)), { days: 90, asOf });
+        expect(report.score, `${category} profile ${profile}: ${report.totalKg} kg, score without gas outliers ${withoutGasOutliers.score}`).toBeGreaterThan(300);
+        expect(withoutGasOutliers.score - report.score).toBeLessThanOrEqual(140);
+      }
+    }
+  });
   it('counts only purchases inside the window', () => {
     const report = buildReport(transactions, { days: 30, asOf });
     // payroll deposit, transfer, card payment and the June purchase are all excluded

@@ -13,6 +13,13 @@
   // Mapbox public token used only by the `/api/mapbox/static` proxy, so it is a
   // private secret and never a `vars` value. Location search geocodes through
   // OpenStreetMap Nominatim.
+  //
+  // MAPBOX_REFERER is a deploy-time setting (a plain `vars` value is fine; it is
+  // not sensitive) for the same proxy. Mapbox tokens with URL restrictions only
+  // accept requests whose Referer is on the token's allowlist, so set it to the
+  // deployed origin (for example `https://eno2.example.workers.dev/`) and add
+  // that origin to the Mapbox token's URL restrictions. When unset the proxy
+  // falls back to `http://localhost:5184/` for local development.
   "vars": {
     "ALLOW_SEED": "0",
     "GEMINI_MODEL": "gemini-3.8-flash",

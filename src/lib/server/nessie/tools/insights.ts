@@ -1,3 +1,4 @@
+import { accountProduct } from '../../../products';
 /**
  * Deterministic insight tools. All arithmetic happens here in TypeScript so
  * every dollar the model narrates can be traced to a tested calculation.
@@ -96,6 +97,7 @@ const CATEGORY_KEYWORDS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "STAR MARKET",
       "GROCERY",
       "SUPERMARKET",
+      "FARMERS MARKET",
     ],
   ],
   [
@@ -180,6 +182,33 @@ export const SPENDING_CATEGORIES = [
   "other",
 ] as const;
 
+const CATEGORY_ALIASES: Record<string, string> = {
+  grocery: "groceries",
+  groceries: "groceries",
+  supermarket: "groceries",
+  rent: "housing",
+  mortgage: "housing",
+  restaurant: "dining",
+  restaurants: "dining",
+  food: "dining",
+  transportation: "transport",
+  transit: "transport",
+  gas: "transport",
+  utility: "utilities",
+  subscription: "subscriptions",
+  subscriptions: "subscriptions",
+  shopping: "shopping",
+  fitness: "fitness",
+  gym: "fitness",
+};
+
+export function normalizeSpendingCategory(value: unknown): string {
+  const key = String(value ?? "").trim().toLowerCase();
+  if (!key) return "";
+  if (CATEGORY_ALIASES[key]) return CATEGORY_ALIASES[key];
+  return (SPENDING_CATEGORIES as readonly string[]).includes(key) ? key : key;
+}
+
 export function categorizeDescription(description: unknown): string {
   const normalized = normalizeText(description);
   for (const [category, keywords] of CATEGORY_KEYWORDS) {
@@ -205,6 +234,27 @@ export function computeMedian(values: readonly number[]): number {
   const mid = Math.floor(sorted.length / 2);
   if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
   return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+}
+
+/**
+ * One-sentence synopsis of the unusual-activity pattern counts, shared by the
+ * tool payload and deterministic narration.
+ */
+export function summarizeAnomalyPatterns(duplicateCount: number, outlierCount: number): string {
+  const parts: string[] = [];
+  if (outlierCount === 1) parts.push("an unusually large purchase");
+  else if (outlierCount > 1) parts.push("several unusually large purchases");
+  if (duplicateCount === 1) parts.push("a possible duplicate");
+  else if (duplicateCount > 1) parts.push("several possible duplicates");
+  if (parts.length === 0) return "Nothing unusual stood out.";
+  return `I found ${parts.join(" and ")}.`;
+}
+
+/** Shared by detection and demo seeding so smaller examples remain detectable. */
+export function merchantOutlierBaseline(amounts: readonly number[]) {
+  const median = computeMedian(amounts);
+  const mad = computeMedian(amounts.map((amount) => Math.abs(amount - median)));
+  return { median, mad, threshold: Math.max(median * 4, median + 6 * mad, median + 100) };
 }
 
 export interface DuplicateFinding {
@@ -330,10 +380,8 @@ export function detectOutliers(
   }
   for (const group of merchants.values()) {
     if (group.length < 3) continue;
-    const median = computeMedian(group.map((tx) => tx.amount));
-    const mad = computeMedian(group.map((tx) => Math.abs(tx.amount - median)));
     // Require a substantial spike; ordinary variation and steady bills stay clear.
-    const threshold = Math.max(median * 4, median + 6 * mad, median + 100);
+    const { median, mad, threshold } = merchantOutlierBaseline(group.map((tx) => tx.amount));
     for (const tx of group) {
       if (tx.amount > threshold) addFinding(tx, median, mad, threshold, "much larger than this merchant's usual purchases");
     }
@@ -552,6 +600,136 @@ export function buildSpendingBreakdown(
     totalSpend,
     averageTransaction:
       windowTx.length > 0 ? toMoney(totalSpend / windowTx.length) : 0,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Top filtered transactions                                           */
+/* ------------------------------------------------------------------ */
+
+export interface TopTransactionRow {
+  _id: string;
+  description: string;
+  amount: number;
+  transactionDate: string;
+}
+
+export interface TopTransactionsResult {
+  count: number;
+  total: number;
+  category: string | null;
+  merchant: string | null;
+  months: number;
+  items: TopTransactionRow[];
+}
+
+export function buildTopTransactions(
+  transactions: readonly Transaction[],
+  options: { category?: string; merchant?: string; months: number; limit?: number; asOf: Date },
+): TopTransactionsResult {
+  const months = Math.max(1, Math.floor(options.months));
+  const currentMonth = monthStartUTC(options.asOf);
+  const start = addMonthsUTC(currentMonth, -(months - 1));
+  const end = addMonthsUTC(currentMonth, 1);
+  const category = options.category ? normalizeSpendingCategory(options.category) : "";
+  const merchant = options.merchant ? normalizeText(options.merchant) : "";
+  const matching = transactions
+    .filter(
+      (tx) =>
+        tx.kind === "withdrawal" &&
+        tx.date.getTime() >= start.getTime() &&
+        tx.date.getTime() < end.getTime() &&
+        (!category || categorizeDescription(tx.description) === category) &&
+        (!merchant || normalizeText(tx.description).includes(merchant)),
+    )
+    .sort((a, b) => b.amount - a.amount || b.date.getTime() - a.date.getTime());
+  const limit = Math.max(1, Math.min(50, Math.floor(options.limit ?? 20)));
+  return {
+    count: matching.length,
+    total: toMoney(matching.reduce((sum, tx) => sum + tx.amount, 0)),
+    category: category || null,
+    merchant: options.merchant?.trim() || null,
+    months,
+    items: matching.slice(0, limit).map((tx) => ({
+      _id: tx.id,
+      description: truncateText(tx.description, 160),
+      amount: toMoney(tx.amount),
+      transactionDate: toISODate(tx.date),
+    })),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Top merchants                                                       */
+/* ------------------------------------------------------------------ */
+
+export interface TopMerchantItem {
+  _id: string;
+  name: string;
+  category: string;
+  transactionCount: number;
+  total: number;
+}
+
+export interface TopMerchantsResult {
+  count: number;
+  months: number;
+  items: TopMerchantItem[];
+}
+
+/**
+ * Group withdrawals by normalized merchant description and rank by how often
+ * the customer visited, then by spend. `count` is the number of unique
+ * merchants; `items` is the top `limit` rows for the merchant card.
+ */
+export function buildTopMerchants(
+  transactions: readonly Transaction[],
+  options: { months: number; limit?: number; asOf: Date },
+): TopMerchantsResult {
+  const months = Math.max(1, Math.floor(options.months));
+  const currentMonth = monthStartUTC(options.asOf);
+  const start = addMonthsUTC(currentMonth, -(months - 1));
+  const end = addMonthsUTC(currentMonth, 1);
+
+  const groups = new Map<string, { description: string; transactionCount: number; total: number }>();
+  for (const tx of transactions) {
+    if (tx.kind !== "withdrawal") continue;
+    if (tx.date.getTime() < start.getTime() || tx.date.getTime() >= end.getTime()) continue;
+    const key = normalizeText(tx.description);
+    if (!key) continue;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.transactionCount += 1;
+      existing.total += tx.amount;
+    } else {
+      groups.set(key, {
+        description: truncateText(tx.description, 160),
+        transactionCount: 1,
+        total: tx.amount,
+      });
+    }
+  }
+
+  const limit = Math.max(1, Math.min(50, Math.floor(options.limit ?? 5)));
+  const ranked = [...groups.entries()]
+    .map(([key, group]) => ({ key, ...group }))
+    .sort(
+      (a, b) =>
+        b.transactionCount - a.transactionCount ||
+        b.total - a.total ||
+        a.description.localeCompare(b.description),
+    );
+
+  return {
+    count: ranked.length,
+    months,
+    items: ranked.slice(0, limit).map((group) => ({
+      _id: `merchant:${group.key.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`,
+      name: group.description,
+      category: categorizeDescription(group.description),
+      transactionCount: group.transactionCount,
+      total: toMoney(group.total),
+    })),
   };
 }
 
@@ -797,7 +975,7 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         accounts: accounts.map((account) => ({
           _id: account._id,
           type: account.type,
-          nickname: account.nickname,
+          nickname: accountProduct(account.type, account.nickname)?.name ?? account.nickname,
           balance: toMoney(accountBalance(account)),
           rewards: num(account.rewards),
           accountNumber: maskAccountNumber(account.account_number),
@@ -840,6 +1018,68 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         estimated: true,
         method: "keyword-categorization-v1",
       });
+    },
+  );
+
+  server.registerTool(
+    "insight_top_transactions",
+    {
+      description:
+        "Top withdrawal transactions over the last N calendar months, optionally filtered by spending category and/or merchant description, sorted by amount descending. Returns the exact rows so a transaction list card can render.",
+      annotations: READ_ONLY_ANNOTATIONS,
+      inputSchema: {
+        accountId: idParam,
+        category: z.string().min(1).optional().describe("Spending category, e.g. groceries, dining, housing, transport"),
+        merchant: z.string().min(1).optional().describe("Optional merchant or description substring"),
+        months: z.number().int().min(1).max(12).optional().describe("Number of calendar months to include (default 3)"),
+        limit: z.number().int().min(1).max(50).optional().describe("Maximum rows to return (default 20)"),
+      },
+    },
+    async ({ accountId, category, merchant, months, limit }) => {
+      const transactions = await fetchTransactions(client, accountId);
+      return ok(buildTopTransactions(transactions, {
+        category,
+        merchant,
+        months: months ?? 3,
+        limit,
+        asOf: todayUTC(),
+      }));
+    },
+  );
+
+  server.registerTool(
+    "insight_top_merchants",
+    {
+      description:
+        "Most frequent withdrawal merchants over the last N calendar months, grouped by description and sorted by transaction count then total spend. Returns one row per merchant so a single merchant card can render.",
+      annotations: READ_ONLY_ANNOTATIONS,
+      inputSchema: {
+        accountId: idParam,
+        months: z
+          .number()
+          .int()
+          .min(1)
+          .max(12)
+          .optional()
+          .describe("Number of calendar months to include (default 3)"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe("Maximum merchant rows to return (default 5)"),
+      },
+    },
+    async ({ accountId, months, limit }) => {
+      const transactions = await fetchTransactions(client, accountId);
+      return ok(
+        buildTopMerchants(transactions, {
+          months: months ?? 3,
+          limit,
+          asOf: todayUTC(),
+        }),
+      );
     },
   );
 
@@ -923,18 +1163,90 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
     "insight_anomalies",
     {
       description:
-        "Detect duplicate charges (same description+amount within 3 days) and amount outliers (above median + 3x MAD over the trailing 90 days).",
+        "Detect duplicate charges (same description+amount within 3 days) and amount outliers (above median + 3x MAD over the trailing 90 days). Pass customerId to scan all accounts (checking, savings, credit cards); pass accountId to scan one. Findings carry account ids/labels for card deep links.",
       annotations: READ_ONLY_ANNOTATIONS,
-      inputSchema: { accountId: idParam },
+      inputSchema: {
+        customerId: idParam.optional().describe("Customer id; scans every customer account when accountId is omitted"),
+        accountId: idParam.optional().describe("Single account id to scan"),
+      },
     },
-    async ({ accountId }) => {
+    async ({ customerId, accountId }) => {
       const asOf = todayUTC();
-      const transactions = await fetchTransactions(client, accountId);
-      const withdrawals = transactions.filter((tx) => tx.kind === "withdrawal");
-      const duplicates = detectDuplicateCharges(withdrawals);
-      const outliers = detectOutliers(withdrawals, asOf);
-      const findings = [...duplicates, ...outliers];
-      return ok({ count: findings.length, findings });
+
+      if (!customerId && !accountId) {
+        return ok({
+          count: 0,
+          duplicateCount: 0,
+          outlierCount: 0,
+          summary: summarizeAnomalyPatterns(0, 0),
+          findings: [],
+          message: "Pass customerId to scan all accounts or accountId to scan one.",
+        });
+      }
+
+      const targets: Array<{ id: string; label: string; type: string }> = [];
+      if (accountId) {
+        let account: AnyRecord | null = null;
+        if (customerId) {
+          const accounts = await fetchCustomerAccounts(client, customerId);
+          account = accounts.find((entry) => String(entry._id ?? "") === accountId) ?? null;
+        }
+        if (!account) {
+          try {
+            account = rec(await client.get(`/accounts/${encodeURIComponent(accountId)}`));
+          } catch {
+            account = null;
+          }
+        }
+        targets.push({
+          id: accountId,
+          label: account ? String(account.nickname ?? account.type ?? "").trim() : "",
+          type: account ? accountType(account) : "",
+        });
+      } else if (customerId) {
+        for (const account of await fetchCustomerAccounts(client, customerId)) {
+          const id = String(account._id ?? "");
+          if (!id) continue;
+          targets.push({
+            id,
+            label: String(account.nickname ?? account.type ?? "").trim(),
+            type: accountType(account),
+          });
+        }
+      }
+
+      // Detection stays per account: a checking charge and a card charge are not
+      // duplicates of each other just because the description and amount match.
+      const perAccount = await Promise.all(
+        targets.map(async (target) => {
+          try {
+            const transactions = await fetchTransactions(client, target.id);
+            const withdrawals = transactions.filter((tx) => tx.kind === "withdrawal");
+            const duplicates = detectDuplicateCharges(withdrawals);
+            const outliers = detectOutliers(withdrawals, asOf);
+            const tag = (finding: DuplicateFinding | OutlierFinding) => ({
+              ...finding,
+              accountId: target.id,
+              ...(target.label ? { accountLabel: target.label } : {}),
+              ...(target.type ? { accountType: target.type } : {}),
+            });
+            return [...duplicates.map(tag), ...outliers.map(tag)];
+          } catch {
+            return [];
+          }
+        }),
+      );
+
+      const findings = perAccount.flat();
+      const duplicateCount = findings.filter((finding) => finding.type === "duplicate").length;
+      const outlierCount = findings.filter((finding) => finding.type === "outlier").length;
+      return ok({
+        count: findings.length,
+        duplicateCount,
+        outlierCount,
+        summary: summarizeAnomalyPatterns(duplicateCount, outlierCount),
+        findings,
+      });
     },
   );
 
@@ -995,10 +1307,14 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
     label: "ATMs" | "branches",
     kind: "atm" | "branch",
   ): void => {
+    const coverageNote =
+      kind === "atm"
+        ? " Demo ATM data only covers Arlington, VA; the tool returns nearest available ATMs for other locations."
+        : "";
     server.registerTool(
       name,
       {
-        description: `Find ${label} matching a city, zip, or name (case-insensitive). Returns up to 20 results.`,
+        description: `Find ${label} matching a city, zip, or name (case-insensitive). Returns up to 20 results.${coverageNote}`,
         annotations: READ_ONLY_ANNOTATIONS,
         inputSchema: {
           location: z
@@ -1079,10 +1395,24 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
           (entry): entry is NormalizedLocation & { lat: number; lng: number } =>
             entry.lat !== null && entry.lng !== null,
         );
-        const origin = geoRows.length > 0 ? await geocodePlace(location) : null;
+        const origin =
+          geoRows.length > 0
+            ? await geocodePlace(location, {
+                near: geoRows.map((entry) => ({ lat: entry.lat, lng: entry.lng })),
+              })
+            : null;
 
         let matched: AnyRecord[];
+        let resolvedLocation: { lat: number; lng: number; label: string | null } | null = null;
+        let nearestMiles: number | null = null;
         if (origin) {
+          // The search place resolved to real coordinates; expose the normalized
+          // point so callers (and diagnostics) can see what was actually searched.
+          resolvedLocation = {
+            lat: origin.lat,
+            lng: origin.lng,
+            label: origin.label ?? null,
+          };
           // Primary path: straight-line distance from the geocoded place. Keep
           // a 25-mile radius when anything is that close; otherwise return the
           // nearest rows so a remote search still yields a useful answer.
@@ -1107,6 +1437,7 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
                   }
                 : row,
             );
+          nearestMiles = matched.length > 0 ? num(matched[0]?.distanceMiles) : null;
         } else {
           // Fallback: name/address substring matching when geocoding is
           // unavailable or the rows carry no coordinates.
@@ -1124,9 +1455,21 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         }
 
         if (matched.length === 0) {
-          return ok({ count: 0, message: `No ${label} found matching "${location}".` });
+          return ok({
+            count: 0,
+            message: `No ${label} found matching "${location}".`,
+            radiusMiles: LOCATION_RADIUS_MILES,
+            ...(kind === "atm" ? { coverage: "Arlington, VA", demoCoverage: true } : {}),
+          });
         }
-        return ok({ count: matched.length, results: matched });
+        return ok({
+          count: matched.length,
+          results: matched,
+          radiusMiles: LOCATION_RADIUS_MILES,
+          nearestMiles,
+          ...(resolvedLocation ? { resolvedLocation } : {}),
+          ...(kind === "atm" ? { coverage: "Arlington, VA", demoCoverage: true } : {}),
+        });
       },
     );
   };
@@ -1138,6 +1481,8 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
 export const INSIGHT_TOOL_NAMES = [
   "insight_financial_overview",
   "insight_spending_breakdown",
+  "insight_top_transactions",
+  "insight_top_merchants",
   "insight_upcoming_bills",
   "insight_recurring_charges",
   "insight_anomalies",

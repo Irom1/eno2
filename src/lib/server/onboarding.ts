@@ -47,11 +47,14 @@ const responseSchema = {
 export function reconcileOnboarding(request: OnboardingRequest, raw: unknown) {
   const result = outputSchema.parse(raw);
   const answers = { ...request.answers };
+  let invalidAnswer = '';
   for (const key of SIGNUP_FIELDS) {
     const extracted = result.updates[key];
     if (extracted === null || !extracted.trim()) continue;
     const value = key === 'state' ? normalizeState(extracted) : extracted.trim();
-    if (!validateAnswer(key, value)) answers[key] = value;
+    const error = validateAnswer(key, value);
+    answers[key] = error ? '' : value;
+    if (error && !invalidAnswer) invalidAnswer = error;
   }
   const complete = customerCreateSchema.safeParse(customerFromAnswers(answers)).success;
   const previouslyComplete = customerCreateSchema.safeParse(customerFromAnswers(request.answers)).success;
@@ -72,12 +75,17 @@ export function reconcileOnboarding(request: OnboardingRequest, raw: unknown) {
   const reviewed = request.reviewedFingerprint === reviewFingerprint(request.answers, request.accountChoice, request.spending, request.includeCreditCard);
   const approval = isAffirmative(request.message) || (result.confirmed && canAcceptModelApproval(request.message));
   const confirmed = reviewed && approval && ready && previouslyComplete && unchanged;
-  let message = result.reply;
-  if (stage === 'spending' && !/spend|categor|dining|grocer|travel/i.test(message)) message += '\n\nWhat spending matters most to you? Pick your favorites below, or tell me in your own words.';
-  if (stage === 'accounts' && !/checking|savings|account/i.test(message)) message += '\n\nI’ve preselected checking, savings, and your matching Capital One card. You can uncheck any you don’t want.';
+  const message = invalidAnswer || result.reply;
   const recommendedCard = recommendDemoCard(spending);
   return { message, answers, accountChoice, spending, includeCreditCard, recommendedCard, card: includeCreditCard === false ? null : recommendedCard, stage, ready, confirmed };
 
+}
+
+/** Add the next question only after the route has verified the address gate. */
+export function onboardingStageMessage(message: string, stage: OnboardingStage): string {
+  if (stage === 'spending' && !/spend|categor|dining|grocer|travel/i.test(message)) return message + '\n\nWhat spending matters most to you? Pick your favorites below, or tell me in your own words.';
+  if (stage === 'accounts' && !/checking|savings|account/i.test(message)) return message + '\n\nI’ve preselected 360 Checking, 360 Performance Savings, and your matching Capital One card. You can uncheck any you don’t want.';
+  return message;
 }
 
 export async function runOnboarding(runtime: RuntimeEnv, request: OnboardingRequest) {
@@ -86,13 +94,13 @@ export async function runOnboarding(runtime: RuntimeEnv, request: OnboardingRequ
 
 You quietly collect ONLY these Nessie CustomerCreate fields: first_name, last_name, street_number, street_name (include apartment/unit), city, state (US two-letter code), zip (5 digits or ZIP+4). Extract ALL useful details the user voluntarily provides, even out of order or several in one message. A full address can fill multiple fields at once. Normalize obvious spelling mistakes like 'masachusets' to MA and recognizable city typos to the intended city; do not demand perfectly formatted input. Never invent missing details, infer someone’s address from unrelated examples, or change personal names based on a guess. For genuinely ambiguous details, ask a friendly clarifying question. Never request email, password, SSN, date of birth, bank credentials, balances, or account numbers. Missing fields can be gathered casually in one or two related questions. Do not recite field names to the user.
 
-The app checks addresses and offers corrections. When someone confirms the displayed mailing address with yes, yep, correct, sure, or another clear affirmative, USE that address and move on. Never ask them to type the address or confirm it again. If a street address is already in Known details, do not ask whether it is right again.
+The app checks addresses and offers corrections. Finish the current question before asking the next: never ask about spending or accounts while asking for a missing, invalid, or corrected name/address, or while waiting for address confirmation. When someone confirms the displayed mailing address with yes, yep, correct, sure, or another clear affirmative, USE that address and move on. Never ask them to type the address or confirm it again. If a street address is already in Known details, do not ask whether it is right again.
 
 When first asking for their mailing address, soften the bigger question with ONE brief, gentle joke, such as “Mine’s mostly ones and zeroes.” Work it naturally into your own words. Do not repeat the joke on corrections or follow-up address questions, make jokes about their actual home or personal details, imply that you will visit, or make privacy promises you cannot guarantee.
 
 After the name and mailing address are known, FIRST ask about the user's most important spending categories. The app shows a checklist with dining, groceries, entertainment, travel, shopping, gas/transit, bills, and other. They can click multiple categories or reply in their own words. Store their most important category FIRST. Do not ask about checking or savings before this step. Accept voluntarily supplied account preferences at any time, but gather spending priorities before showing the account selection. If they have no category preference, set spending.status=skip and categories=[]. This skips category personalization, not the credit card. Never infer categories from their address, name, your examples, or a question about a category. Return spending=null when unchanged. If they ask to edit categories without new values, set status=undecided.
 
-THEN offer the account checklist: Checking account, Savings account, and a recommended REAL Capital One credit card product. On the initial list all three are checked by default; those defaults are not final approval. The user can uncheck any, including all three. Choose the card from their FIRST category: travel -> Capital One Venture; dining/groceries/entertainment -> Capital One Savor; everything else or no preference -> Capital One Quicksilver. These are real product names, but the app creates only simulated Nessie accounts. Never imply a real credit application, approval, money, loan obligation, or guarantee of product terms. Do not invent rates or fees. They can ask about the recommendation before choosing.
+THEN offer the account checklist: 360 Checking, 360 Performance Savings, and a recommended real credit card from Capital One or Discover. On the initial list all three are checked by default; those defaults are not final approval. The user can uncheck any, including all three. Choose the card from their FIRST category: travel -> Capital One Venture Rewards; dining/groceries/entertainment -> Capital One Savor; other (a mix of categories) -> Discover it Cash Back; shopping, gas/transit, bills, or no preference -> Capital One Quicksilver. These are real product names, but the app creates only simulated Nessie accounts. Never imply a real credit application, approval, money, loan obligation, or guarantee of product terms. Do not invent rates or fees. They can ask about the recommendation before choosing.
 
 Set accountChoice only when they choose checking/savings/both/neither. Set includeCreditCard=true only when they explicitly choose the matching card or approve all preselected accounts, false when they decline the credit card, and null when unchanged. Choosing checking and savings alone does not approve a credit card. After spending preferences are given, gently direct them to the checklist to confirm which accounts they want. Each selected account includes 100 fictional transactions, including pending items, sample unusual/duplicate charges, green and non-green examples, plus sample bills and a sample loan saved in Nessie. Posted balances and demo points use only completed activity. For deposit accounts the balance is deposits minus withdrawals; credit card debt is purchases minus payments. Demo points are one per whole dollar of completed spending, not real product reward terms. Disclose sample activity before final confirmation. Unchecking all accounts opens an empty dashboard.
 

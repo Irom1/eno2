@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { categoryLabels, type DemoCard, type SpendingCategory } from '$lib/spending';
+  import { products } from '$lib/products';
+  import { brandedCardName, categoryLabels, type DemoCard, type SpendingCategory } from '$lib/spending';
   import type { AccountSelection } from '$lib/signup';
   interface Props {
     step: 'spending' | 'accounts';
@@ -10,6 +11,8 @@
     oncontinue: () => void;
   }
   let { step, categories = $bindable([]), selection = $bindable({ checking: true, savings: true, creditCard: true }), card = null, disabled = false, oncontinue }: Props = $props();
+  const cardProduct = $derived(products[card?.id ?? 'quicksilver']);
+
   function toggleCategory(category: SpendingCategory, checked: boolean) {
     categories = checked ? [...categories, category] : categories.filter((item) => item !== category);
   }
@@ -32,11 +35,20 @@
     <fieldset disabled={disabled} aria-label="Choose accounts">
       <legend>Make it your own</legend>
       <p class="hint">All three start checked. Uncheck any you don’t want.</p>
-      <label class:selected={selection.checking}><input type="checkbox" bind:checked={selection.checking} /><span>Checking account<small>For everyday spending</small></span></label>
-      <label class:selected={selection.savings}><input type="checkbox" bind:checked={selection.savings} /><span>Savings account<small>For your next goal</small></span></label>
-      <label class:selected={selection.creditCard}><input type="checkbox" bind:checked={selection.creditCard} /><span>Capital One {card?.name ?? 'Quicksilver'} credit card<small>{card?.reason ?? 'An all-around match for everyday spending.'}</small></span></label>
+      <label class="product" style:--product-gradient={products.checking.gradient} style:--product-ink={products.checking.ink}>
+        <input type="checkbox" bind:checked={selection.checking} />
+        <span>{products.checking.name}<small>For everyday spending</small></span>
+      </label>
+      <label class="product" style:--product-gradient={products.savings.gradient} style:--product-ink={products.savings.ink}>
+        <input type="checkbox" bind:checked={selection.savings} />
+        <span>{products.savings.name}<small>For your next goal</small></span>
+      </label>
+      <label class="product" style:--product-gradient={cardProduct.gradient} style:--product-ink={cardProduct.ink}>
+        <input type="checkbox" bind:checked={selection.creditCard} />
+        <span>{brandedCardName(card)} credit card<small>{card?.reason ?? 'An all-around match for everyday spending.'}</small></span>
+      </label>
     </fieldset>
-    {#if card}<a class="product-link" href={card.url} target="_blank" rel="noreferrer">About Capital One {card.name} ↗</a>{/if}
+    {#if card}<a class="product-link" href={card.url} target="_blank" rel="noreferrer">About {brandedCardName(card)} ↗</a>{/if}
     <p class="hint">Simulated Nessie accounts with sample activity, bills, and loans. This won’t open real banking products.</p>
   {/if}
   <button class="continue" type="button" aria-label={step === 'spending' ? 'Confirm spending categories' : 'Confirm selected accounts'} disabled={disabled || (step === 'spending' && !categories.length)} onclick={oncontinue}>Continue <span aria-hidden="true">→</span></button>
@@ -52,6 +64,9 @@
   input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--link); cursor: pointer; }
   label > span { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; }
   small { display: block; color: var(--muted); font-size: 10px; }
+  label.product { color: var(--product-ink); background: var(--product-gradient); }
+  label.product:hover { border-color: currentColor; }
+  .product small { color: inherit; }
   fieldset:disabled label { opacity: .6; cursor: default; }
   .continue { display: inline-flex; align-items: center; gap: 24px; padding: 10px 15px; margin-top: 12px; border: 0; border-radius: 8px; background: var(--button); color: var(--button-text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
   .continue:disabled { opacity: .5; cursor: default; }

@@ -24,18 +24,18 @@ const INTENT_KEYWORDS: ReadonlyArray<readonly [Intent, readonly string[]]> = [
   ['overview', ['overview', 'snapshot', 'summary', 'finances', 'financial picture', 'everything', 'how am i doing', 'net worth']],
   ['accounts', ['account', 'accounts', 'balance', 'checking', 'savings']],
   ['credit', ['credit card', 'card', 'cards', 'available credit']],
-  ['transactions', ['transaction', 'transactions', 'activity', 'purchase', 'deposit', 'withdrawal', 'recent', 'history']],
+  ['transactions', ['transaction', 'transactions', 'activity', 'purchase', 'purchases', 'deposit', 'deposits', 'withdrawal', 'withdrawals', 'recent', 'history']],
   ['bills', ['bill', 'bills', 'due', 'upcoming', 'rent', 'utility', 'utilities']],
   ['loans', ['loan', 'loans', 'mortgage', 'auto loan', 'student loan', 'debt']],
   ['recurring', ['recurring', 'subscription', 'subscriptions', 'repeating', 'monthly charge']],
-  ['spending', ['spending', 'spent', 'where did my money go', 'category', 'categories', 'budget']],
+  ['spending', ['spending', 'spent', 'expense', 'expenses', 'grocery', 'groceries', 'where did my money go', 'category', 'categories', 'budget']],
   ['cashflow', ['cashflow', 'cash flow', 'income', 'inflow', 'outflow', 'net cash', 'paycheck']],
   ['rewards', ['reward', 'rewards', 'points', 'miles', 'cash back', 'cashback']],
   ['anomalies', ['weird', 'unusual', 'duplicate', 'anomaly', 'anomalies', 'suspicious']],
   ['locations', ['atm', 'atms', 'branch', 'branches', 'near me', 'location', 'locations']],
   ['goal', ['goal', 'save for', 'saving for', 'target']],
   ['customer', ['profile', 'who am i', 'address', 'account holder']],
-  ['merchants', ['merchant', 'merchants']]
+  ['merchants', ['merchant', 'merchants', 'shop most', 'where do i shop', 'top merchant', 'favorite merchant', 'most frequent merchant']]
 ];
 
 const escapeRegExp = (value: string): string =>

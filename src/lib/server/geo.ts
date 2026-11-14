@@ -22,11 +22,12 @@ const REQUEST_TIMEOUT_MS = 4000;
 
 interface CacheEntry {
   at: number;
-  point: GeoPoint | null;
+  points: GeoPoint[];
 }
 
 const cache = new Map<string, CacheEntry>();
 let nextRequestAt = 0;
+const CANDIDATE_LIMIT = 5;
 
 const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 
@@ -72,9 +73,10 @@ export function haversineMiles(a: GeoPoint, b: GeoPoint): number {
   return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(clamped));
 }
 
-/** Parse a Nominatim jsonv2 response into the first valid point. */
-export function parseNominatim(body: unknown): GeoPoint | null {
-  if (!Array.isArray(body)) return null;
+/** Parse a Nominatim jsonv2 response into every valid point, in ranked order. */
+export function parseNominatimAll(body: unknown): GeoPoint[] {
+  if (!Array.isArray(body)) return [];
+  const points: GeoPoint[] = [];
   for (const value of body) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
     const row = value as Record<string, unknown>;
@@ -84,32 +86,53 @@ export function parseNominatim(body: unknown): GeoPoint | null {
       typeof row.display_name === 'string' && row.display_name.trim()
         ? row.display_name.trim()
         : undefined;
-    return label ? { ...coords, label } : coords;
+    points.push(label ? { ...coords, label } : coords);
   }
-  return null;
+  return points;
+}
+
+/** Parse a Nominatim jsonv2 response into the first valid point. */
+export function parseNominatim(body: unknown): GeoPoint | null {
+  return parseNominatimAll(body)[0] ?? null;
 }
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Geocode a free-form place string via Nominatim. Never throws: returns null
- * when the query is empty, the service is unavailable, or nothing matches.
+ * Pick the candidate closest to any of the supplied points. Used to disambiguate
+ * bare place names ("Arlington") toward locations where the dataset actually
+ * has facilities, instead of blindly trusting Nominatim's global ranking.
  */
-export async function geocodePlace(query: string): Promise<GeoPoint | null> {
-  const trimmed = typeof query === 'string' ? query.trim() : '';
-  if (!trimmed) return null;
+export function chooseNearestCandidate(
+  candidates: GeoPoint[],
+  near: GeoPoint[],
+): GeoPoint | null {
+  if (candidates.length === 0) return null;
+  if (near.length === 0) return candidates[0] ?? null;
+  let best = candidates[0] ?? null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const distance = Math.min(...near.map((point) => haversineMiles(candidate, point)));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = candidate;
+    }
+  }
+  return best;
+}
 
+async function geocodeCandidates(trimmed: string): Promise<GeoPoint[]> {
   const key = trimmed.toLowerCase();
   const cached = cache.get(key);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.point;
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.points;
 
   const waitMs = nextRequestAt - Date.now();
   if (waitMs > 0) await sleep(waitMs);
   nextRequestAt = Date.now() + MIN_REQUEST_INTERVAL_MS;
 
-  const url = `${NOMINATIM_URL}?format=jsonv2&limit=1&q=${encodeURIComponent(trimmed)}`;
-  let point: GeoPoint | null = null;
+  const url = `${NOMINATIM_URL}?format=jsonv2&limit=${CANDIDATE_LIMIT}&q=${encodeURIComponent(trimmed)}`;
+  let points: GeoPoint[] = [];
   try {
     const response = await fetch(url, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -119,12 +142,32 @@ export async function geocodePlace(query: string): Promise<GeoPoint | null> {
       }
     });
     if (response.ok) {
-      point = parseNominatim(await response.json());
+      points = parseNominatimAll(await response.json());
     }
   } catch {
-    point = null;
+    points = [];
   }
 
-  cache.set(key, { at: Date.now(), point });
-  return point;
+  cache.set(key, { at: Date.now(), points });
+  return points;
+}
+
+/**
+ * Geocode a free-form place string via Nominatim. Never throws: returns null
+ * when the query is empty, the service is unavailable, or nothing matches.
+ *
+ * When `near` is supplied, an ambiguous name is resolved to the candidate
+ * closest to those points (e.g. Arlington, VA rather than Arlington, TX when
+ * the surrounding data is in the DC metro area).
+ */
+export async function geocodePlace(
+  query: string,
+  options: { near?: GeoPoint[] } = {},
+): Promise<GeoPoint | null> {
+  const trimmed = typeof query === 'string' ? query.trim() : '';
+  if (!trimmed) return null;
+
+  const points = await geocodeCandidates(trimmed);
+  if (points.length === 0) return null;
+  return chooseNearestCandidate(points, options.near ?? []);
 }

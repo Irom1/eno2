@@ -7,6 +7,10 @@ import { GUEST_CUSTOMER_ID } from "../chat/guest";
 import type { AgentEvent, Emit } from "./events";
 import { trimContents, type Session } from "./session";
 import { summarizeToolResult, toolLabel } from "./toolBridge";
+import { summarizeAnomalyPatterns } from "./nessie/tools/insights";
+import { extractLocation } from "./locationQuery";
+
+export { extractLocation } from "./locationQuery";
 
 export interface MockAgentDeps {
   callTool: (name: string, args: Record<string, unknown>) => Promise<ToolCallResult>;
@@ -54,62 +58,49 @@ function money(value: unknown): string {
   })}`;
 }
 
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December"
-];
-
 /**
- * Safe, concrete next steps per known intent. Tips never restate card data
- * (amounts, balances, dates, names, statuses, or rows).
+ * Safe, concrete next steps per known intent, written as natural prose rather
+ * than labeled tips. They never restate card data (amounts, balances, dates,
+ * names, statuses, or rows).
  */
-const INTENT_TIPS: Record<string, string> = {
+const INTENT_NEXT_STEPS: Record<string, string> = {
   insight_upcoming_bills:
-    "Tip: if you want to cover the shortfall, you can move money to checking before the due dates.",
+    "If you want to cover the shortfall, you can move money to checking before the due dates.",
   insight_spending_breakdown:
-    "Tip: you can open a category in Activity to see the transactions behind it.",
+    "You can open a category in Activity to see the transactions behind it.",
+  insight_top_transactions: "Open any transaction to see its full details.",
   insight_anomalies:
-    "Tip: if you don’t recognize a charge, you can review and dispute it in the app.",
+    "If you don’t recognize a charge, you can review and dispute it in the app.",
   insight_recurring_charges:
-    "Tip: you can review subscriptions you no longer use in the app.",
-  nessie_list_account_loans: "Tip: open the loan details to see the payment schedule.",
-  nessie_list_account_deposits: "Tip: open any transaction to see its full details.",
-  nessie_list_account_withdrawals: "Tip: open any transaction to see its full details.",
-  nessie_list_account_transactions: "Tip: open any transaction to see its full details.",
-  nessie_list_customer_accounts: "Tip: switch accounts to compare balances.",
-  nessie_get_account: "Tip: switch accounts to compare balances.",
-  find_nearby_atms: "Tip: open the map on OpenStreetMap for directions.",
-  find_nearby_branches: "Tip: open the map on OpenStreetMap for directions.",
+    "You can review subscriptions you no longer use in the app.",
+  insight_top_merchants: "You can review merchant activity in the app.",
+  nessie_list_account_loans: "Open the loan details to see the payment schedule.",
+  nessie_list_account_deposits: "Open any transaction to see its full details.",
+  nessie_list_account_withdrawals: "Open any transaction to see its full details.",
+  nessie_list_account_transactions: "Open any transaction to see its full details.",
+  nessie_list_customer_accounts: "Switch accounts to compare balances.",
+  nessie_get_account: "Switch accounts to compare balances.",
+  find_nearby_atms: "Open the map on OpenStreetMap for directions.",
+  find_nearby_branches: "Open the map on OpenStreetMap for directions.",
   insight_financial_overview:
-    "Tip: review bills and spending together when you plan the month."
+    "Review bills and spending together when you plan the month."
 };
 
-const DEFAULT_TIP = "Tip: you can review the related details in your account activity.";
+const DEFAULT_NEXT_STEP = "You can review the related details in your account activity.";
 
 /**
- * Ensures deterministic answers honor the answer contract: at least one insight
- * and one practical tip. Existing explicit tips are left alone.
+ * Ensures deterministic answers honor the answer contract: a takeaway plus a
+ * practical next step woven into the prose, with no labels.
  */
-function withTip(name: string, text: string): string {
+function withNextStep(name: string, text: string): string {
   if (typeof text !== "string" || text.trim().length === 0) return text;
-  if (/Tip:/.test(text)) return text;
-  return `${text} ${INTENT_TIPS[name] ?? DEFAULT_TIP}`;
-}
-
-function monthLabel(key: string): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(key);
-  if (!match) return key;
-  return `${MONTHS[Number(match[2]) - 1] ?? match[2]} ${match[1]}`;
+  if (name === "insight_anomalies" && /^Nothing unusual/i.test(text)) return text;
+  if (name === "insight_spending_breakdown" && /^I couldn't find any spending/i.test(text)) {
+    return text;
+  }
+  const nextStep = INTENT_NEXT_STEPS[name] ?? DEFAULT_NEXT_STEP;
+  if (text.includes(nextStep)) return text;
+  return `${text} ${nextStep}`;
 }
 
 function checkingAccountId(session: Session): string {
@@ -117,11 +108,54 @@ function checkingAccountId(session: Session): string {
   return (checking ?? session.accounts[0])?.id ?? "";
 }
 
-function extractLocation(message: string, fallback: string): string {
-  const match = /\bnear\s+(.+)$/i.exec(message);
-  if (!match?.[1]) return fallback;
-  const cleaned = match[1].replace(/[?.!,;:]+$/g, "").trim();
-  return cleaned.length > 0 ? cleaned : fallback;
+/**
+ * Account/card named in a suspicious-activity question, or "" for a broad
+ * all-accounts question. Nicknames win; then card/credit, checking, savings.
+ */
+function anomalyAccountId(text: string, session: Session): string {
+  const named = session.accounts.find((account) => {
+    const nickname = account.nickname.trim().toLowerCase();
+    return nickname.length > 0 && text.includes(nickname);
+  });
+  if (named) return named.id;
+
+  const byType = (predicate: (type: string) => boolean): string => {
+    const account = session.accounts.find((entry) => predicate(entry.type.toLowerCase()));
+    return account?.id ?? "";
+  };
+
+  if (/\b(?:credit ?card|card)\b/.test(text)) {
+    const credit = byType((type) => type.includes("credit"));
+    if (credit) return credit;
+  }
+  if (/\bchecking\b/.test(text)) {
+    const checking = byType((type) => type === "checking");
+    if (checking) return checking;
+  }
+  if (/\bsavings?\b/.test(text)) {
+    const savings = byType((type) => type === "savings");
+    if (savings) return savings;
+  }
+  return "";
+}
+
+/** Spending category named in a prompt, matching the insight tool's buckets. */
+export function detectSpendingCategory(text: string): string | null {
+  const value = String(text ?? "").toLowerCase();
+  if (/\bgrocer(?:y|ies)\b|\bsupermarket\b|\bfarmers market\b/.test(value)) return "groceries";
+  if (/\bhousing\b|\brent\b|\bmortgage\b/.test(value)) return "housing";
+  if (/\bdining\b|\brestaurants?\b|\bfood\b|\bcoffee\b/.test(value)) return "dining";
+  if (/\btransport(?:ation)?\b|\btransit\b|\bgas\b|\bparking\b|\buber\b|\blyft\b/.test(value)) {
+    return "transport";
+  }
+  if (/\butilit(?:y|ies)\b|\belectric(?:ity)?\b|\binternet\b|\bwater bill\b/.test(value)) {
+    return "utilities";
+  }
+  if (/\bsubscriptions?\b/.test(value)) return "subscriptions";
+  if (/\bshopping\b|\bamazon\b|\btarget\b/.test(value)) return "shopping";
+  if (/\binsurance\b/.test(value)) return "insurance";
+  if (/\bfitness\b|\bgym\b/.test(value)) return "fitness";
+  return null;
 }
 
 export function routeIntent(message: string): {
@@ -148,10 +182,28 @@ export function routeIntent(message: string): {
       args: (session) => ({ accountId: checkingAccountId(session) })
     };
   }
-  if (/\bweird|anomal|duplicate|suspicious|charge/.test(text)) {
+  const ranked = /\b(?:biggest|largest|top|highest|most expensive)\b/.test(text);
+  const category = detectSpendingCategory(text);
+  if (ranked && (category || /\b(?:purchases?|expenses?|transactions?|charges?)\b/.test(text))) {
+    return {
+      tool: "insight_top_transactions",
+      args: (session) => ({
+        accountId: checkingAccountId(session),
+        ...(category ? { category } : {}),
+        months: 3,
+        limit: 20
+      })
+    };
+  }
+  if (/\b(?:weird|anomal\w*|duplicate|suspicious|charg\w*|unusual|strange|odd|double)\b/.test(text)) {
     return {
       tool: "insight_anomalies",
-      args: (session) => ({ accountId: checkingAccountId(session) })
+      args: (session) => {
+        const accountId = anomalyAccountId(text, session);
+        return accountId
+          ? { customerId: session.customer.id, accountId }
+          : { customerId: session.customer.id };
+      }
     };
   }
   if (/\btransaction|\bactivity\b|\bpurchases?\b|\bdeposits?\b|\bwithdrawals?\b|\bhistory\b/.test(text)) {
@@ -164,6 +216,16 @@ export function routeIntent(message: string): {
     return {
       tool: "nessie_list_customer_accounts",
       args: (session) => ({ customerId: session.customer.id })
+    };
+  }
+  if (/\b(?:where do i shop most|shop most|top merchant|favorite merchant|most frequent merchant)\b/.test(text)) {
+    return {
+      tool: "insight_top_merchants",
+      args: (session) => ({
+        accountId: checkingAccountId(session),
+        months: 3,
+        limit: 5
+      })
     };
   }
   if (/\bspend|where|money|categor/.test(text)) {
@@ -232,49 +294,99 @@ function spendingAnswer(data: unknown, now: Date): string {
   const categories = (Array.isArray(categorySource) ? categorySource : [])
     .map(rec)
     .sort((a, b) => num(b.total) - num(a.total));
-  const top = categories[0];
-  const monthTotal = monthBreakdown ? num(monthBreakdown.total) : num(latest.total);
-  const categoryLine = top
-    ? `The largest category was ${String(top.category)} at ${money(top.total)} (${Math.round(
-        num(top.share) * 100
-      )}% of ${monthBreakdown ? "that month" : "spending"}).`
-    : "";
-  const countLine = monthBreakdown
-    ? `That month had ${num(monthBreakdown.transactionCount)} transactions.`
-    : `Across the full three-month window you made ${num(
-        payload.transactionCount
-      )} transactions totaling ${money(payload.totalSpend)}.`;
+  const topCategory = String(categories[0]?.category ?? "").toLowerCase();
 
-  return `In ${monthLabel(latest.month)} you spent ${money(monthTotal)}. ${categoryLine} ${countLine}`;
+  // The pie card already shows the period, total, category amounts, and shares.
+  // The prose adds only a qualitative read of what the mix means.
+  if (topCategory === "housing") {
+    return "Most of the latest full month is fixed housing cost, so the smaller day-to-day categories are where you have the most room to adjust.";
+  }
+  if (topCategory === "dining" || topCategory === "shopping") {
+    return "Discretionary spending drives most of the latest full month, so those categories are the best place to look for savings.";
+  }
+  return "A few categories drive most of the latest full month, so the smaller day-to-day ones are where you have the most room to adjust.";
+}
+
+/** Join merchant names into a natural list: A; A and B; A, B, and C. */
+function joinNames(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+/** " on your Venture card" / " on your Everyday Checking" for a finding. */
+function findingAccountPhrase(finding: AnyRecord): string {
+  const label = String(finding.accountLabel ?? "").trim();
+  if (!label) return "";
+  const type = String(finding.accountType ?? "").toLowerCase();
+  if (type.includes("credit")) {
+    return /card$/i.test(label) ? ` on your ${label}` : ` on your ${label} card`;
+  }
+  return ` on your ${label}`;
+}
+
+/** Merchant plus its account label, e.g. "NETFLIX.COM on your Venture card". */
+function findingLabel(finding: AnyRecord): string {
+  const name = String(finding.description ?? "").trim() || "A charge";
+  return `${name}${findingAccountPhrase(finding)}`;
 }
 
 function anomaliesAnswer(data: unknown): string {
   const payload = rec(data);
   const findings = Array.isArray(payload.findings) ? payload.findings.map(rec) : [];
   if (findings.length === 0) {
-    return "Nothing unusual found on this account.";
+    return "Nothing unusual stood out across your accounts.";
   }
-  const duplicate = findings.find(
-    (finding) =>
-      finding.type === "duplicate" && String(finding.description ?? "").toUpperCase().includes("NETFLIX")
+  const visible = findings.slice(0, 8);
+  const duplicates = visible.filter((finding) => finding.type === "duplicate");
+  const outliers = visible.filter((finding) => finding.type === "outlier");
+  const others = visible.filter(
+    (finding) => finding.type !== "duplicate" && finding.type !== "outlier"
   );
-  const parts: string[] = [`I found ${num(payload.count)} alerts worth a look.`];
-  if (duplicate) {
+  const duplicateCount =
+    typeof payload.duplicateCount === "number"
+      ? payload.duplicateCount
+      : findings.filter((finding) => finding.type === "duplicate").length;
+  const outlierCount =
+    typeof payload.outlierCount === "number"
+      ? payload.outlierCount
+      : findings.filter((finding) => finding.type === "outlier").length;
+
+  const summary =
+    typeof payload.summary === "string" && payload.summary.trim()
+      ? payload.summary.trim()
+      : summarizeAnomalyPatterns(duplicateCount, outlierCount);
+
+  const parts: string[] = [summary];
+
+  const duplicateLabels = duplicates.map(findingLabel);
+  if (duplicateLabels.length > 0) {
     parts.push(
-      `There's a possible duplicate ${String(duplicate.description)} charge for ${money(
-        duplicate.amount
-      )} on ${String(duplicate.date)}, earlier on ${String(duplicate.duplicateOf)}.`
+      duplicateLabels.length === 1
+        ? `${duplicateLabels[0]} is a possible duplicate.`
+        : `${joinNames(duplicateLabels)} each look like possible duplicates.`
     );
   }
-  const largePurchases = findings.filter((finding) => finding.type === "outlier");
-  if (largePurchases.length > 0) {
-    const first = largePurchases[0] ?? {};
+
+  const outlierLabels = outliers.map(findingLabel);
+  if (outlierLabels.length > 0) {
     parts.push(
-      `There's an unusually large purchase: ${String(first.description ?? "a charge")} for ${money(
-        first.amount
-      )} on ${String(first.date ?? "an unknown date")}.`
+      outlierLabels.length === 1
+        ? `${outlierLabels[0]} is an unusually large purchase.`
+        : `${joinNames(outlierLabels)} are unusually large purchases.`
     );
   }
+
+  const otherLabels = others.map(findingLabel);
+  if (otherLabels.length > 0) {
+    parts.push(
+      otherLabels.length === 1
+        ? `${otherLabels[0]} also looks unusual.`
+        : `${joinNames(otherLabels)} also look unusual.`
+    );
+  }
+
   return parts.join(" ");
 }
 
@@ -302,22 +414,39 @@ const ATM_NEARBY_RADIUS_MILES = 25;
 
 function atmAnswer(data: unknown, location: string): string {
   const payload = rec(data);
-  if (num(payload.count) === 0) {
-    return `I couldn't find any ATMs near "${location}".`;
+  const count = num(payload.count);
+  if (count === 0) {
+    return `I couldn't find any ATMs matching "${location}". Nessie's demo ATM data only includes Arlington, VA.`;
   }
+
   const results = Array.isArray(payload.results) ? payload.results.map(rec) : [];
   const rawNearest = results[0]?.distanceMiles;
   const nearest =
     typeof rawNearest === "number" ? rawNearest : Number(rawNearest);
-  const count = num(payload.count);
-  // The dataset may only contain ATMs hundreds of miles away. Never imply
-  // proximity in that case: state the radius gap and the honest nearest
-  // straight-line distance instead.
-  if (Number.isFinite(nearest) && nearest > ATM_NEARBY_RADIUS_MILES) {
-    const distance = Math.round(nearest).toLocaleString("en-US");
-    return `I couldn't find any ATMs within ${ATM_NEARBY_RADIUS_MILES} miles of "${location}" in the available data. The closest option is ${distance} miles away; distances are straight-line.`;
+
+  // Coverage is decided primarily by the place the tool actually geocoded.
+  // Falling back to the requested text keeps "Arlington" prompts covered even
+  // when geocoding is unavailable, and the distance check covers the remaining
+  // case where the nearest row is clearly outside the demo footprint.
+  const resolvedLabel = rec(payload.resolvedLocation).label;
+  let covered: boolean;
+  if (typeof resolvedLabel === "string" && resolvedLabel.trim()) {
+    covered = /arlington/i.test(resolvedLabel);
+  } else if (/arlington/i.test(location)) {
+    covered = true;
+  } else {
+    covered = Number.isFinite(nearest) && nearest <= ATM_NEARBY_RADIUS_MILES;
   }
-  return `I found ${count} ATMs near "${location}". The nearest options are shown here, with straight-line distances from the search location.`;
+
+  if (!covered) {
+    return `Nessie's demo ATM data only includes Arlington, VA, so I can't show ATMs in "${location}". Here's an Arlington ATM instead.`;
+  }
+
+  const displayLocation =
+    /arlington/i.test(location) && /\b(?:va|virginia)\b/i.test(location)
+      ? location
+      : "Arlington, VA";
+  return `I found ${count} ATMs near "${displayLocation}". The nearest options are shown here, with straight-line distances from the search location.`;
 }
 
 function branchAnswer(data: unknown, location: string): string {
@@ -334,20 +463,89 @@ function branchAnswer(data: unknown, location: string): string {
   }. Branch data covers the DC metro area, so it may not reflect your own location.`;
 }
 
+function recurringAnswer(data: unknown): string {
+  const payload = rec(data);
+  const count = num(payload.count);
+  if (count === 0) return "I don't see any recurring charges on this account.";
+  return `I found ${count} recurring charges on this account. They repeat at a steady amount across months, which is typical of subscriptions and memberships.`;
+}
+
+function topTransactionsAnswer(data: unknown): string {
+  const payload = rec(data);
+  const count = num(payload.count);
+  const months = num(payload.months) || 3;
+  const category = String(payload.category ?? "").trim().toLowerCase();
+  // Groceries reads naturally as "grocery transactions"; other categories use
+  // the category name as-is. No merchant names are repeated from the card.
+  const scope = category ? `${category === "groceries" ? "grocery" : category} ` : "";
+  if (count === 0) {
+    return `I couldn't find any ${scope}transactions in the last ${months} months.`;
+  }
+  return `I found ${count} ${scope}transactions in the last ${months} months, shown largest first.`;
+}
+
+function loanType(loan: AnyRecord): string {
+  const label = String(loan.type ?? loan.description ?? "").trim();
+  return label || "loan";
+}
+
 function loansAnswer(data: unknown): string {
   const payload = rec(data);
   const loans = Array.isArray(payload.items) ? payload.items.map(rec) : [];
   if (loans.length === 0) {
     return "I don't see any active loans on this account.";
   }
-  const total = loans.reduce((sum, loan) => sum + num(loan.amount), 0);
-  const monthly = loans.reduce((sum, loan) => sum + num(loan.monthlyPayment), 0);
-  const names = loans
-    .map((loan) => String(loan.type ?? loan.description ?? "Loan"))
-    .join(", ");
-  return `You have ${loans.length} loans: ${names}. Their balances total ${money(
-    total
-  )}, with ${money(monthly)} due monthly.`;
+  if (loans.length === 1) {
+    const only = loanType(loans[0] ?? {});
+    return `You have one active loan, the ${only}. It’s your only fixed loan payment.`;
+  }
+
+  // The loan card shows the factual balance and monthly payment of the largest
+  // loan, so prose compares the obligations instead of restating amounts.
+  const names = loans.map(loanType);
+  const byBalance = [...loans].sort((a, b) => num(b.amount) - num(a.amount))[0] ?? {};
+  const byPayment = [...loans].sort(
+    (a, b) => num(b.monthlyPayment) - num(a.monthlyPayment)
+  )[0] ?? {};
+  const balanceType = loanType(byBalance);
+  const paymentType = loanType(byPayment);
+  const comparison =
+    balanceType === paymentType
+      ? `The ${balanceType} has the larger balance and monthly payment.`
+      : `The ${balanceType} has the larger balance, while the ${paymentType} has the larger monthly payment.`;
+
+  return `You have ${loans.length} loans: ${joinNames(names)}. ${comparison} Together they make up a fixed monthly obligation.`;
+}
+
+function topMerchantsAnswer(data: unknown): string {
+  const payload = rec(data);
+  const items = Array.isArray(payload.items) ? payload.items.map(rec) : [];
+  const months = num(payload.months) || 3;
+  if (items.length === 0) {
+    return "I couldn’t find any merchant activity in the last three months.";
+  }
+  const name = String(items[0]?.name ?? "").trim();
+  if (!name) {
+    return "Your most frequent merchant is shown here, based on how often you visited it.";
+  }
+  return `Your most frequent merchant is ${name}, with more visits than any other merchant in the last ${months} months. That makes it the clearest picture of your everyday spending.`;
+}
+
+function cashflowAnswer(data: unknown, now: Date): string {
+  const payload = rec(data);
+  const buckets = (Array.isArray(payload.monthlyCashflow) ? payload.monthlyCashflow : [])
+    .map(rec)
+    .filter((bucket): bucket is AnyRecord & { month: string } => typeof bucket.month === "string");
+  if (buckets.length === 0) {
+    return "I don't see enough cash flow history here yet.";
+  }
+  const currentKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const complete = buckets.filter((bucket) => bucket.month < currentKey);
+  const latest = complete[complete.length - 1] ?? buckets[buckets.length - 1] ?? {};
+  if (num(latest.net) > 0) {
+    return "Your latest month is cash-flow positive, with income ahead of spending. You can build on that by moving the surplus to savings.";
+  }
+  return "Your latest month is cash-flow negative, with spending ahead of income. You can review the largest outflows in the app.";
 }
 
 function transactionsAnswer(data: unknown): string {
@@ -386,8 +584,14 @@ export function composeAnswer(name: string, data: unknown, now: Date, message: s
       return billsAnswer(data);
     case "insight_spending_breakdown":
       return spendingAnswer(data, now);
+    case "insight_top_transactions":
+      return topTransactionsAnswer(data);
+    case "insight_recurring_charges":
+      return recurringAnswer(data);
     case "insight_anomalies":
       return anomaliesAnswer(data);
+    case "insight_top_merchants":
+      return topMerchantsAnswer(data);
     case "nessie_list_account_loans":
       return loansAnswer(data);
     case "nessie_list_account_deposits":
@@ -400,6 +604,9 @@ export function composeAnswer(name: string, data: unknown, now: Date, message: s
     case "find_nearby_branches":
       return branchAnswer(data, extractLocation(message, "22207"));
     case "insight_financial_overview":
+      return /\b(?:cash ?flow|inflow|outflow|net cash)\b/i.test(message)
+        ? cashflowAnswer(data, now)
+        : overviewAnswer(data);
     default:
       return overviewAnswer(data);
   }
@@ -434,8 +641,8 @@ export function composeFastAnswer(
   now: Date,
   message: string
 ): string {
-  if (name === "insight_upcoming_bills") return withTip(name, billsFastAnswer(data));
-  return withTip(name, composeAnswer(name, data, now, message));
+  if (name === "insight_upcoming_bills") return withNextStep(name, billsFastAnswer(data));
+  return withNextStep(name, composeAnswer(name, data, now, message));
 }
 
 /** A short leading sentence that invites the card without restating its values. */
@@ -447,6 +654,12 @@ export function composeIntro(name: string): string {
       return "Here is what's coming up:";
     case "insight_anomalies":
       return "Here is what stood out:";
+    case "insight_top_transactions":
+      return "Here are your biggest matching transactions:";
+    case "insight_recurring_charges":
+      return "Here are the subscriptions I found:";
+    case "insight_top_merchants":
+      return "Here is where you shop most:";
     case "nessie_list_account_deposits":
     case "nessie_list_account_withdrawals":
     case "nessie_list_account_transactions":
@@ -513,7 +726,7 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
         payload: result.data,
         ...(accountId ? { accountId } : {})
       });
-      text = withTip(intent.tool, composeAnswer(intent.tool, result.data, now(), message));
+      text = withNextStep(intent.tool, composeAnswer(intent.tool, result.data, now(), message));
     }
   } catch {
     const ms = Date.now() - startedAt;

@@ -14,7 +14,7 @@ test('starts immediately as a freeform chat, keeps details through questions, th
   await page.route('**/api/signup/chat', async (route) => {
     const body = route.request().postDataJSON(); turns.push(body);
     const choice = /no accounts/i.test(body.message) || body.accountChoice === 'none' ? 'none' : 'undecided';
-    await route.fulfill({ json: { message: choice === 'none' ? 'A fresh dashboard it is. Take a look at your details.' : turns.length === 1 ? 'Nice to meet you, Ada. Want checking, savings, both, or no accounts yet?' : 'Checking is for everyday spending; savings is for setting money aside. You can choose either, both, or neither.', answers, spending: skipSpending, includeCreditCard: false, accountChoice: choice, ready: choice === 'none', confirmed: body.message === 'Looks good' } });
+    await route.fulfill({ json: { message: choice === 'none' ? 'A fresh dashboard it is. Take a look at your details.' : turns.length === 1 ? 'Nice to meet you, Ada. Want checking, savings, both, or no accounts yet?' : 'Checking is for everyday spending; savings is for setting money aside. You can choose either, both, or neither.', answers, spending: skipSpending, includeCreditCard: false, accountChoice: choice, stage: choice === 'none' ? 'review' : 'accounts', addressCheck: { status: 'matched', message: 'Street address matched.' }, ready: choice === 'none', confirmed: body.message === 'Looks good' } });
   });
   await page.route('**/api/signup', (route) => { signupBody = route.request().postDataJSON(); return route.fulfill({ status: 201, json: { customerId: customer.id, created: true } }); });
   await page.route('**/api/customers*', (route) => route.fulfill({ json: { customers: route.request().url().includes('?customer=') ? [customer] : [{ id: 'maya', firstName: 'Maya', lastName: 'Chen' }] } }));
@@ -149,8 +149,8 @@ for (const selection of [
     for (const checkbox of await accounts.getByRole('checkbox').all()) await expect(checkbox).toBeChecked();
     await expect(page.getByRole('link', { name: 'About Capital One Savor' })).toHaveAttribute('href', card.url);
     expect(turns[1].selectedSpending).toEqual(['dining', 'groceries']);
-    await accounts.getByRole('checkbox', { name: /^Checking account/ }).setChecked(selection.checking);
-    await accounts.getByRole('checkbox', { name: /^Savings account/ }).setChecked(selection.savings);
+    await accounts.getByRole('checkbox', { name: /^360 Checking/ }).setChecked(selection.checking);
+    await accounts.getByRole('checkbox', { name: /^360 Performance Savings/ }).setChecked(selection.savings);
     await accounts.getByRole('checkbox', { name: /^Capital One Savor credit card/ }).setChecked(selection.creditCard);
     if (selection.checkboxApproval) await say(page, selection.checkboxApproval);
     else await page.getByRole('button', { name: 'Confirm selected accounts' }).click();
@@ -179,4 +179,41 @@ test('yes accepts the displayed mailing-address correction and moves to spending
   await say(page, 'yes');
   await expect(page.getByRole('group', { name: 'Top spending categories' })).toBeVisible();
   expect(turn).toBe(2);
+});
+
+test('address corrections hide stale checklists and block later steps until the previous answer is accepted', async ({ page }) => {
+  let created = 0;
+  let turn = 0;
+  const preferences = { status: 'personalize', categories: ['dining'] };
+  await page.route('**/api/signup', (route) => { created++; return route.fulfill({ status: 500 }); });
+  await page.route('**/api/signup/chat', (route) => {
+    turn++;
+    const base = { answers, accountChoice: 'undecided', spending: { status: 'undecided', categories: [] }, includeCreditCard: null, ready: false, confirmed: false };
+    if (turn === 1) return route.fulfill({ json: { ...base, message: 'Please correct your mailing address.', stage: 'accounts', ready: true, confirmed: true, addressCheck: { status: 'not_found', message: 'Address not found.' } } });
+    if (turn === 2) return route.fulfill({ json: { ...base, message: 'Is this the right mailing address?', stage: 'spending', addressCheck: { status: 'matched', message: 'Matched.', address: { street_number: '123', street_name: 'Main St', city: 'Boston', state: 'MA', zip: '02139' } } } });
+    if (turn === 3) return route.fulfill({ json: { ...base, message: 'What spending matters most to you?', stage: 'spending', addressCheck: { status: 'matched', message: 'Matched.' } } });
+    if (turn === 4) return route.fulfill({ json: { ...base, spending: preferences, message: 'Which accounts would you like?', stage: 'accounts', addressCheck: { status: 'matched', message: 'Matched.' } } });
+    return route.fulfill({ json: { ...base, spending: preferences, message: 'Let’s fix the mailing address first.', stage: 'accounts', addressCheck: { status: 'correction', message: 'Please check the street.' } } });
+  });
+  await page.goto('/signup');
+  await say(page, 'My address is incomplete');
+  await expect(page.getByText('Please correct your mailing address.')).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await expect(page.getByLabel('Your profile')).toHaveCount(0);
+  expect(created).toBe(0);
+  await say(page, '123 Main St, Boston MA 02139');
+  await expect(page.getByText('Is this the right mailing address?')).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await say(page, 'yes');
+  const categories = page.getByRole('group', { name: 'Top spending categories' });
+  await expect(categories).toBeVisible();
+  await categories.getByRole('checkbox', { name: /^Dining/ }).check();
+  await say(page, 'yes');
+  await expect(page.getByRole('group', { name: 'Choose accounts' })).toBeVisible();
+  await say(page, 'Actually that street is wrong');
+  await expect(page.getByText('Let’s fix the mailing address first.')).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  expect(created).toBe(0);
 });

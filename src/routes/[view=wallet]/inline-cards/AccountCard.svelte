@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { accountProduct } from '$lib/products';
   import { money, titleCase } from '$lib/format.js';
   import { accountHref, type AccountEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
@@ -12,7 +13,9 @@
   let { card }: Props = $props();
 
   const payload = $derived(card.payload);
+  const product = $derived(accountProduct(payload.type, payload.nickname));
   const typeText = $derived(titleCase(payload.type));
+  const productName = $derived(product?.name ?? (payload.nickname || typeText));
   const balanceText = $derived(
     payload.balance === null ? '' : money(payload.balance, { decimals: 2 })
   );
@@ -23,13 +26,13 @@
   );
   const href = $derived(accountHref(payload.customerId, payload.accountId));
   const label = $derived(
-    `${payload.nickname || typeText} account${balanceText ? `, ${balanceText}` : ''}`
+    `${productName} account${balanceText ? `, ${balanceText}` : ''}`
   );
 </script>
 
 {#snippet content(linked: boolean)}
   <div class="account-head">
-    <span class="nickname">{payload.nickname}</span>
+    <span class="nickname">{productName}</span>
     {#if linked}
       <OpenIcon />
     {/if}
@@ -51,14 +54,14 @@
 {/snippet}
 
 <CardFrame {label}>
-  <div class="account-card" data-kind="account">
+  <div class="account-card" class:product={product} data-kind="account" style:--product-gradient={product?.gradient} style:--product-ink={product?.ink}>
     {#if href}
       <a
         class="account-link"
         {href}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label={`Open ${payload.nickname} account`}
+        aria-label={`Open ${productName} account`}
       >
         {@render content(true)}
       </a>
@@ -71,6 +74,15 @@
 <style>
   .account-card {
     min-width: 0;
+  }
+  .product {
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--product-gradient);
+    color: var(--product-ink);
+    --ink: var(--product-ink);
+    --muted: var(--product-ink);
+    --link: var(--product-ink);
   }
   .account-link {
     display: block;

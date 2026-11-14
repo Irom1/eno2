@@ -50,11 +50,11 @@ test.describe('iPhone 13 viewport', () => {
     await expect(page.locator('.account-dropdown')).toBeHidden();
 
     // Open the checking account view and close it with back.
-    const checking = page.locator('article.account', { hasText: 'Everyday Checking' });
+    const checking = page.locator('article.account', { hasText: '360 Checking' });
     await checking.getByRole('button', { name: /View activity/i }).click();
     const shell = page.locator('.view-shell');
     await expect(shell).toBeVisible({ timeout: 20_000 });
-    await expect(shell.locator('.hero')).toContainText('Everyday Checking');
+    await expect(shell.locator('.hero')).toContainText('360 Checking');
     await expectNoHorizontalOverflow(page);
 
     await page.locator('.back-button[aria-label="Back to dashboard"]').click();

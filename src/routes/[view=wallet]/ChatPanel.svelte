@@ -7,6 +7,7 @@
     anchorEntityCards,
     anomalyExplanation,
     anomalyTransactionCards,
+    completeAnomalyContext,
     billCard,
     cashflowCard,
     goalCard,
@@ -19,6 +20,7 @@
     recurringCard,
     rewardCard,
     spendingPieCard,
+    topMerchantCard,
     transactionListCard,
     type EntityCard,
     type SpendingPieEntityCard,
@@ -36,6 +38,7 @@
     type ThinkingState
   } from '$lib/chat/thinking.js';
   import { classifyIntents } from '$lib/chat/intents.js';
+  import { shouldInferTransactionList } from '$lib/chat/transactionListIntent.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
   import { groupInlineCards } from '$lib/chat/cardGroups.js';
@@ -49,6 +52,7 @@
     onClose: () => void;
     canSend: boolean;
     variant?: EnoVariant;
+    accounts?: Array<{ id?: string; nickname?: string; type?: string }>;
   }
 
   interface ChatMessage {
@@ -67,7 +71,8 @@
     initialPrompt,
     onClose,
     canSend = $bindable(),
-    variant = 'light'
+    variant = 'light',
+    accounts = []
   }: Props = $props();
 
   let ready = $state(false);
@@ -106,7 +111,7 @@
     if (!last || last.pending) return [];
     const cards = last.inlineCards ?? [];
     if (!last.text && cards.length === 0) return [];
-    return followUpsFor(cards, last.prompt ?? '').slice(0, 3);
+    return followUpsFor(cards, last.prompt ?? '', last.text, accounts).slice(0, 3);
   });
 
   function scrollLog(): void {
@@ -229,9 +234,17 @@
     return typeof total === 'number' && Number.isFinite(total) && total > 0;
   }
 
-  /** Fill empty assistant prose with a deterministic explanation for its cards. */
+  /** Fill missing explanations, including charges omitted from otherwise nonempty prose. */
   function ensureExplanation(message: ChatMessage): void {
     const cards = message.inlineCards ?? [];
+    if (cards.some((card) => card.kind === 'transaction' && card.payload.flag)) {
+      const original = message.text.trim();
+      message.text = original ? completeAnomalyContext(original, cards) : anomalyExplanation(cards);
+      if (original && message.text !== original && !/\b(?:you can|review|check|report|recognize|dispute|contact)\b/i.test(original)) {
+        message.text += '\n\nYou can review these charges and report anything you don’t recognize.';
+      }
+      return;
+    }
     if (message.text.trim() || cards.length === 0) return;
     if (cards.some((card) => card.kind === 'transaction-list')) {
       message.text = 'Here are your recent transactions, with the most recent first.';
@@ -322,9 +335,13 @@
               cardSeq += incoming.length;
               message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
             }
-            if (data.kind === 'insight_spending_breakdown') {
+            if (
+              data.kind === 'insight_spending_breakdown' &&
+              !intents.has('merchants')
+            ) {
               // One primitive pie card per turn: a later spending insight in the
               // same turn replaces the earlier one rather than stacking charts.
+              // A merchant question is answered by one merchant card, not a pie.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const incoming = spendingPieCard(payload, anchor, cardSeq + 1);
@@ -466,6 +483,14 @@
               const incoming = cashflowCard(payload, anchor, cardSeq + 1);
               if (incoming) replaceInlineCard(message, incoming);
             }
+            if (data.kind === 'insight_top_merchants') {
+              // The answer is a single merchant card for the top merchant, not a
+              // pie or a transaction list.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = topMerchantCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
             if (
               data.kind === 'nessie_list_merchants' ||
               data.kind === 'nessie_get_merchant'
@@ -486,11 +511,38 @@
               if (incoming) replaceInlineCard(message, incoming);
             }
             if (
-              data.kind === 'nessie_list_account_deposits' ||
-              data.kind === 'nessie_list_account_withdrawals' ||
-              data.kind === 'nessie_list_account_transactions'
+              (data.kind === 'nessie_list_account_deposits' ||
+                data.kind === 'nessie_list_account_withdrawals' ||
+                data.kind === 'nessie_list_account_transactions') &&
+              shouldInferTransactionList(message.prompt ?? '', intents)
             ) {
               // Deposits and withdrawals in one turn share a single merged list.
+              // Raw feeds are only rendered for recent/all-transaction prompts;
+              // ranked or filtered questions use insight_top_transactions.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = transactionListCard(payload, anchor, cardSeq + 1, {
+                accountId,
+                customerId
+              });
+              if (incoming) {
+                const existing = message.inlineCards?.find(
+                  (card): card is TransactionListEntityCard =>
+                    card.kind === 'transaction-list'
+                );
+                const merged = mergeTransactionListCards(existing, incoming);
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'transaction-list' ? merged : card
+                    )
+                  : [...(message.inlineCards ?? []), merged];
+                cardSeq = Math.max(cardSeq, merged.id);
+              }
+            }
+            if (data.kind === 'insight_top_transactions' && !intents.has('merchants')) {
+              // Its rows are already the exact ranked/filtered set, so a list
+              // card is always accurate here. A merchant question uses the
+              // merchant card instead of a transaction list.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const incoming = transactionListCard(payload, anchor, cardSeq + 1, {
@@ -649,7 +701,7 @@
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [])}
+        {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [], { pending: !!message.pending })}
         {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
         {@const blocks = inlineBlocks(message.text, readyCards)}
         {@const groups = groupInlineCards(blocks)}

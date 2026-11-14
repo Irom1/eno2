@@ -9,9 +9,11 @@
 	type Layout = 'portrait' | 'landscape';
 
 	let {
+		customerId = null,
 		backHref = '/dashboard',
 		theme = $bindable<Theme>(readTheme())
 	}: {
+		customerId?: string | null;
 		backHref?: string;
 		/** Pass the dashboard's theme in (bind:theme) to keep both pages in sync. */
 		theme?: Theme;
@@ -64,15 +66,41 @@
 	let selected = $state<string | null>(null);
 	let showInfo = $state(false);
 
+	async function loadReport(id: string | null, signal: AbortSignal) {
+		if (id) {
+			const response = await fetch('/api/session', { signal });
+			const session = response.ok ? await response.json() : null;
+			if (session?.customer?.id !== id) {
+				const selected = await fetch('/api/session', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ customerId: id }),
+					signal
+				});
+				if (!selected.ok) throw new Error('Could not select the customer.');
+			}
+		}
+		const response = await fetch(`/api/climate?days=${DAYS}`, { signal });
+		if (!response.ok) throw new Error('Could not load the report.');
+		return response.json() as Promise<{ report: ClimateReport }>;
+	}
+
 	$effect(() => {
 		attempt;
-		let cancelled = false;
+		const controller = new AbortController();
 		error = '';
-		fetch(`/api/climate?days=${DAYS}`)
-			.then((r) => (r.ok ? r.json() : Promise.reject(new Error('Request failed'))))
-			.then((data) => !cancelled && (report = data.report))
-			.catch(() => !cancelled && (error = 'We couldn’t load your ClimateWise report.'));
-		return () => (cancelled = true);
+		report = null;
+		hovered = null;
+		selected = null;
+		loadReport(customerId, controller.signal)
+			.then((data) => {
+				if (controller.signal.aborted) return;
+				report = data.report;
+			})
+			.catch(() => {
+				if (!controller.signal.aborted) error = 'We couldn’t load your ClimateWise report.';
+			});
+		return () => controller.abort();
 	});
 
 	// Theme-aware category colors, from the single source in emissions.ts
@@ -219,14 +247,14 @@
 	.cw {
 		--dark: ;
 		--light: initial;
-		--page: var(--dark, #060c13) var(--light, #eef2f6);
-		--glass: var(--dark, rgba(10, 22, 40, 0.55)) var(--light, rgba(255, 255, 255, 0.62));
-		--glass-strong: var(--dark, rgba(16, 30, 44, 0.78)) var(--light, rgba(255, 255, 255, 0.85));
+		--page: var(--dark, #171717) var(--light, #eef2f6);
+		--glass: var(--dark, rgba(30, 30, 30, 0.94)) var(--light, rgba(255, 255, 255, 0.62));
+		--glass-strong: var(--dark, rgba(36, 36, 36, 0.96)) var(--light, rgba(255, 255, 255, 0.85));
 		--glass-edge: var(--dark, rgba(255, 255, 255, 0.08)) var(--light, rgba(255, 255, 255, 0.75));
-		--surface: var(--dark, #13232f) var(--light, #ffffff);
+		--surface: var(--dark, #242424) var(--light, #ffffff);
 		--sunken: var(--dark, rgba(255, 255, 255, 0.05)) var(--light, rgba(16, 39, 58, 0.04));
-		--ink: var(--dark, #eef4f8) var(--light, #10273a);
-		--muted: var(--dark, #a3b6c4) var(--light, #5a6b79);
+		--ink: var(--dark, #f2f2f2) var(--light, #10273a);
+		--muted: var(--dark, #bdbdbd) var(--light, #5a6b79);
 		--border: var(--dark, rgba(255, 255, 255, 0.1)) var(--light, rgba(16, 39, 58, 0.1));
 		--link: var(--dark, #7cc8f2) var(--light, #0276b1);
 		--leaf: var(--dark, #59c26f) var(--light, #3aa548);

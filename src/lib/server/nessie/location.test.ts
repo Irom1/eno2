@@ -223,6 +223,20 @@ describe("find_nearby_atms", () => {
       expect(result.lat).toBeTypeOf("number");
       expect(result.lng).toBeTypeOf("number");
     }
+
+    // The response states which place was actually geocoded and how far the
+    // nearest row is, so a remote search is diagnosable rather than silent.
+    expect(payload.resolvedLocation).toMatchObject({
+      lat: 42.3656347,
+      lng: -71.1040018,
+    });
+    expect(String((payload.resolvedLocation as Record<string, unknown>).label)).toContain(
+      "Cambridge",
+    );
+    expect(payload.radiusMiles).toBe(25);
+    expect(Number(payload.nearestMiles)).toBe(Number(results[0]?.distanceMiles));
+    expect(payload.coverage).toBe("Arlington, VA");
+    expect(payload.demoCoverage).toBe(true);
   });
 
   it("uses distance ranking for a zip instead of rejecting ATMs", async () => {
@@ -240,6 +254,11 @@ describe("find_nearby_atms", () => {
     expect(results[0]?.note).toBe(
       "ATM records have no street address; matched by name only",
     );
+    // No geocode, so the response must not claim a resolved location.
+    expect(payload).not.toHaveProperty("resolvedLocation");
+    expect(payload.nearestMiles).toBeNull();
+    expect(payload.radiusMiles).toBe(25);
+    expect(payload.coverage).toBe("Arlington, VA");
   });
 
   it("returns zero when geocoding fails and no name matches", async () => {

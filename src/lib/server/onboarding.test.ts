@@ -1,13 +1,19 @@
 import { reviewFingerprint } from '../signupConfirmation';
 import { describe, expect, it } from 'vitest';
 import { emptyAnswers, normalizeState, SIGNUP_FIELDS } from '../signup';
-import { reconcileOnboarding, type OnboardingRequest } from './onboarding';
+import { onboardingStageMessage, reconcileOnboarding, type OnboardingRequest } from './onboarding';
 
 const full = { first_name: 'Ada', last_name: 'Lovelace', street_number: '123', street_name: 'Main St', city: 'Boston', state: 'MA', zip: '02139' };
 const emptyUpdates = Object.fromEntries(SIGNUP_FIELDS.map((key) => [key, null]));
 const request = (overrides: Partial<OnboardingRequest> = {}): OnboardingRequest => ({ message: 'Hello', answers: emptyAnswers(), accountChoice: 'undecided', spending: { status: 'skip', categories: [] }, includeCreditCard: false, history: [], ...overrides });
 
 describe('conversational onboarding', () => {
+  it('clears an invalid correction instead of silently keeping the old valid value', () => {
+    const result = reconcileOnboarding(request({ answers: full }), { reply: 'Now choose accounts.', updates: { ...emptyUpdates, zip: '123' }, accountChoice: 'both', confirmed: false });
+    expect(result.answers.zip).toBe('');
+    expect(result.stage).toBe('details');
+    expect(result.message).toMatch(/ZIP needs 5 digits/);
+  });
   it('requires spending choices before showing the prechecked account checklist, then reviews the user’s exact selection', () => {
     const base = request({ answers: full, spending: { status: 'undecided', categories: [] }, includeCreditCard: null });
     const first = reconcileOnboarding(base, { reply: 'What matters most?', updates: emptyUpdates, accountChoice: 'undecided', confirmed: false });
@@ -41,7 +47,7 @@ describe('conversational onboarding', () => {
   it('asks spending priorities before account selection and waits for the answer before review', () => {
     const result = reconcileOnboarding(request({ answers: full, accountChoice: 'undecided', spending: { status: 'undecided', categories: [] }, includeCreditCard: null }), { reply: 'Both it is.', updates: emptyUpdates, accountChoice: 'both', confirmed: true });
     expect(result.ready).toBe(false); expect(result.confirmed).toBe(false);
-    expect(result.message).toMatch(/spending matters most/);
+    expect(onboardingStageMessage(result.message, result.stage)).toMatch(/spending matters most/);
     expect(result.card).toBeNull();
   });
   it('matches the stated top priority, preserves it through tangents, and reviews changes before creating', () => {
@@ -57,7 +63,7 @@ describe('conversational onboarding', () => {
     const result = reconcileOnboarding(request(), { reply: 'Nice to meet you, Ada.', updates: { ...full, state: 'masachusets' }, accountChoice: 'undecided', confirmed: false });
     expect(result.answers).toEqual(full);
     expect(result.ready).toBe(false);
-    expect(result.message).toMatch(/preselected checking, savings/);
+    expect(onboardingStageMessage(result.message, result.stage)).toMatch(/preselected 360 Checking, 360 Performance Savings/);
     expect(normalizeState('massachussetts')).toBe('MA');
     expect(normalizeState('New Yrok')).toBe('NY');
     expect(normalizeState('QQ')).toBe('QQ');

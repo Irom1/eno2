@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSpendingBreakdown,
+  buildTopMerchants,
+  buildTopTransactions,
   categorizeDescription,
   computeSavingsRate,
   detectDuplicateCharges,
@@ -8,6 +10,7 @@ import {
   filterUpcomingBills,
   findRecurringCharges,
   monthKey,
+  normalizeSpendingCategory,
   projectGoal,
   toTransaction,
   type Transaction,
@@ -305,6 +308,128 @@ describe("recurring charges", () => {
     expect(charges[0]?.description).toBe("NETFLIX.COM");
     expect(charges[0]?.monthsSeen).toBe(2);
     expect(charges[0]?.averageAmount).toBe(15);
+  });
+});
+
+describe("top filtered transactions", () => {
+  const asOf = new Date(Date.UTC(2026, 10, 14));
+
+  it("normalizes category aliases", () => {
+    expect(normalizeSpendingCategory("Grocery")).toBe("groceries");
+    expect(normalizeSpendingCategory("rent")).toBe("housing");
+    expect(normalizeSpendingCategory("  ")).toBe("");
+    expect(normalizeSpendingCategory("groceries")).toBe("groceries");
+  });
+
+  it("classifies LOCAL FARMERS MARKET as groceries", () => {
+    expect(categorizeDescription("LOCAL FARMERS MARKET")).toBe("groceries");
+  });
+
+  it("returns only matching category rows, largest first", () => {
+    const result = buildTopTransactions(
+      [
+        tx("TRADER JOE'S", 100, "2026-10-05"),
+        tx("LOCAL FARMERS MARKET", 80, "2026-11-01"),
+        tx("EVERSOURCE", 220, "2026-11-02"),
+        tx("RENT", 1800, "2026-10-01"),
+      ],
+      { category: "grocery", months: 3, asOf },
+    );
+    expect(result.category).toBe("groceries");
+    expect(result.count).toBe(2);
+    expect(result.total).toBe(180);
+    expect(result.items.map((item) => item.description)).toEqual([
+      "TRADER JOE'S",
+      "LOCAL FARMERS MARKET",
+    ]);
+  });
+
+  it("filters by merchant and respects the limit", () => {
+    const result = buildTopTransactions(
+      [
+        tx("TRADER JOE'S", 100, "2026-10-05"),
+        tx("TRADER JOE'S", 60, "2026-10-20"),
+        tx("EVERSOURCE", 220, "2026-11-02"),
+      ],
+      { merchant: "trader joe", months: 3, limit: 1, asOf },
+    );
+    expect(result.merchant).toBe("trader joe");
+    expect(result.count).toBe(2);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.amount).toBe(100);
+  });
+
+  it("excludes deposits and rows outside the month window", () => {
+    const result = buildTopTransactions(
+      [
+        tx("PAYCHECK", 2000, "2026-11-01", "deposit"),
+        tx("OLD STORE", 50, "2026-08-31"),
+        tx("NEW STORE", 25, "2026-11-10"),
+      ],
+      { months: 3, asOf },
+    );
+    expect(result.count).toBe(1);
+    expect(result.items[0]?.description).toBe("NEW STORE");
+  });
+});
+
+describe("top merchants", () => {
+  const asOf = new Date(Date.UTC(2026, 10, 14));
+
+  it("groups by merchant and sorts by frequency then spend", () => {
+    const result = buildTopMerchants(
+      [
+        tx("TRADER JOE'S", 100, "2026-10-05"),
+        tx("TRADER JOE'S", 60, "2026-10-20"),
+        tx("TRADER JOE'S", 40, "2026-11-01"),
+        tx("LOCAL FARMERS MARKET", 80, "2026-11-02"),
+        tx("LOCAL FARMERS MARKET", 20, "2026-11-03"),
+        tx("EVERSOURCE", 220, "2026-11-04"),
+        tx("PAYCHECK", 2000, "2026-11-01", "deposit"),
+        tx("OLD STORE", 50, "2026-08-31"),
+      ],
+      { months: 3, limit: 2, asOf },
+    );
+
+    expect(result.count).toBe(3);
+    expect(result.months).toBe(3);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({
+      name: "TRADER JOE'S",
+      category: "groceries",
+      transactionCount: 3,
+      total: 200,
+      _id: "merchant:trader-joe-s",
+    });
+    expect(result.items[1]).toMatchObject({
+      name: "LOCAL FARMERS MARKET",
+      category: "groceries",
+      transactionCount: 2,
+      total: 100,
+    });
+  });
+
+  it("breaks frequency ties by total spend and includes one row per merchant", () => {
+    const result = buildTopMerchants(
+      [
+        tx("CORNER CAFE", 10, "2026-10-01"),
+        tx("CORNER CAFE", 10, "2026-10-02"),
+        tx("BIG STORE", 50, "2026-10-03"),
+        tx("BIG STORE", 40, "2026-10-04"),
+      ],
+      { months: 3, asOf },
+    );
+    expect(result.items.map((item) => item.name)).toEqual(["BIG STORE", "CORNER CAFE"]);
+    expect(result.items[0]?.total).toBe(90);
+  });
+
+  it("returns no items when no withdrawals are in the window", () => {
+    const result = buildTopMerchants(
+      [tx("PAYCHECK", 2000, "2026-11-01", "deposit")],
+      { months: 1, asOf },
+    );
+    expect(result.count).toBe(0);
+    expect(result.items).toEqual([]);
   });
 });
 

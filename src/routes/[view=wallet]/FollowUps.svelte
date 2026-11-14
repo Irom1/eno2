@@ -43,9 +43,10 @@
     justify-content: flex-start;
     gap: 8px;
     width: 100%;
-    padding: 7px 2px;
+    padding: 7px 6px;
+    box-sizing: border-box;
     border: 0;
-    border-radius: 0;
+    border-radius: 8px;
     background: transparent;
     color: var(--ink);
     font-size: 12px;

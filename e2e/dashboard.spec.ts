@@ -51,8 +51,8 @@ test.describe('dashboard', () => {
 
   test('deletes only the confirmed account from settings', async ({ page }) => {
     const customer = { id: 'demo-customer', firstName: 'Demo', lastName: 'Customer' };
-    const checking = { id: 'checking', customerId: customer.id, nickname: 'Demo Checking', type: 'Checking', accountNumber: '1234', balance: 10, rewards: 0 };
-    const savings = { ...checking, id: 'savings', nickname: 'Demo Savings', type: 'Savings', accountNumber: '5678' };
+    const checking = { id: 'checking', customerId: customer.id, nickname: '360 Checking', type: 'Checking', accountNumber: '1234', balance: 10, rewards: 0 };
+    const savings = { ...checking, id: 'savings', nickname: '360 Performance Savings', type: 'Savings', accountNumber: '5678' };
     let deletes = 0;
     let deleted = false;
 
@@ -80,7 +80,7 @@ test.describe('dashboard', () => {
     const confirmation = page.getByRole('dialog', { name: 'Delete account?' });
 
     await openDelete.click();
-    await expect(confirmation).toContainText('Demo Checking ending in 1234');
+    await expect(confirmation).toContainText('360 Checking ending in 1234');
     await expect(confirmation.getByRole('button', { name: 'Cancel' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(confirmation).toBeHidden();
@@ -108,8 +108,8 @@ test.describe('dashboard', () => {
 
     const cards = page.locator('article.account');
     await expect(cards).toHaveCount(3);
-    await expect(page.locator('.account-overview')).toContainText('Everyday Checking');
-    await expect(page.locator('.account-overview')).toContainText('Emergency Fund');
+    await expect(page.locator('.account-overview')).toContainText('360 Checking');
+    await expect(page.locator('.account-overview')).toContainText('360 Performance Savings');
     await expect(page.locator('.account-overview')).toContainText('Venture Rewards');
 
     expectNoErrors(errors);
@@ -131,7 +131,7 @@ test.describe('dashboard', () => {
     const overview = page.locator('.account-overview');
     await expect(overview).toContainText('Spending', { timeout: 30_000 });
     await expect(overview).toContainText('Quicksilver', { timeout: 30_000 });
-    await expect(overview).not.toContainText('Everyday Checking');
+    await expect(overview).not.toContainText('360 Checking');
 
     expectNoErrors(errors);
   });
@@ -157,20 +157,20 @@ test.describe('dashboard', () => {
     expectNoErrors(errors);
   });
 
-  test('account detail view exposes activity, details, bills, and loans', async ({ page }) => {
+  test('account detail view exposes activity, details, and bills', async ({ page }) => {
     const errors = collectErrors(page);
     await loadDashboard(page);
 
-    const checking = page.locator('article.account', { hasText: 'Everyday Checking' });
+    const checking = page.locator('article.account', { hasText: '360 Checking' });
     await expect(checking).toBeVisible();
     await checking.getByRole('button', { name: /View activity/i }).click();
 
     const shell = page.locator('.view-shell');
     await expect(shell).toBeVisible({ timeout: 20_000 });
-    await expect(shell.locator('.hero')).toContainText('Everyday Checking');
+    await expect(shell.locator('.hero')).toContainText('360 Checking');
 
     const tabs = shell.locator('.tabs .tab');
-    await expect(tabs).toContainText(['Activity', 'Details', 'Bills', 'Loans']);
+    await expect(tabs).toHaveText([/^Activity/, /^Details/, /^Bills/]);
 
     // Activity: live transaction rows, then the detail sheet.
     const rows = shell.locator('.tx-row');
@@ -197,13 +197,6 @@ test.describe('dashboard', () => {
     await sheet.locator('.sheet-close').click();
     await expect(sheet).toBeHidden();
 
-    // Loans tab.
-    await shell.locator('.tab', { hasText: 'Loans' }).click();
-    const loansPanel = shell.locator('.tab-panel[aria-label="Loans"]');
-    await expect(loansPanel).toBeVisible();
-    await expect(loansPanel).toContainText('Auto Loan');
-    await expect(loansPanel).toContainText('Student Loan');
-
     // Details tab, then back closes the view.
     await shell.locator('.tab', { hasText: 'Details' }).click();
     await expect(shell.locator('.tab-panel[aria-label="Details"]')).toBeVisible();
@@ -214,7 +207,7 @@ test.describe('dashboard', () => {
     expectNoErrors(errors);
   });
 
-  test('home modules show recent activity, upcoming bills, and live rewards', async ({ page }) => {
+  test('home modules show recent activity and upcoming bills without a rewards tile', async ({ page }) => {
     const errors = collectErrors(page);
     await loadDashboard(page);
 
@@ -226,9 +219,7 @@ test.describe('dashboard', () => {
     await expect(page.locator('.bills-panel')).toContainText('Upcoming bills');
     await expect(page.locator('.bills-panel .bill-row').first()).toBeVisible();
 
-    await expect(page.locator('.feature.reward .reward-amount')).toContainText('pts');
-    const points = await page.locator('.feature.reward .reward-amount').innerText();
-    expect(Number(points.replace(/[^\d]/g, ''))).toBeGreaterThan(0);
+    await expect(page.getByRole('heading', { name: 'Explore rewards and benefits' })).toHaveCount(0);
 
     expectNoErrors(errors);
   });

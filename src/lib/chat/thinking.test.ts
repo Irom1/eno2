@@ -32,6 +32,7 @@ describe('thinking steps', () => {
       ['insight_spending_breakdown', 'Reviewing your spending'],
       ['get_rewards_summary', 'Checking your rewards'],
       ['insight_goal_projection', 'Projecting your savings goal'],
+      ['insight_top_merchants', 'Reviewing where you shop'],
       ['nessie_list_merchants', 'Looking at where you shop'],
       ['insight_cash_flow', 'Reviewing your cash flow'],
       ['insight_cashflow', 'Reviewing your cash flow'],

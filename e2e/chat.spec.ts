@@ -14,11 +14,10 @@ import {
 } from './helpers';
 
 const STARTER_PROMPTS = [
-  'Give me a snapshot of my finances',
   'Where did my money go last month?',
   "What's due in the next 30 days?",
   'Anything weird in my transactions?',
-  'Find an ATM near Arlington'
+  'Find an ATM near Arlington, VA'
 ];
 
 async function loadChat(page: Page): Promise<void> {
@@ -129,7 +128,7 @@ async function expectFollowupsMatchBubble(page: Page): Promise<void> {
   });
 }
 
-/** Follow-up rows are borderless: no dividers between rows. */
+/** Follow-up rows have no dividers; the hover highlight is what carries rounding. */
 async function expectFollowupBorders(page: Page): Promise<void> {
   const rows = await page.locator('.follow-up').evaluateAll((elements) =>
     elements.map((element) => {
@@ -145,7 +144,7 @@ async function expectFollowupBorders(page: Page): Promise<void> {
   );
   expect(rows.length, 'follow-up rows are present').toBeGreaterThan(0);
   rows.forEach((row) => {
-    expect(row.radius, 'follow-up corners are square').toBe('0px');
+    expect(parseFloat(row.radius), 'follow-up corners are rounded').toBeGreaterThanOrEqual(6);
     expect(row.top, 'rows have no top border').toBe('0px');
     expect(row.right, 'rows have no right border').toBe('0px');
     expect(row.bottom, 'rows have no bottom border').toBe('0px');
@@ -802,18 +801,40 @@ test.describe('chat prompts', () => {
         firstRow.evaluate((element) => getComputedStyle(element).backgroundColor)
       )
       .not.toBe('rgba(0, 0, 0, 0)');
+    const hoveredStyle = await firstRow.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        radius: style.borderRadius,
+        background: style.backgroundColor,
+        top: style.borderTopWidth,
+        right: style.borderRightWidth,
+        bottom: style.borderBottomWidth,
+        left: style.borderLeftWidth
+      };
+    });
     expect(
-      await firstRow.evaluate((element) => {
-        const style = getComputedStyle(element);
-        return {
-          top: style.borderTopWidth,
-          right: style.borderRightWidth,
-          bottom: style.borderBottomWidth,
-          left: style.borderLeftWidth
-        };
-      }),
+      parseFloat(hoveredStyle.radius),
+      'hover highlight has rounded corners'
+    ).toBeGreaterThanOrEqual(6);
+    expect(
+      {
+        top: hoveredStyle.top,
+        right: hoveredStyle.right,
+        bottom: hoveredStyle.bottom,
+        left: hoveredStyle.left
+      },
       'hover must not add a border'
     ).toEqual({ top: '0px', right: '0px', bottom: '0px', left: '0px' });
+
+    const expectedTint = await page.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.background = 'color-mix(in srgb, var(--link) 10%, transparent)';
+      document.body.appendChild(probe);
+      const value = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return value;
+    });
+    expect(hoveredStyle.background, 'hover background is the link tint').toBe(expectedTint);
     expect(
       await firstElbow.evaluate((element) => getComputedStyle(element).transform),
       'hover must not translate the elbow'
@@ -1244,6 +1265,172 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('"Where do I shop most?" renders one merchant card, not a pie or transaction list', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'tool_start',
+        data: { type: 'tool_start', name: 'insight_top_merchants', label: '' }
+      },
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_top_merchants',
+          accountId: 'acct-checking',
+          payload: {
+            count: 12,
+            months: 3,
+            items: [
+              {
+                _id: 'merchant:whole-foods-market',
+                name: 'Whole Foods Market',
+                category: 'groceries',
+                transactionCount: 9,
+                total: 540
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: { type: 'text', delta: 'Here is where you shop most:' }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: {
+          type: 'text',
+          delta: ' Your most frequent merchant is Whole Foods Market.'
+        }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Where do I shop most?');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await composer.press('Enter');
+
+    const turn = page.locator('.assistant-turn').last();
+    const prose = turn.locator('.bubble.assistant .richtext');
+
+    await expect(prose).toContainText('most frequent merchant', { timeout: 10_000 });
+    await waitForChatSettled(page);
+
+    await expect(turn.locator('.merchant-card')).toHaveCount(1);
+    await expect(turn.locator('.merchant-card').first()).toContainText('Whole Foods Market');
+    await expect(turn.locator('.pie-chart-card')).toHaveCount(0);
+    await expect(turn.locator('.transaction-list-card')).toHaveCount(0);
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+
+    expectNoErrors(errors);
+  });
+
+  test('a clarification question produces one-click answers from loaded accounts', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Which account would you like to analyze?'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Help me look at my spending');
+
+    await expect(page.locator('.follow-up').first()).toBeVisible({ timeout: 20_000 });
+    const labels = (await page.locator('.follow-up').allInnerTexts()).map((label) =>
+      label.trim()
+    );
+    expect(
+      labels.some((label) => label.includes('Everyday Checking')),
+      `expected an account clarification answer, got ${JSON.stringify(labels)}`
+    ).toBe(true);
+    expectNoErrors(errors);
+  });
+
+  test('a merchant answer offers transactions at the rendered merchant', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_top_merchants',
+          accountId: 'acct-checking',
+          payload: {
+            count: 1,
+            months: 3,
+            items: [
+              {
+                _id: 'merchant:whole-foods',
+                name: 'Whole Foods',
+                category: 'groceries',
+                transactionCount: 9,
+                total: 540
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: { type: 'text', delta: 'Whole Foods comes up most often.' }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    await askChat(page, 'Where do I shop most?');
+
+    await expect(page.locator('.merchant-card')).toHaveCount(1, { timeout: 20_000 });
+    await expect(page.locator('.merchant-card').first()).toContainText('Whole Foods');
+    await waitForChatSettled(page);
+
+    await expect(page.locator('.follow-up').first()).toBeVisible({ timeout: 20_000 });
+    const labels = (await page.locator('.follow-up').allInnerTexts()).map((label) =>
+      label.trim()
+    );
+    expect(
+      labels,
+      `expected a merchant-specific follow-up, got ${JSON.stringify(labels)}`
+    ).toContain('Show my transactions at Whole Foods');
+    expectNoErrors(errors);
+  });
+
   test('"Show me my bills" renders one primitive bill card and no duplicated totals', async ({
     page
   }) => {
@@ -1271,7 +1458,19 @@ test.describe('chat prompts', () => {
     expect(prose, 'prose uses relative timing').toMatch(
       /largest payment is due (within the next three weeks|in the coming weeks)/
     );
-    expect(prose).toContain('Tip:');
+    expect(prose, 'prose has a natural next step without labels').toMatch(
+      /you can|consider|worth|move money|review|check/i
+    );
+    expect(prose, 'prose has no Tip label').not.toContain('Tip:');
+    expect(prose, 'prose has no Insight label').not.toContain('Insight:');
+    await expect(page.locator('.follow-up').first()).toBeVisible({ timeout: 20_000 });
+    const billFollowups = (await page.locator('.follow-up').allInnerTexts()).map((label) =>
+      label.trim()
+    );
+    expect(
+      billFollowups.some((label) => /Can I cover my .+ bill\?/.test(label)),
+      `expected a bill-specific follow-up, got ${JSON.stringify(billFollowups)}`
+    ).toBe(true);
     expectNoErrors(errors);
   });
 
@@ -1423,6 +1622,8 @@ test.describe('chat prompts', () => {
       .join('\n')
       .trim();
     expect(prose.length, 'assistant prose introduces the list').toBeGreaterThan(0);
+    expect(prose, 'prose has no Tip label').not.toContain('Tip:');
+    expect(prose, 'prose has no Insight label').not.toContain('Insight:');
 
     const placement = await page.locator('.assistant-turn').last().evaluate((turn) => {
       const content = turn.querySelector('.assistant-content');
@@ -1440,6 +1641,52 @@ test.describe('chat prompts', () => {
       };
     });
     expect(placement).toEqual({ inContent: true, afterIntro: true });
+
+    expectNoErrors(errors);
+  });
+
+  test('"Show me my recent transactions" caps rows and shows how many more', async ({ page }) => {
+    const errors = collectErrors(page);
+    const items = Array.from({ length: 10 }, (_, index) => ({
+      _id: `wd-more-${index}`,
+      description: `Merchant ${index}`,
+      amount: 10 + index,
+      transactionDate: '2026-11-03',
+      status: 'posted'
+    }));
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here are the latest entries: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_list_account_withdrawals',
+        accountId: 'acct-checking',
+        payload: { count: 10, items }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Most recent first.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my recent transactions');
+
+    const list = page.locator('.transaction-list-card').first();
+    await expect(list).toBeVisible({ timeout: 20_000 });
+    await expect(list.locator('.transaction-row')).toHaveCount(8);
+    await expect(list.locator('.truncation-footer')).toHaveText(/\d+ more transactions/);
+    await expect(list.locator('.truncation-footer')).toContainText('2 more transactions');
 
     expectNoErrors(errors);
   });
@@ -1551,10 +1798,14 @@ test.describe('chat prompts', () => {
     expect(cardText).not.toMatch(/top category|biggest|you spent|recommend|tip:/);
     await expect(pie.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
 
-    // The prose carries the insight and tip, without dumping the chart values.
+    // The prose carries the takeaway and next step, without dumping the chart values.
     const prose = (await assistantText(page)).trim();
     expect(prose.length, 'assistant prose introduces the chart').toBeGreaterThan(0);
-    expect(prose).toMatch(/tip|insight|you can|worth|compare|watch/i);
+    expect(prose, 'prose has a natural next step without labels').toMatch(
+      /you can|consider|worth|move money|review|check|open a category/i
+    );
+    expect(prose, 'prose has no Tip label').not.toContain('Tip:');
+    expect(prose, 'prose has no Insight label').not.toContain('Insight:');
 
     const frame = page.locator('.entity-card').filter({ has: pie });
     await expect(frame).toHaveCount(1);
@@ -1711,20 +1962,20 @@ test.describe('chat prompts', () => {
     const events = [
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'You have a suspiciously large transaction at APPLE: '
+        delta: 'APPLE STORE is an unusually large purchase: '
       })}`,
       `event: insight\ndata: ${JSON.stringify(insight)}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: ' and a duplicate transaction at NETFLIX: '
+        delta: ' NETFLIX.COM looks like a possible duplicate: '
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: ' and another duplicate at SPOTIFY: '
+        delta: ' SPOTIFY also looks like a possible duplicate: '
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'all three posted this week.'
+        delta: 'If you don’t recognize any of these, you can review and dispute them in the app.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -1761,7 +2012,7 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.transaction-card[data-flag]')).toHaveCount(0);
 
     // Each anomaly card links to its transaction with the finding _id.
-    const cardLinks = cards.locator('a.transaction-link');
+    const cardLinks = page.locator('a.transaction-card.transaction-link');
     await expect(cardLinks).toHaveCount(count);
     const cardHrefs = await cardLinks.evaluateAll((elements) =>
       elements.map((element) => ({
@@ -1787,7 +2038,7 @@ test.describe('chat prompts', () => {
       elements.map((element) => Boolean(element.closest('.bubble.assistant')))
     );
     expect(insideBubble.every(Boolean), 'every transaction card sits inside a bubble').toBe(true);
-    await expect(page.locator('.bubble.assistant .transaction-card a.transaction-link')).toHaveCount(
+    await expect(page.locator('.bubble.assistant a.transaction-card.transaction-link')).toHaveCount(
       count
     );
     await expect(page.locator('.chat-card .transaction-card')).toHaveCount(0);
@@ -1801,10 +2052,21 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(page.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
 
-    // Prose carries the explanation; cards sit after their merchant mention.
+    // Prose carries a separate reason; each card follows its complete explanation.
     const prose = (await assistantText(page)).trim();
     expect(prose.length, 'assistant prose explains the finding').toBeGreaterThan(0);
     expect(prose).toMatch(/duplicate|large|suspicious/i);
+    expect(prose).toContain('APPLE STORE');
+    expect(prose).toContain('NETFLIX.COM');
+    expect(prose).toContain('SPOTIFY');
+    expect(prose).toContain('possible duplicate');
+    expect(prose).toContain('unusually large');
+    expect(prose).not.toContain('1,299');
+    expect(prose).not.toContain('15.49');
+    expect(prose).not.toContain('9.99');
+    expect(prose).not.toContain('2026-11');
+    expect(prose).not.toContain('Tip:');
+    expect(prose).not.toContain('Insight:');
 
     const order = await page.locator('.assistant-turn').last().evaluate((turn) => {
       const bubble = turn.querySelector('.bubble.assistant.inline-entities');
@@ -1834,11 +2096,182 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Find an ATM near Arlington" renders one primitive location card', async ({
+  test('"Any suspicious transactions?" explains all five anomaly cards in prose', async ({
     page
   }) => {
     const errors = collectErrors(page);
-    await runPrompt(page, 'Find an ATM near Arlington');
+    await loadChat(page);
+
+    const names = [
+      'NETFLIX',
+      'LOCAL BOOKSTORE',
+      'APPLE ELECTRONICS PURCHASE',
+      'OVERSEAS ELECTRONICS PURCHASE',
+      'EXPRESS AIR FREIGHT'
+    ];
+    const insight = {
+      type: 'insight',
+      kind: 'insight_anomalies',
+      accountId: 'acct-checking',
+      payload: {
+        count: 5,
+        duplicateCount: 2,
+        outlierCount: 3,
+        summary: 'I found several unusually large purchases and several possible duplicates.',
+        findings: [
+          {
+            _id: 'txn-netflix',
+            type: 'duplicate',
+            description: 'NETFLIX',
+            amount: 19,
+            date: '2026-10-28',
+            duplicateOf: '2026-10-27',
+            accountId: 'acct-venture',
+            accountLabel: 'Venture',
+            accountType: 'credit card'
+          },
+          {
+            _id: 'txn-bookstore',
+            type: 'duplicate',
+            description: 'LOCAL BOOKSTORE',
+            amount: 47,
+            date: '2026-11-05',
+            duplicateOf: '2026-11-04',
+            accountId: 'acct-checking',
+            accountLabel: 'Everyday Checking',
+            accountType: 'checking'
+          },
+          {
+            _id: 'txn-apple',
+            type: 'outlier',
+            description: 'APPLE ELECTRONICS PURCHASE',
+            amount: 1800,
+            date: '2026-10-13',
+            accountId: 'acct-checking',
+            accountLabel: 'Everyday Checking',
+            accountType: 'checking'
+          },
+          {
+            _id: 'txn-overseas',
+            type: 'outlier',
+            description: 'OVERSEAS ELECTRONICS PURCHASE',
+            amount: 1250,
+            date: '2026-10-21',
+            accountId: 'acct-venture',
+            accountLabel: 'Venture',
+            accountType: 'credit card'
+          },
+          {
+            _id: 'txn-freight',
+            type: 'outlier',
+            description: 'EXPRESS AIR FREIGHT',
+            amount: 925,
+            date: '2026-09-21',
+            accountId: 'acct-checking',
+            accountLabel: 'Everyday Checking',
+            accountType: 'checking'
+          }
+        ]
+      }
+    };
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is what stood out: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify(insight)}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta:
+          'I found several unusually large purchases and several possible duplicates. NETFLIX on your Venture card and LOCAL BOOKSTORE on your Everyday Checking each look like possible duplicates. APPLE ELECTRONICS PURCHASE on your Everyday Checking, OVERSEAS ELECTRONICS PURCHASE on your Venture card, and EXPRESS AIR FREIGHT on your Everyday Checking are unusually large purchases. If you don’t recognize a charge, you can review and dispute it in the app.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Any suspicious transactions?');
+
+    const cards = page.locator('.transaction-card');
+    await expect(cards.first()).toBeVisible({ timeout: 20_000 });
+    await expect(cards).toHaveCount(5);
+
+    const cardsText = (await cards.allInnerTexts()).join('\n');
+    for (const name of names) {
+      expect(cardsText).toContain(name);
+    }
+
+    const prose = (await assistantText(page)).trim();
+    expect(prose).toContain(
+      'I found several unusually large purchases and several possible duplicates.'
+    );
+    expect(prose).toContain(
+      'NETFLIX on your Venture card and LOCAL BOOKSTORE on your Everyday Checking each look like possible duplicates.'
+    );
+    expect(prose).toContain(
+      'APPLE ELECTRONICS PURCHASE on your Everyday Checking, OVERSEAS ELECTRONICS PURCHASE on your Venture card, and EXPRESS AIR FREIGHT on your Everyday Checking are unusually large purchases.'
+    );
+    for (const name of names) {
+      expect(prose).toContain(name);
+    }
+    expect(prose).toContain('Venture');
+    expect(prose).toContain('Everyday Checking');
+    expect(prose).toContain('possible duplicate');
+    expect(prose).toContain('unusually large');
+    for (const amount of ['19', '47', '1,800', '1,250', '925']) {
+      expect(prose).not.toContain(`$${amount}`);
+    }
+    for (const date of [
+      '2026-10-28',
+      '2026-10-27',
+      '2026-11-05',
+      '2026-11-04',
+      '2026-10-13',
+      '2026-10-21',
+      '2026-09-21'
+    ]) {
+      expect(prose).not.toContain(date);
+    }
+    expect(prose).not.toContain('Tip:');
+    expect(prose).not.toContain('Insight:');
+
+    // Each card deep-links to the account that owns its finding.
+    const cardHrefs = await cards
+      .locator('a.transaction-link')
+      .evaluateAll((elements) => elements.map((element) => element.getAttribute('href') ?? ''));
+    expect(cardHrefs).toEqual([
+      expect.stringMatching(/account=acct-venture&txn=txn-netflix$/),
+      expect.stringMatching(/account=acct-checking&txn=txn-bookstore$/),
+      expect.stringMatching(/account=acct-checking&txn=txn-apple$/),
+      expect.stringMatching(/account=acct-venture&txn=txn-overseas$/),
+      expect.stringMatching(/account=acct-checking&txn=txn-freight$/)
+    ]);
+
+    const insideBubble = await cards.evaluateAll((elements) =>
+      elements.map((element) => Boolean(element.closest('.bubble.assistant')))
+    );
+    expect(insideBubble.every(Boolean), 'every transaction card sits inside a bubble').toBe(true);
+    await expect(page.locator('.chat-card .transaction-card')).toHaveCount(0);
+
+    expectNoErrors(errors);
+  });
+
+  test('"Find an ATM near Arlington, VA" renders one primitive location card', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await runPrompt(page, 'Find an ATM near Arlington, VA');
+
+    const prose = await assistantText(page);
+    expect(prose).toContain('I found');
+    expect(prose).toContain('ATMs near "Arlington, VA"');
+    expect(prose).not.toContain('demo ATM data only includes Arlington');
 
     const card = page.locator('.atm-locator-card');
     await expect(card).toHaveCount(1);
@@ -1999,25 +2432,26 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Find an ATM near Cambridge, MA" is honest about distant results', async ({
+  test('"Find an ATM in Cambridge, MA" explains Arlington-only demo coverage', async ({
     page
   }) => {
     const errors = collectErrors(page);
-    await runPrompt(page, 'Find an ATM near Cambridge, MA');
+    await runPrompt(page, 'Find an ATM in Cambridge, MA');
 
     const prose = await assistantText(page);
-    expect(prose).toContain("couldn't find any ATMs within 25 miles");
-    expect(prose).toMatch(/closest option is [\d,]+ miles away/);
-    expect(prose).toMatch(/straight-line/i);
+    expect(prose).toContain("demo ATM data only includes Arlington, VA");
+    expect(prose).toContain("Arlington ATM");
     expect(prose).not.toMatch(/ATMs near/i);
-    expect(prose).not.toMatch(/near "Cambridge/i);
+    expect(prose).not.toMatch(/near "?Cambridge/i);
+    expect(prose).not.toContain("couldn't find any ATMs within 25 miles");
 
-    // The nearest ATM still renders its map card, even though it is far away.
+    // The one Arlington ATM still renders its map card.
     const card = page.locator('.atm-locator-card');
     await expect(card).toHaveCount(1);
+    await expect(card.locator('.name')).toContainText('Arlington');
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the distant ATM map is standalone, not inside the prose bubble'
+      'the ATM map is standalone, not inside the prose bubble'
     ).toBe(false);
     const map = card.locator('img.atm-map');
     await expect(map).toHaveCount(1);
@@ -2617,7 +3051,7 @@ test.describe('primitive bill and account cards', () => {
     await expect(card).toHaveAttribute('data-kind', 'account');
 
     const text = await card.innerText();
-    expect(text).toContain('Everyday Checking');
+    expect(text).toContain('360 Checking');
     expect(text).toContain('Checking');
     expect(text).toContain('•••• 4212');
     expect(text, 'balance is shown').toContain('$4,218.00');
@@ -2686,7 +3120,7 @@ test.describe('primitive bill and account cards', () => {
 
     const card = page.locator('.account-card');
     await expect(card).toHaveCount(1, { timeout: 20_000 });
-    await expect(card).toContainText('Everyday Checking');
+    await expect(card).toContainText('360 Checking');
     await expect(card).toContainText('•••• 4212');
     await expect(page.locator('.chat-card')).toHaveCount(0);
 
