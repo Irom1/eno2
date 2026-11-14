@@ -404,8 +404,8 @@
     justify-items: center;
     text-align: center;
     background:
-      radial-gradient(ellipse at 18% 72%, #fff2bd 0%, transparent 54%),
-      linear-gradient(173deg, #78bffa 0%, #a8d9f7 33%, #ffdfbd 66%, #edac9c 100%);
+      radial-gradient(ellipse 65% 38% at 18% 76%, #ffcfad 0%, transparent 100%),
+      linear-gradient(173deg, #697ba9 0%, #a1afd0 32%, #c7b5ce 64%, #e6b3ab 100%);
   }
 
   .dark .hero {
@@ -413,8 +413,8 @@
     color: #f3f7fc;
     background:
       url('/images/hero-stars.svg') center top,
-      radial-gradient(ellipse at 18% 75%, #504468, transparent 65%),
-      linear-gradient(165deg, #132946, #244769);
+      radial-gradient(ellipse 65% 38% at 18% 76%, #905b65 0%, transparent 100%),
+      linear-gradient(173deg, #0b142b 0%, #172544 35%, #343557 68%, #523f5d 100%);
   }
   .dark .intro p, .dark article p { color: var(--muted); }
   .dark article { background: #242424; border-color: #454545; }
