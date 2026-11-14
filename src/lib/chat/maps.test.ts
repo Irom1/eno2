@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appleMapsUrl, googleMapsUrl, osmEmbedUrl, validCoordinates } from './osm';
+import { appleMapsUrl, googleMapsUrl, validCoordinates } from './maps';
 
 describe('validCoordinates', () => {
   it('accepts finite in-range pairs', () => {
@@ -15,36 +15,6 @@ describe('validCoordinates', () => {
     expect(validCoordinates(Number.NaN, 0)).toBe(false);
     expect(validCoordinates(0, Number.POSITIVE_INFINITY)).toBe(false);
     expect(validCoordinates('42', '-71')).toBe(false);
-  });
-});
-
-describe('osmEmbedUrl', () => {
-  it('builds a bbox, layer and marker in west,south,east,north order', () => {
-    const url = osmEmbedUrl(38.88, -77.1);
-    expect(url).not.toBeNull();
-    expect(url).toMatch(/^https:\/\/www\.openstreetmap\.org\/export\/embed\.html\?/);
-
-    const query = new URL(url as string).searchParams;
-    expect(query.get('bbox')).toBe('-77.108,38.8752,-77.092,38.8848');
-    expect(query.get('layer')).toBe('mapnik');
-    expect(query.get('marker')).toBe('38.88,-77.1');
-
-    const bbox = (query.get('bbox') as string).split(',').map(Number);
-    expect(bbox[0]).toBeLessThan(bbox[2]);
-    expect(bbox[1]).toBeLessThan(bbox[3]);
-  });
-
-  it('respects a custom delta', () => {
-    const query = new URL(osmEmbedUrl(10, 20, 0.01) as string).searchParams;
-    expect(query.get('bbox')).toBe('19.99,9.994,20.01,10.006');
-  });
-
-  it('returns null for invalid coordinates or delta', () => {
-    expect(osmEmbedUrl(91, 0)).toBeNull();
-    expect(osmEmbedUrl(0, 181)).toBeNull();
-    expect(osmEmbedUrl(Number.NaN, 0)).toBeNull();
-    expect(osmEmbedUrl(10, 20, 0)).toBeNull();
-    expect(osmEmbedUrl(10, 20, Number.NaN)).toBeNull();
   });
 });
 
@@ -110,5 +80,17 @@ describe('googleMapsUrl', () => {
     expect(googleMapsUrl(0, 181)).toBeNull();
     expect(googleMapsUrl(Number.NaN, 0)).toBeNull();
     expect(googleMapsUrl(0, Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe('map embed removal', () => {
+  it('no longer exports an OpenStreetMap embed builder', async () => {
+    const module = await import('./maps');
+    expect('osmEmbedUrl' in module).toBe(false);
+  });
+
+  it('external links never point at an OSM embed', () => {
+    expect(appleMapsUrl(1, 2)).not.toContain('openstreetmap');
+    expect(googleMapsUrl(1, 2)).not.toContain('openstreetmap');
   });
 });

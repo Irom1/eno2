@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LocationEntityCard } from '$lib/chat/entityCards.js';
-  import { appleMapsUrl, googleMapsUrl, osmEmbedUrl } from '$lib/chat/osm.js';
+  import { appleMapsUrl, googleMapsUrl } from '$lib/chat/maps.js';
   import CardFrame from './CardFrame.svelte';
   import OpenIcon from './OpenIcon.svelte';
 
@@ -17,7 +17,11 @@
   const lng = $derived(
     typeof payload.lng === 'number' && Number.isFinite(payload.lng) ? payload.lng : null
   );
-  const embedSrc = $derived(lat !== null && lng !== null ? osmEmbedUrl(lat, lng) : null);
+  const hasCoords = $derived(lat !== null && lng !== null);
+  const mapSrc = $derived(
+    hasCoords ? `/api/mapbox/static?lat=${lat}&lng=${lng}&zoom=15` : null
+  );
+  let mapFailed = $state(false);
   const appleUrl = $derived(lat !== null && lng !== null ? appleMapsUrl(lat, lng, payload.name) : null);
   const googleUrl = $derived(
     lat !== null && lng !== null ? googleMapsUrl(lat, lng, payload.name) : null
@@ -39,41 +43,42 @@
     {#if payload.hours}
       <div class="hours">{payload.hours}</div>
     {/if}
-    {#if embedSrc}
-      <iframe
+    {#if mapSrc && !mapFailed}
+      <img
         class="atm-map"
-        src={embedSrc}
-        title={`Map showing ${payload.name}`}
+        src={mapSrc}
+        alt={`Map showing ${payload.name}`}
         loading="lazy"
-      ></iframe>
-      {#if appleUrl || googleUrl}
-        <div class="map-actions">
-          {#if appleUrl}
-            <a
-              class="map-link"
-              href={appleUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Open in Apple Maps
-              <OpenIcon />
-            </a>
-          {/if}
-          {#if googleUrl}
-            <a
-              class="map-link"
-              href={googleUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Open in Google Maps
-              <OpenIcon />
-            </a>
-          {/if}
-        </div>
-      {/if}
+        onerror={() => (mapFailed = true)}
+      />
     {:else}
       <div class="map-fallback" role="status">Map preview unavailable</div>
+    {/if}
+    {#if appleUrl || googleUrl}
+      <div class="map-actions">
+        {#if appleUrl}
+          <a
+            class="map-link"
+            href={appleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open in Apple Maps
+            <OpenIcon />
+          </a>
+        {/if}
+        {#if googleUrl}
+          <a
+            class="map-link"
+            href={googleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open in Google Maps
+            <OpenIcon />
+          </a>
+        {/if}
+      </div>
     {/if}
   </div>
 </CardFrame>

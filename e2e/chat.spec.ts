@@ -1803,19 +1803,22 @@ test.describe('chat prompts', () => {
     // Primitive: no recommendation or directions copy.
     expect(text.toLowerCase()).not.toMatch(/recommend|tip:|directions/);
 
-    // The map is a keyless OpenStreetMap embed, never a Mapbox image proxy.
-    const map = card.locator('iframe.atm-map');
+    // The map is a server-proxied Mapbox Static Images <img>, never a keyless
+    // OSM iframe and never a URL carrying the token.
+    await expect(card.locator('iframe.atm-map')).toHaveCount(0);
+    const map = card.locator('img.atm-map');
     await expect(map).toHaveCount(1);
     const src = await map.getAttribute('src');
-    expect(src).toMatch(/^https:\/\/www\.openstreetmap\.org\/export\/embed\.html\?/);
-    expect(src).toContain('marker=');
-    expect(src?.toLowerCase()).not.toContain('mapbox');
+    expect(src).toMatch(/^\/api\/mapbox\/static\?/);
+    expect(src).toContain('lat=');
+    expect(src).toContain('lng=');
     expect(src?.toLowerCase()).not.toContain('access_token');
+    expect(src?.toLowerCase()).not.toContain('mapbox.com');
     expect(await card.innerHTML()).not.toContain('access_token');
-    expect(await card.innerHTML()).not.toContain('mapbox');
+    expect(await card.innerHTML()).not.toContain('mapbox.com');
+    expect(await card.innerHTML()).not.toContain('openstreetmap.org');
 
-    // The map is still the OpenStreetMap embed, while the explicit external
-    // links open Apple Maps and Google Maps (no OSM page link).
+    // The explicit external links open Apple Maps and Google Maps.
     const apple = card.getByRole('link', { name: 'Open in Apple Maps', exact: true });
     await expect(apple).toHaveCount(1);
     const appleHref = await apple.getAttribute('href');
@@ -1840,6 +1843,7 @@ test.describe('chat prompts', () => {
 
     await expect(card.getByRole('link', { name: 'Open in OpenStreetMap' })).toHaveCount(0);
     expect(await card.innerText()).not.toContain('Open in OpenStreetMap');
+    await expect(card.locator('iframe')).toHaveCount(0);
     await expect(page.locator('.location-card')).toHaveCount(0);
 
     await expect(page.locator('.chat-card')).toHaveCount(0);
@@ -1869,10 +1873,10 @@ test.describe('chat prompts', () => {
     // The nearest ATM still renders its map card, even though it is far away.
     const card = page.locator('.atm-locator-card');
     await expect(card).toHaveCount(1);
-    const map = card.locator('iframe.atm-map');
+    const map = card.locator('img.atm-map');
     await expect(map).toHaveCount(1);
     const src = await map.getAttribute('src');
-    expect(src).toMatch(/^https:\/\/www\.openstreetmap\.org\/export\/embed\.html\?/);
+    expect(src).toMatch(/^\/api\/mapbox\/static\?/);
     await expect(card.locator('.distance')).toContainText('mi away');
 
     expectNoErrors(errors);
