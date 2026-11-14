@@ -31,9 +31,11 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
   - Server collects turn-local candidates from successful data-tool results, validates account ownership for account/bill/loan/transaction/profile, and emits a whitelisted `EntityCard`.
   - `CARDS_MODE=off` removes the declaration and handling while every existing client-side builder remains the fallback.
 
-## Remaining
-
-- [ ] Phase 4 cleanup: remove legacy registry/relevance coupling, migrate follow-ups to `EntityCard`, rewrite stale E2E card assertions.
+- [x] Phase 4 cleanup — legacy registry/relevance coupling removed, follow-ups migrated to `EntityCard`, stale E2E card assertions rewritten.
+  - Active app code no longer imports the legacy registry. `src/lib/chat/cards.ts` lives only in `src/lib/chat/archive/legacy-cards/` for the frozen components; shared payload helpers moved to `src/lib/chat/payloads.ts`.
+  - Relevance filtering and client-side prose dedupe are gone. `classifyIntents` moved to `src/lib/chat/intents.ts`; suggestions derive from the last assistant message's `inlineCards` (`followUpsFor(EntityCard[], prompt)`).
+  - E2E helpers/specs target primitive card selectors (`.loan-card`, `.bill-card`, `.transaction-list-card`, `.pie-chart-card`, `.reward-card`, `.recurring-card`, `.location-card`, `.profile-card`, `.merchant-card`, `.cashflow-card`, `.account-card`, inline `.transaction-card`).
+  - Residual limitation: `present_card` supports account, bill, loan, transaction, merchant, location, and profile kinds; the client still infers the remaining kinds (transaction-list, spending-pie, recurring, reward, goal, cashflow). Several primitive library components remain library-only (`AccountTag`, `ShareBar`, `DeltaBadge`, `Sparkline`, `InlineAction`, `InlineEmpty`, `ExpandRow`, `DefinitionHint`, `BufferedPlaceholder`).
 
 ## Acceptance for every card slice
 

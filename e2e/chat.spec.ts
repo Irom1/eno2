@@ -2,9 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   askChat,
   assistantText,
+  cardKinds,
   cardShells,
   cardText,
-  cardTitles,
   collectErrors,
   expectCardCount,
   expectCardStyle,
@@ -12,8 +12,6 @@ import {
   expectNoErrors,
   waitForChatSettled
 } from './helpers';
-
-const OVERVIEW_KINDS = ['Overview', 'Accounts', 'Rewards', 'Cashflow'];
 
 const STARTER_PROMPTS = [
   'Give me a snapshot of my finances',
@@ -78,13 +76,6 @@ async function mockChatStream(page: Page, chunks: StreamChunk[]): Promise<void> 
       );
     }) as typeof window.fetch;
   }, chunks);
-}
-
-/** Every title must be one of the supplied product labels. */
-function expectTitlesWithin(titles: string[], allowed: string[]): void {
-  for (const title of titles) {
-    expect(allowed, `unexpected card title "${title}"`).toContain(title);
-  }
 }
 
 /** Follow-ups start at the assistant content edge and span the bubble max width. */
@@ -795,12 +786,11 @@ test.describe('chat prompts', () => {
     await waitForChatSettled(page);
 
     await expect(page.locator('.assistant-turn')).toHaveCount(turnsBefore + 1);
-    await expect.poll(() => cardTitles(page), { timeout: 20_000 }).toContain('Bills');
+    await expect.poll(() => page.locator('.bill-card').count(), { timeout: 20_000 }).toBe(1);
 
-    const titles = await cardTitles(page);
     await expect(page.locator('.loan-card')).toHaveCount(1);
-    expect(titles).toContain('Bills');
-    expect(titles).not.toContain('Overview');
+    await expect(page.locator('.bill-card')).toHaveCount(1);
+    await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -994,14 +984,15 @@ test.describe('chat prompts', () => {
     await askChat(page, 'Show me my bills');
 
     await expectCardCount(page, 1);
-    expect(await cardTitles(page)).toEqual(['Bills']);
+    await expect(page.locator('.bill-card')).toHaveCount(1);
+    await expect(page.locator('.bill-card')).toHaveAttribute('data-kind', 'bill');
 
     const lastTurn = page.locator('.assistant-turn').last();
     await expect(lastTurn.locator('.bubble.assistant .richtext')).toHaveCount(2);
 
     const order = await lastTurn.evaluate((turn) => {
       const rich = Array.from(turn.querySelectorAll('.bubble.assistant .richtext'));
-      const cards = turn.querySelector('.chat-cards');
+      const cards = turn.querySelector('.bill-card');
       const intro = rich[0];
       const takeaway = rich[1];
       const follows = (first: Element | undefined, second: Element | undefined): boolean =>
@@ -1183,19 +1174,20 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Show me my bills" renders one Bills card and no duplicated totals', async ({ page }) => {
+  test('"Show me my bills" renders one primitive bill card and no duplicated totals', async ({
+    page
+  }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my bills');
 
     await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(titles).toEqual(['Bills']);
-    expectTitlesWithin(titles, ['Bills']);
-    expect(titles).not.toContain('Overview');
+    const bill = page.locator('.bill-card');
+    await expect(bill).toHaveCount(1);
+    await expect(bill).toHaveAttribute('data-kind', 'bill');
+    await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
     await expectNoCardValueDuplicate(page, ['$4,283.59', '$65.59']);
-    await expect(page.locator('.chat-card .badge')).toHaveCount(1);
-    await expect(page.locator('.chat-card .badge')).toContainText('$');
+    await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
     await expectCardStyle(page);
     expectNoErrors(errors);
   });
@@ -1376,13 +1368,13 @@ test.describe('chat prompts', () => {
     await runPrompt(page, 'Show me my credit card rewards');
 
     await expectCardCount(page, { min: 1 });
-    const titles = await cardTitles(page);
+    const kinds = await cardKinds(page);
     const text = await cardText(page);
     const mentionsVenture = /Venture/i.test(text);
-    const hasRewardsTitle = titles.includes('Rewards');
+    const hasRewardCard = kinds.includes('reward');
     expect(
-      hasRewardsTitle || mentionsVenture,
-      `expected a rewards card or Venture account card, got ${JSON.stringify(titles)}`
+      hasRewardCard || mentionsVenture,
+      `expected a rewards card or Venture account card, got ${JSON.stringify(kinds)}`
     ).toBe(true);
 
     await expectNoCardValueDuplicate(page, ['24,850', '$862']);
@@ -1390,25 +1382,20 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"What credit cards do I have?" lists only credit-card accounts', async ({ page }) => {
+  test('"What credit cards do I have?" answers in prose without an account list card', async ({
+    page
+  }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'What credit cards do I have?');
 
-    await expectCardCount(page, { min: 1 });
-    const titles = await cardTitles(page);
-    const text = await cardText(page);
+    // An accounts list stays in prose: only a single-account payload renders an
+    // account card, and there is no account-list primitive.
+    await expect(page.locator('.account-card')).toHaveCount(0);
 
-    expect(text, `expected a Venture card, got ${JSON.stringify(titles)}`).toMatch(/Venture/i);
-    expect(text).not.toContain('Everyday Checking');
-    expect(text).not.toContain('Emergency Fund');
-
-    // A list card must be labelled for credit cards, never the generic all-accounts title.
-    if (titles.some((title) => title === 'Accounts' || title === 'Credit cards')) {
-      expect(titles).toContain('Credit cards');
-      expect(titles).not.toContain('Accounts');
-    }
-
-    await expect(page.locator('.chat-card .badge')).toHaveCount(0);
+    const prose = await assistantText(page);
+    expect(prose, 'the prose names the Venture card').toMatch(/Venture/i);
+    expect(prose).not.toContain('Everyday Checking');
+    expect(prose).not.toContain('Emergency Fund');
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -1789,22 +1776,21 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Give me a snapshot of my finances" renders an Overview card (max 4)', async ({
+  test('"Give me a snapshot of my finances" renders one primitive cashflow month', async ({
     page
   }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Give me a snapshot of my finances');
 
     await expectCardCount(page, { min: 1, max: 4 });
-    const titles = await cardTitles(page);
-    expect(titles).toContain('Overview');
-    expectTitlesWithin(titles, OVERVIEW_KINDS);
+    await expect(page.locator('.cashflow-card')).toHaveCount(1);
+    await expect(page.locator('.cashflow-card')).toHaveAttribute('data-kind', 'cashflow');
 
     await expectCardStyle(page);
     expectNoErrors(errors);
   });
 
-  test('profile questions return a customer card or text answer', async ({ page }) => {
+  test('profile questions return a primitive profile card or text answer', async ({ page }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my profile');
 
@@ -1816,14 +1802,14 @@ test.describe('chat prompts', () => {
       )
       .toBe(true);
 
-    const titles = await cardTitles(page);
+    const kinds = await cardKinds(page);
     const text = await cardText(page);
     const prose = await assistantText(page);
-    const hasCustomerCard = titles.some((title) => /Account holder/i.test(title));
+    const hasProfileCard = kinds.includes('profile');
     const mentionsMaya = /Maya/i.test(text) || /Maya/i.test(prose);
     expect(
-      hasCustomerCard || mentionsMaya || prose.trim().length > 0,
-      'profile prompt should produce an account-holder card or a text answer'
+      hasProfileCard || mentionsMaya || prose.trim().length > 0,
+      'profile prompt should produce a profile card or a text answer'
     ).toBe(true);
 
     await expectCardStyle(page);

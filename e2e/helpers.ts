@@ -143,20 +143,39 @@ export async function askChat(page: Page, prompt: string): Promise<void> {
   await waitForChatSettled(page);
 }
 
-/** Titles rendered in card headers, in DOM order. */
-export async function cardTitles(page: Page): Promise<string[]> {
-  const titles = await page.locator('.chat-card .card-head h3').allInnerTexts();
-  return titles.map((title) => title.trim()).filter(Boolean);
-}
+/** Every primitive card selector the chat can render. */
+export const PRIMITIVE_CARD_SELECTOR = [
+  '.transaction-card',
+  '.transaction-list-card',
+  '.pie-chart-card',
+  '.bill-card',
+  '.account-card',
+  '.loan-card',
+  '.location-card',
+  '.recurring-card',
+  '.reward-card',
+  '.goal-card',
+  '.cashflow-card',
+  '.merchant-card',
+  '.profile-card'
+].join(', ');
 
-/** Count of rendered card shells. */
+/** Count of rendered primitive card shells. */
 export function cardShells(page: Page) {
-  return page.locator('.chat-card');
+  return page.locator(PRIMITIVE_CARD_SELECTOR);
 }
 
-/** Concatenated text of every rendered card. */
+/** Concatenated text of every rendered primitive card. */
 export async function cardText(page: Page): Promise<string> {
-  return (await page.locator('.chat-card').allInnerTexts()).join('\n');
+  return (await page.locator(PRIMITIVE_CARD_SELECTOR).allInnerTexts()).join('\n');
+}
+
+/** `data-kind` values of the rendered primitive cards, in DOM order. */
+export async function cardKinds(page: Page): Promise<string[]> {
+  const kinds = await page.locator(PRIMITIVE_CARD_SELECTOR).evaluateAll((cards) =>
+    cards.map((card) => card.getAttribute('data-kind') ?? '')
+  );
+  return kinds.filter(Boolean);
 }
 
 /** Rendered markdown of assistant bubbles. */
@@ -165,26 +184,39 @@ export async function assistantText(page: Page): Promise<string> {
 }
 
 /**
- * Card style/label contract: no uppercase eyebrow chips, and no header that
- * just repeats internal naming such as "Rewards points".
+ * Primitive card style contract: no legacy `.chat-card` chrome or eyebrow
+ * labels, and every standalone card sits in a framed `.entity-card` surface
+ * with lift, a border, and the 3px accent strip. Inline transaction rows are
+ * exempt from the standalone frame.
  */
 export async function expectCardStyle(page: Page): Promise<void> {
-  expect(
-    await page.locator('.chat-card .eyebrow').count(),
+  await expect(
+    page.locator('.chat-card'),
+    'legacy chat cards must not render'
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.chat-card .eyebrow'),
     'cards must not render eyebrow labels'
-  ).toBe(0);
+  ).toHaveCount(0);
 
-  for (const title of await cardTitles(page)) {
-    expect(title.toLowerCase(), 'card titles should be product language').not.toBe(
-      'rewards points'
-    );
-  }
-
-  const surfaces = await page.locator('.chat-card').evaluateAll((cards) =>
+  const surfaces = await page.locator(PRIMITIVE_CARD_SELECTOR).evaluateAll((cards) =>
     cards.map((card) => {
-      const style = getComputedStyle(card);
-      const accent = getComputedStyle(card, '::before');
+      const inline = Boolean(card.closest('.bubble.assistant'));
+      const frame = card.closest('.entity-card');
+      if (!frame) {
+        return {
+          inline,
+          framed: false,
+          shadow: 'none',
+          borderTopWidth: 0,
+          accentHeight: 0
+        };
+      }
+      const style = getComputedStyle(frame);
+      const accent = getComputedStyle(frame, '::before');
       return {
+        inline,
+        framed: true,
         shadow: style.boxShadow,
         borderTopWidth: Number.parseFloat(style.borderTopWidth),
         accentHeight: Number.parseFloat(accent.height)
@@ -193,6 +225,8 @@ export async function expectCardStyle(page: Page): Promise<void> {
   );
 
   for (const surface of surfaces) {
+    if (surface.inline) continue;
+    expect(surface.framed, 'standalone primitive cards sit in a contrast frame').toBe(true);
     expect(surface.shadow, 'cards should lift off the chat surface').not.toBe('none');
     expect(surface.borderTopWidth, 'cards need a visible border').toBeGreaterThanOrEqual(1);
     expect(surface.accentHeight, 'cards need a 3px accent strip').toBeGreaterThan(2);

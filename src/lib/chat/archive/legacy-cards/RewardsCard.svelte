@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { asRecord } from '$lib/chat/cards.js';
+  import { asRecord } from './cards.js';
   import ChatCardShell from './ChatCardShell.svelte';
 
   interface Props {

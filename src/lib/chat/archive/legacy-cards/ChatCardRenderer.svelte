@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { ChatCard, ChatCardKind } from '$lib/chat/cards.js';
-  import { asRecord } from '$lib/chat/cards.js';
+  import type { ChatCard, ChatCardKind } from './cards.js';
+  import { asRecord } from './cards.js';
   import AccountCard from './AccountCard.svelte';
   import AccountListCard from './AccountListCard.svelte';
   import AnomaliesCard from './AnomaliesCard.svelte';

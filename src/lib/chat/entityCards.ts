@@ -2,7 +2,7 @@
  * Client-safe inline entity-card models and normalizers.
  * Pure functions only: no server or DOM imports.
  */
-import { asItems } from './cards.js';
+import { asItems } from './payloads.js';
 
 export interface TransactionCardPayload {
   description: string;

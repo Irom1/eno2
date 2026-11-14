@@ -7,7 +7,7 @@
  * returned. Raw records never leave this module: only whitelisted,
  * client-safe `EntityCard` payloads are returned.
  */
-import { asItems } from '$lib/chat/cards.js';
+import { asItems } from '$lib/chat/payloads.js';
 import {
   accountCard,
   billCard,

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { titleCase } from '$lib/format.js';
-  import { asItems } from '$lib/chat/cards.js';
+  import { asItems } from './cards.js';
   import ChatCardShell from './ChatCardShell.svelte';
 
   interface Props {

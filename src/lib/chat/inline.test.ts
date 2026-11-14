@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { ChatCard } from './cards.js';
+import type { EntityCard } from './entityCards.js';
 import { inlineBlocks, revealInlineCards, type InlineBlock } from './inline.js';
 import { renderMarkdown } from '../markdown.js';
 
-function card(id: number, afterText?: number): ChatCard {
-  return { id, kind: 'bills', tool: 'insight_upcoming_bills', payload: { id }, afterText };
+function card(id: number, afterText?: number): EntityCard {
+  return {
+    id,
+    entityId: `bill:${id}`,
+    kind: 'bill',
+    payload: { billId: String(id), payee: 'Test utility', amount: 65.59, dueDate: '2026-11-20' },
+    afterText
+  };
 }
 
 function textBlocks(blocks: InlineBlock[]): string[] {
@@ -98,11 +104,11 @@ describe('inlineBlocks', () => {
   });
 
   it('does not throw on malformed input', () => {
-    expect(inlineBlocks('hello', null as unknown as ChatCard[])).toEqual([
+    expect(inlineBlocks('hello', null as unknown as EntityCard[])).toEqual([
       { type: 'text', text: 'hello' }
     ]);
     expect(() =>
-      inlineBlocks('hello', [null as unknown as ChatCard, card(1, 0)])
+      inlineBlocks('hello', [null as unknown as EntityCard, card(1, 0)])
     ).not.toThrow();
     expect(inlineBlocks(undefined as unknown as string, [])).toEqual([]);
   });

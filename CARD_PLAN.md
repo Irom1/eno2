@@ -32,7 +32,7 @@ Shipped:
 
 Next:
 
-- Phase 4 cleanup (legacy registry/relevance coupling, follow-up migration, stale E2E assertions).
+- None. Phase 4 cleanup shipped; residual limitations are noted under Shipped (`present_card` kind coverage and library-only primitives).
 
 ## 2. Design principles
 
@@ -63,14 +63,14 @@ Server (`src/routes/api/chat/+server.ts` → `src/lib/server/agent.ts`):
 
 Client (`src/routes/[view=wallet]/ChatPanel.svelte`):
 
-1. The SSE parser appends text deltas and pushes every insight into the legacy `message.cards` collection (kept for follow-ups).
-2. Selected insights also build normalized `EntityCard` values in `message.inlineCards`; built-in builders cover anomalies, transaction lists, spending pies, single bills, single accounts, single loans, single locations, single recurring charges, rewards, goal projections, and monthly cashflow.
-3. Rendering derives, in order:
+1. The SSE parser appends text deltas and builds normalized `EntityCard` values in `message.inlineCards` from selected insights; built-in builders cover anomalies, transaction lists, spending pies, single bills, single accounts, single loans, single locations, single recurring charges, rewards, goal projections, and monthly cashflow. There is no legacy `message.cards` collection.
+2. Rendering derives, in order:
    - `anchorEntityCards(text, cards)` re-anchors transaction and recurring cards after their description, bill cards after their payee, account cards after their nickname (or type), loan cards after their type, location cards after their name, reward cards after their label, and cashflow cards after their period. Goal cards are not name-anchored.
    - `revealInlineCards(cards, textLength, pending)` buffers cards until the streamed text reaches their `afterText` offset.
    - `inlineBlocks(text, readyCards)` splits prose into text and card blocks, never splitting a markdown code/bold/italic span.
-4. Text blocks render as markdown bubbles; card blocks render the matching component.
-5. When prose is empty, `ensureExplanation` supplies a deterministic sentence for anomalies and transaction lists.
+3. Text blocks render as markdown bubbles; card blocks render the matching component.
+4. When prose is empty, `ensureExplanation` supplies a deterministic sentence for anomalies and transaction lists.
+5. Follow-ups derive from the last assistant turn's `inlineCards` (`followUpsFor(EntityCard[], prompt)`); card kinds map to the suggestion matrix, and the prompt intents (`classifyIntents`) are only the no-card fallback.
 
 Deep links: `transactionHref` builds `/dashboard?customer=…&account=…&txn=…`; `accountHref` builds `/dashboard?customer=…&account=…` and opens the account Activity view. The dashboard reads those query parameters and scrolls/highlights the matching row. Cards without complete ids render without a link.
 
@@ -230,7 +230,7 @@ Inference:
 | Phase 1 | `EntityCard` schema, per-kind normalizers, `present_card`, ownership validation, `card` SSE event, flag (`off` / `v2`) | Shipped | Flag off matches current behavior; flag v2 emits normalized events the existing renderer already handles; ownership rejects cross-customer and missing-account ids | Flag to `off` |
 | Phase 2 | First cards: `TransactionCard`, `TransactionListCard`, `SpendingPieCard`, `BillCard`, `AccountCard` | Transaction cards, transaction list, pie, bill, account, loan, location, and recurring cards shipped; remaining Phase 3 cards planned | Cards appear inline with correct contrast; 1–2 per turn; no fallback; bills/accounts/loans/locations/recurring show one entity only | Revert slice |
 | Phase 3 | Remaining cards: loan, location, recurring, reward, goal, cashflow | All shipped, including reward, goal, and cashflow | Each kind is primitive, accessible, and theme-safe | Revert slice |
-| Phase 4 | Remove legacy registry/relevance coupling; migrate follow-ups to `EntityCard`; rewrite stale E2E card assertions | Planned | No legacy card-kind rendering paths remain | Revert commit |
+| Phase 4 | Remove legacy registry/relevance coupling; migrate follow-ups to `EntityCard`; rewrite stale E2E card assertions | Shipped | No legacy card-kind rendering paths remain; follow-ups consume `EntityCard[]`; E2E helpers/specs target primitive selectors | Revert commit |
 
 Phase 2 slice refinements already shipped:
 
@@ -262,6 +262,9 @@ Unit (`vitest`):
 - Profile: single-row vs list (list returns null), name join, city/state-only location, street/zip/contact/identifier field whitelist, missing id/name, malformed payloads, name and first-name fallback anchoring.
 - Prompt: primitive-card language, the single-bill/single-account rule, the single-loan/location/recurring-charge/reward/goal/cashflow/merchant/profile rule, the spending intro/takeaway rule, and rule 14 for `present_card`.
 - `present_card`: candidate collection per tool, duplicate collapsing, ownership acceptance/rejection (cross-customer and missing account), unknown id, kind mismatch, profile/customer id, whitelist normalization, and the agent integration (normalized `card` event with `afterText`, no MCP call for `present_card`, rejected declarations).
+- Payload helpers (`payloads.test.ts`): `asItems` list shapes, single-record wrapping, wrapper-only payloads, non-record filtering; `asRecord` fallbacks.
+- Intents (`intents.test.ts`): union of mentioned intents, empty/unknown/malformed prompts.
+- Follow-ups (`followUps.test.ts`): `EntityCard` kind → topic matrix, prompt exclusion, dedupe, 3–4 cap, no-card intent fallback, generic fallback, malformed input never throws.
 
 E2E (`e2e/chat.spec.ts`, Playwright; current policy forbids running it):
 
@@ -356,7 +359,12 @@ Client libraries:
 - `src/lib/chat/inline.ts`
 - `src/lib/chat/inline.test.ts`
 - `src/lib/chat/thinking.ts`
-- `src/lib/chat/cards.ts` (legacy registry retained for follow-ups)
+- `src/lib/chat/payloads.ts` — shared `isRecord`/`asItems`/`asRecord` payload helpers
+- `src/lib/chat/payloads.test.ts`
+- `src/lib/chat/intents.ts` — `Intent` and `classifyIntents` (no card-relevance filtering)
+- `src/lib/chat/intents.test.ts`
+- `src/lib/chat/followUps.ts` — `followUpsFor(EntityCard[], prompt)`
+- `src/lib/chat/followUps.test.ts`
 - `src/lib/format.ts`
 
 Server:
@@ -376,7 +384,7 @@ Server:
 
 Archived (do not use):
 
-- `src/lib/chat/archive/legacy-cards/` (18 files listed in section 5)
+- `src/lib/chat/archive/legacy-cards/` (18 components plus the archive-only `cards.ts` registry and README; active app code no longer imports any of it)
 
 Plans and tests:
 

@@ -2,7 +2,6 @@
   import { tick } from 'svelte';
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
-  import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
   import {
     accountCard,
     anchorEntityCards,
@@ -36,7 +35,7 @@
     THINKING_COMPOSING,
     type ThinkingState
   } from '$lib/chat/thinking.js';
-  import { classifyIntents, visibleCards } from '$lib/chat/relevance.js';
+  import { classifyIntents } from '$lib/chat/intents.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
   import FollowUps from './FollowUps.svelte';
@@ -69,7 +68,6 @@
     text: string;
     prompt?: string;
     pending?: boolean;
-    cards?: ChatCard[];
     inlineCards?: EntityCard[];
     intro?: boolean;
   }
@@ -117,9 +115,9 @@
     if (!hasUserMessage) return [...STARTER_PROMPTS];
     const last = [...messages].reverse().find((message) => message.role === 'assistant');
     if (!last || last.pending) return [];
-    const shown = visibleCards(last.cards ?? [], last.prompt ?? '');
-    if (!last.text && shown.length === 0) return [];
-    return followUpsFor(shown, last.prompt ?? '').slice(0, 3);
+    const cards = last.inlineCards ?? [];
+    if (!last.text && cards.length === 0) return [];
+    return followUpsFor(cards, last.prompt ?? '').slice(0, 3);
   });
 
   function scrollLog(): void {
@@ -321,24 +319,6 @@
             const payload = data.payload;
             const accountId = typeof data.accountId === 'string' ? data.accountId : '';
             const intents = classifyIntents(message.prompt ?? '');
-            const fingerprint = `${data.kind}:${JSON.stringify(payload)}`;
-            const existing = message.cards ?? [];
-            if (
-              existing.some(
-                (card) => `${card.tool}:${JSON.stringify(card.payload)}` === fingerprint
-              )
-            ) {
-              break;
-            }
-            if (!message.cards) message.cards = [];
-            message.cards.push({
-              id: ++cardSeq,
-              kind: chatCardKind(data.kind),
-              tool: data.kind,
-              payload,
-              afterText:
-                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER
-            });
             if (data.kind === 'insight_anomalies') {
               // If the tool result arrives before any prose, anchor the cards at
               // the end of the text so the answer reads first and the cited
@@ -389,7 +369,7 @@
                 cardSeq = Math.max(cardSeq, incoming.id);
               }
             }
-            if (chatCardKind(data.kind) === 'account') {
+            if (data.kind === 'nessie_get_account') {
               // Accounts are single-entity cards; an all-accounts list stays in
               // prose, and a later account insight replaces the earlier card.
               const anchor =
@@ -407,7 +387,7 @@
                 cardSeq = Math.max(cardSeq, incoming.id);
               }
             }
-            if (chatCardKind(data.kind) === 'loans') {
+            if (data.kind === 'nessie_list_account_loans') {
               // One primitive loan card per turn: the largest balance wins, and
               // a later loan insight replaces the earlier card.
               const anchor =
@@ -466,7 +446,7 @@
             }
             if (
               intents.has('rewards') &&
-              (chatCardKind(data.kind) === 'accounts' ||
+              (data.kind === 'nessie_list_customer_accounts' ||
                 (data.kind === 'insight_financial_overview' && positiveTotalRewards(payload)))
             ) {
               // One primitive reward card per turn: the highest credit-account
@@ -494,7 +474,10 @@
               const incoming = cashflowCard(payload, anchor, cardSeq + 1);
               if (incoming) replaceInlineCard(message, incoming);
             }
-            if (chatCardKind(data.kind) === 'merchants') {
+            if (
+              data.kind === 'nessie_list_merchants' ||
+              data.kind === 'nessie_get_merchant'
+            ) {
               // One primitive merchant per turn: the first valid merchant, with
               // a later merchant insight replacing the earlier card.
               const anchor =
@@ -502,7 +485,7 @@
               const incoming = merchantCard(payload, anchor, cardSeq + 1, { customerId });
               if (incoming) replaceInlineCard(message, incoming);
             }
-            if (chatCardKind(data.kind) === 'customer') {
+            if (data.kind === 'nessie_get_customer') {
               // One primitive profile per turn, and only for a single-customer
               // payload; a customer list stays in prose. Later profiles replace.
               const anchor =
@@ -510,7 +493,11 @@
               const incoming = profileCard(payload, anchor, cardSeq + 1);
               if (incoming) replaceInlineCard(message, incoming);
             }
-            if (chatCardKind(data.kind) === 'transactions') {
+            if (
+              data.kind === 'nessie_list_account_deposits' ||
+              data.kind === 'nessie_list_account_withdrawals' ||
+              data.kind === 'nessie_list_account_transactions'
+            ) {
               // Deposits and withdrawals in one turn share a single merged list.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
