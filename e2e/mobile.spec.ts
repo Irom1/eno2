@@ -122,3 +122,41 @@ test.describe('iPhone 13 viewport', () => {
     expectNoErrors(errors);
   });
 });
+
+test.describe('360x640 keyboard viewport', () => {
+  test.use({ viewport: { width: 360, height: 640 } });
+
+  test('uses the compact placeholder and keeps the composer above the keyboard', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await page.goto('/chat');
+    const field = page.locator('textarea[aria-label="Ask Capital One"]');
+    await expect(field).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
+
+    await expect(field).toHaveAttribute('placeholder', 'Ask about your money…');
+    await expectNoHorizontalOverflow(page);
+
+    // The hidden auto-height mirror includes the placeholder, so the pill grows
+    // instead of letting the wrapped placeholder spill.
+    const mirror = await page.locator('.composer-field').evaluate((element) =>
+      getComputedStyle(element, '::after').content
+    );
+    expect(mirror).toContain('Ask about your money');
+
+    // Simulate the on-screen keyboard shrinking the visual viewport to 360px.
+    await page.evaluate(() => {
+      document.documentElement.style.setProperty('--chat-viewport-height', '360px');
+      document.documentElement.style.setProperty('--chat-viewport-offset', '0px');
+      document.querySelector('.dashboard')?.classList.add('keyboard-open');
+    });
+
+    const bottom = await page
+      .locator('.composer')
+      .evaluate((element) => element.getBoundingClientRect().bottom);
+    expect(bottom).toBeLessThanOrEqual(360);
+    await expectNoHorizontalOverflow(page);
+    expectNoErrors(errors);
+  });
+});
