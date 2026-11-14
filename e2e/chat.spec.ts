@@ -226,6 +226,151 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('a merchant payload renders one primitive merchant card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'You shop at Whole Foods Market often. '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_list_merchants',
+        payload: {
+          count: 2,
+          truncated: false,
+          items: [
+            {
+              _id: 'merchant-whole-foods',
+              name: 'Whole Foods Market',
+              category: 'groceries',
+              address: {
+                street: '123 Main St',
+                city: 'Arlington',
+                state: 'VA',
+                zip: '22201'
+              }
+            },
+            {
+              _id: 'merchant-other',
+              name: 'Other Merchant',
+              category: 'retail'
+            }
+          ]
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'It is your usual grocery stop.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Where do I shop?');
+
+    const card = page.locator('.merchant-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'merchant');
+
+    const text = await card.innerText();
+    expect(text).toContain('Whole Foods Market');
+    expect(text).toContain('Groceries');
+    expect(text).toContain('123 Main St, Arlington, VA');
+    // Primitive: one merchant only, no amount/count, recommendation, or list.
+    expect(text).not.toContain('Other Merchant');
+    expect(text).not.toMatch(/\$|\bcount\b|spend here|recommend|tip:/i);
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .merchant-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the merchant card is standalone'
+    ).toBe(false);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('a single customer payload renders one primitive profile card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'This is the profile on file for Maya Chen. '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_get_customer',
+        payload: {
+          _id: 'cust-maya',
+          firstName: 'Maya',
+          lastName: 'Chen',
+          email: 'maya@example.com',
+          phone: '555-0100',
+          address: {
+            street: '123 Main St',
+            city: 'Arlington',
+            state: 'VA',
+            zip: '22201'
+          }
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'You can update it from the app if anything changes.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my profile');
+
+    const card = page.locator('.profile-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'profile');
+
+    const text = await card.innerText();
+    expect(text).toContain('Maya Chen');
+    expect(text).toContain('Arlington, VA');
+    // Primitive and private: no street, zip, contact, or identifier fields.
+    expect(text).not.toContain('123 Main St');
+    expect(text).not.toContain('22201');
+    expect(text).not.toContain('maya@example.com');
+    expect(text).not.toContain('555-0100');
+    expect(text).not.toContain('cust-maya');
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .profile-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the profile card is standalone'
+    ).toBe(false);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
   test('a goal projection renders one primitive goal card', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);
@@ -961,6 +1106,80 @@ test.describe('chat prompts', () => {
 
     await waitForChatSettled(page);
     await expect(turn.locator('.transaction-card')).toHaveCount(1);
+    expectNoErrors(errors);
+  });
+
+  test('buffers a merchant card until the prose reaches its name', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'nessie_list_merchants',
+          payload: {
+            count: 1,
+            truncated: false,
+            items: [
+              {
+                _id: 'merchant-whole-foods',
+                name: 'Whole Foods Market',
+                category: 'groceries'
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: { type: 'text', delta: 'I checked where you shop.' }
+      },
+      {
+        delay: 2500,
+        event: 'text',
+        data: { type: 'text', delta: ' Whole Foods Market comes up most often.' }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Where do I shop?');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await composer.press('Enter');
+
+    const turn = page.locator('.assistant-turn').last();
+    const prose = turn.locator('.bubble.assistant .richtext');
+
+    // The insight has arrived but the merchant name has not been streamed, so
+    // the buffered card stays hidden above the prose.
+    await expect(prose).toContainText('checked where you shop', { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.merchant-card')).toHaveCount(0);
+    await expect(page.locator('.loading-line')).toBeVisible();
+
+    // Once the prose reaches the merchant name, the card reveals while pending.
+    await expect(turn.locator('.merchant-card')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.merchant-card')).toContainText('Whole Foods Market');
+    expect(
+      await turn
+        .locator('.merchant-card')
+        .first()
+        .evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the buffered merchant card is standalone'
+    ).toBe(false);
+
+    await waitForChatSettled(page);
+    await expect(turn.locator('.merchant-card')).toHaveCount(1);
     expectNoErrors(errors);
   });
 

@@ -2,7 +2,7 @@
 
 Canonical inventory and plan for every chat card and inline primitive in Eno 2.0.
 
-Status: Phase 0 shipped (legacy cards archived, chat is prose-first). Phase 2 and the Phase 3 primitive cards are largely shipped: inline single-transaction cards, a merged transaction-list card, the spending-by-category pie chart, single Bill/Account cards, single Loan/Location/RecurringCharge cards, and the Reward/Goal/CashflowPoint cards are live, along with the shared `EntityKeyValue` primitive. Merchant, profile, and `present_card` remain planned.
+Status: Phase 0 shipped (legacy cards archived, chat is prose-first). Phase 2 and the Phase 3 primitive cards are largely shipped: inline single-transaction cards, a merged transaction-list card, the spending-by-category pie chart, single Bill/Account cards, single Loan/Location/RecurringCharge cards, and the Reward/Goal/CashflowPoint cards are live, along with the shared `EntityKeyValue` primitive. Merchant and profile cards are now shipped too; `present_card` remains planned.
 
 See `GOAL_PLAN.md` for the active implementation checklist; this document remains the canonical detail and design reference.
 
@@ -27,10 +27,10 @@ Shipped:
 - Phase 2 second slice: `BillCard` (one largest upcoming bill from `insight_upcoming_bills`) and `AccountCard` (exactly one account; never an account list), plus the shared `StatusChip` primitive.
 - Phase 2 third slice: `LoanCard` (one loan), `LocationCard` (one ATM or branch), and `RecurringChargeCard` (one recurring charge), each a single-entity primitive.
 - Phase 3 first slice: `RewardCard` (highest credit-account reward or overview total), `GoalCard` (target/current/months/projected date), `CashflowPointCard` (latest complete month), plus the shared `EntityKeyValue` primitive.
+- Phase 3 second slice: `MerchantCard` (one merchant, first valid row) and `ProfileCard` (one customer from a single-row payload, name plus city/state only).
 
 In progress / next:
 
-- Wiring the remaining insight families (merchant, profile) to a primitive card where a card genuinely helps.
 - `present_card`, ownership validation, the `card` SSE event, and the v2 flag.
 
 ## 2. Design principles
@@ -99,13 +99,15 @@ Buffering details:
 | `src/routes/[view=wallet]/inline-cards/RewardCard.svelte` | `card: RewardEntityCard` | Shipped | One reward balance: label and `points.toLocaleString()` plus “pts”. Optional account deep link. No invented dollar value. |
 | `src/routes/[view=wallet]/inline-cards/GoalCard.svelte` | `card: GoalEntityCard` | Shipped | One goal: `EntityKeyValue` rows for target, current, months to target, and projected date. Optional account deep link. No on-track or advice copy. |
 | `src/routes/[view=wallet]/inline-cards/CashflowPointCard.svelte` | `card: CashflowPointEntityCard` | Shipped | One month: `EntityKeyValue` rows for period, inflow, outflow, and signed net. No interpretation. |
+| `src/routes/[view=wallet]/inline-cards/MerchantCard.svelte` | `card: MerchantEntityCard` | Shipped | One merchant: name, title-cased category when present, address when present. No amount, count, recommendation, or link. |
+| `src/routes/[view=wallet]/inline-cards/ProfileCard.svelte` | `card: ProfileEntityCard` | Shipped | One customer: initials avatar, name, and city/state when present. No street, zip, contact, or identifier fields; no action copy. |
 | `src/routes/[view=wallet]/ChatPanel.svelte` | `open`, `customerId`, `initialPrompt`, `onClose`, `canSend`, `variant` | Shipped | Bubbles, streaming text, inline blocks, thinking checklist, loading line, follow-ups, send/abort lifecycle. |
 | `src/lib/chat/thinking.ts` | `initialThinking`, `pushThinkingStep`, `friendlyToolLabel`, `THINKING_COMPOSING` | Shipped | Pure, non-technical thinking-step state machine. |
 | `src/lib/components/EnoThinking.svelte` | `active?: boolean`, `variant?: EnoVariant`, `size?: number` | Shipped | Eno avatar; pulses while active. |
 | `src/routes/[view=wallet]/FollowUps.svelte` | `suggestions`, `disabled?`, `onSelect` | Shipped | Suggested follow-up rows with arrows. |
 | `src/lib/components/Eno.svelte` | `variant?`, `size?`, `alt?`, `class?` | Shipped | Static Eno image used by layout/empty states. |
 | `src/lib/chat/inline.ts` | `revealInlineCards`, `inlineBlocks` | Shipped | Pending buffer, markdown-safe anchors, text/card block split. |
-| `src/lib/chat/entityCards.ts` | types plus `anomalyTransactionCards`, `transactionListCard`, `mergeTransactionListCard`, `spendingPieCard`, `billCard`, `accountCard`, `loanCard`, `locationCard`, `recurringCard`, `rewardCard`, `goalCard`, `cashflowCard`, `anchorEntityCards`, `mergeEntityCards`, `transactionHref`, `accountHref` | Shipped | Pure, client-safe normalization and placement helpers. |
+| `src/lib/chat/entityCards.ts` | types plus `anomalyTransactionCards`, `transactionListCard`, `mergeTransactionListCard`, `spendingPieCard`, `billCard`, `accountCard`, `loanCard`, `locationCard`, `recurringCard`, `rewardCard`, `goalCard`, `cashflowCard`, `merchantCard`, `profileCard`, `anchorEntityCards`, `mergeEntityCards`, `transactionHref`, `accountHref` | Shipped | Pure, client-safe normalization and placement helpers. |
 
 Avatar/layout note: the assistant turn uses `EnoThinking` beside `.assistant-content`; chat bubbles and standalone cards are siblings inside that content column. The pie and list cards are intentionally standalone `CardFrame` cards, never pulled into the transaction bubble.
 
@@ -125,8 +127,8 @@ Avatar/layout note: the assistant turn uses `EnoThinking` beside `.assistant-con
 | `RewardCard` | `reward` | `rewardId`, `label`, `points`, `accountId?`, `customerId?` | `nessie_list_customer_accounts` accounts list; `insight_financial_overview` total | Standalone `CardFrame` | Shipped in this pass | `inline-cards/RewardCard.svelte`; `rewardCard` | One reward: the highest `rewards > 0` on a credit account, labelled by nickname (or type), else the positive overview `totalRewards` as “Total rewards”. No invented dollar value. Optional account link. |
 | `GoalCard` | `goal` | `goalId`, `accountId?`, `target`, `current`, `monthsToTarget`, `projectedDate?`, `customerId?` | `insight_goal_projection` | Standalone `CardFrame` | Shipped in this pass | `inline-cards/GoalCard.svelte`; `goalCard` | One goal: target, current balance, months to target when finite, and a projected date when `asOf` parses. No on-track, progress narrative, or advice copy. Optional account link. |
 | `CashflowPointCard` | `cashflow` | `period`, `inflow`, `outflow`, `net` | `insight_financial_overview.monthlyCashflow` | Standalone `CardFrame` | Shipped in this pass | `inline-cards/CashflowPointCard.svelte`; `cashflowCard` | One month: the latest complete month, falling back to the last entry. Net uses the provided value or inflow minus outflow, signed in display. No interpretation. |
-| `MerchantCard` | `merchant` | `name`, `amount`, `count` | Merchant tools | Standalone | Planned / later | — | One merchant. |
-| `ProfileCard` | `profile` | `name`, `email?`, `phone?` | Customer tools | Standalone | Planned / later | — | One customer; no sensitive identifiers. |
+| `MerchantCard` | `merchant` | `merchantId`, `name`, `category?`, `address?`, `customerId?` | `nessie_list_merchants`, `nessie_get_merchant` | Standalone `CardFrame` | Shipped in this pass | `inline-cards/MerchantCard.svelte`; `merchantCard` | One merchant: the first valid row, anchored after its name mention. Address composes `street, city, state`. The source has no spend amount or transaction count, so neither is shown; no recommendation or link. |
+| `ProfileCard` | `profile` | `customerId`, `name`, `location?` (`City, State`) | `nessie_get_customer`, single-customer payloads | Standalone `CardFrame` | Shipped in this pass | `inline-cards/ProfileCard.svelte`; `profileCard` | One customer only; a customer list returns null and stays in prose. Name plus city/state only: never street, zip, phone, email, or account/customer identifiers in the payload or DOM. |
 
 Explicitly omitted:
 
@@ -248,7 +250,9 @@ Unit (`vitest`):
 - Reward: highest credit-account rewards selection, nickname/type fallback, zero/non-credit rewards ignored, overview total fallback, no invented dollar value, malformed payloads, label anchoring.
 - Goal: projection parsing, target/current validation, `monthsToTarget` null/zero/negative handling, projected-date month arithmetic, no advice fields, malformed payloads, no name anchoring.
 - Cashflow: latest complete month, last-entry fallback, net fallback from inflow minus outflow, malformed rows, empty payloads, period formatting, period anchoring.
-- Prompt: primitive-card language, the single-bill/single-account rule, the single-loan/location/recurring-charge/reward/goal/cashflow rule, and the spending intro/takeaway rule.
+- Merchant: first-valid selection from a list or single record, id/name requirements, address composition (`street, city, state`, no zip), optional category/address, malformed payloads, name anchoring.
+- Profile: single-row vs list (list returns null), name join, city/state-only location, street/zip/contact/identifier field whitelist, missing id/name, malformed payloads, name and first-name fallback anchoring.
+- Prompt: primitive-card language, the single-bill/single-account rule, the single-loan/location/recurring-charge/reward/goal/cashflow/merchant/profile rule, and the spending intro/takeaway rule.
 
 E2E (`e2e/chat.spec.ts`, Playwright; current policy forbids running it):
 
@@ -263,6 +267,9 @@ E2E (`e2e/chat.spec.ts`, Playwright; current policy forbids running it):
 - Rewards prompts render one `.reward-card` with a label and points; no invented dollar value and no legacy `.chat-card`.
 - Goal prompts render one `.goal-card` with target/current/months/projected date; no on-track or advice copy.
 - Cashflow or overview prompts render one `.cashflow-card` with period, inflow, outflow, and signed net; no interpretation.
+- Merchant prompts render one `.merchant-card` with one name, optional category, and optional address; no legacy `.chat-card`, merchant list, amount, or count.
+- Profile prompts render one `.profile-card` with name and city/state only; no street, zip, contact, or identifier fields.
+- Merchant cards are standalone and stay buffered until the prose reaches the merchant name.
 - Buffered cards appear only after the prose reaches their anchor.
 - Theme contrast, reduced motion, accessibility names, and deep-link navigation.
 

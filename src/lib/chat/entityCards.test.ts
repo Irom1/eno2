@@ -11,9 +11,11 @@ import {
   goalCard,
   loanCard,
   locationCard,
+  merchantCard,
   mergeEntityCards,
   mergeTransactionListCards,
   normalizeMaskedAccountNumber,
+  profileCard,
   recurringCard,
   rewardCard,
   spendingPieCard,
@@ -27,6 +29,8 @@ import {
   type GoalEntityCard,
   type LoanEntityCard,
   type LocationEntityCard,
+  type MerchantEntityCard,
+  type ProfileEntityCard,
   type RecurringChargeEntityCard,
   type RewardEntityCard,
   type SpendingPieEntityCard,
@@ -1627,6 +1631,146 @@ describe('cashflowCard', () => {
   });
 });
 
+describe('merchantCard', () => {
+  it('builds one merchant with a composed address and context customer id', () => {
+    const card = merchantCard(
+      {
+        _id: 'merchant-1',
+        name: 'Whole Foods Market',
+        category: 'groceries',
+        address: { street: '123 Main St', city: 'Arlington', state: 'VA', zip: '22201' }
+      },
+      42,
+      7,
+      { customerId: 'cust-maya' }
+    );
+
+    expect(card).toEqual({
+      id: 7,
+      entityId: 'merchant:merchant-1',
+      kind: 'merchant',
+      afterText: 42,
+      payload: {
+        merchantId: 'merchant-1',
+        name: 'Whole Foods Market',
+        category: 'groceries',
+        address: '123 Main St, Arlington, VA',
+        customerId: 'cust-maya'
+      }
+    });
+  });
+
+  it('selects the first valid merchant from a list and skips malformed rows', () => {
+    const card = merchantCard(
+      {
+        items: [
+          null,
+          { name: 'No Id' },
+          { _id: 'm-2' },
+          {
+            _id: 'm-3',
+            name: 'Blue Bottle Coffee',
+            address: { street: '1 Market St', city: 'San Francisco', state: 'CA' }
+          },
+          { _id: 'm-4', name: 'Later Merchant' }
+        ]
+      },
+      0,
+      3
+    );
+
+    expect(card?.payload.merchantId).toBe('m-3');
+    expect(card?.payload.name).toBe('Blue Bottle Coffee');
+    expect(card?.payload.address).toBe('1 Market St, San Francisco, CA');
+    expect(card?.payload.category).toBeUndefined();
+    expect(card).not.toHaveProperty('payload.customerId');
+  });
+
+  it('omits missing category and address and accepts a single merchant record', () => {
+    const card = merchantCard({ _id: 'm-1', name: 'Netflix' }, 0, 1);
+    expect(card?.payload).toEqual({ merchantId: 'm-1', name: 'Netflix' });
+    expect(card?.payload).not.toHaveProperty('category');
+    expect(card?.payload).not.toHaveProperty('address');
+  });
+
+  it('returns null for malformed or empty merchant payloads', () => {
+    expect(merchantCard(null, 0, 1)).toBeNull();
+    expect(merchantCard([], 0, 1)).toBeNull();
+    expect(merchantCard({ count: 0, message: 'none' }, 0, 1)).toBeNull();
+    expect(merchantCard({ _id: 'm-1' }, 0, 1)).toBeNull();
+    expect(merchantCard({ name: 'No Id' }, 0, 1)).toBeNull();
+    expect(merchantCard('nope', 0, 1)).toBeNull();
+  });
+});
+
+describe('profileCard', () => {
+  it('builds one profile with name and city/state only', () => {
+    const card = profileCard(
+      {
+        _id: 'cust-maya',
+        firstName: 'Maya',
+        lastName: 'Chen',
+        email: 'maya@example.com',
+        phone: '555-0100',
+        address: {
+          street: '123 Main St',
+          city: 'Arlington',
+          state: 'VA',
+          zip: '22201'
+        }
+      },
+      12,
+      5
+    );
+
+    expect(card).toEqual({
+      id: 5,
+      entityId: 'profile:cust-maya',
+      kind: 'profile',
+      afterText: 12,
+      payload: { customerId: 'cust-maya', name: 'Maya Chen', location: 'Arlington, VA' }
+    });
+    expect(card?.payload).not.toHaveProperty('street');
+    expect(card?.payload).not.toHaveProperty('zip');
+    expect(card?.payload).not.toHaveProperty('phone');
+    expect(card?.payload).not.toHaveProperty('email');
+  });
+
+  it('accepts a single-customer list wrapper and omits a missing location', () => {
+    const card = profileCard(
+      { items: [{ _id: 'cust-1', firstName: 'Ada', lastName: 'Lovelace' }] },
+      0,
+      1
+    );
+    expect(card?.payload).toEqual({ customerId: 'cust-1', name: 'Ada Lovelace' });
+    expect(card?.payload).not.toHaveProperty('location');
+  });
+
+  it('returns null for a customer list with more than one row', () => {
+    expect(
+      profileCard(
+        {
+          items: [
+            { _id: 'cust-1', firstName: 'Maya', lastName: 'Chen' },
+            { _id: 'cust-2', firstName: 'Ada', lastName: 'Lovelace' }
+          ]
+        },
+        0,
+        1
+      )
+    ).toBeNull();
+  });
+
+  it('skips missing ids/names and malformed payloads', () => {
+    expect(profileCard({ firstName: 'Maya', lastName: 'Chen' }, 0, 1)).toBeNull();
+    expect(profileCard({ _id: 'cust-1' }, 0, 1)).toBeNull();
+    expect(profileCard({ _id: 'cust-1', firstName: ' ', lastName: '' }, 0, 1)).toBeNull();
+    expect(profileCard(null, 0, 1)).toBeNull();
+    expect(profileCard([], 0, 1)).toBeNull();
+    expect(profileCard({ count: 1 }, 0, 1)).toBeNull();
+  });
+});
+
 describe('anchorEntityCards', () => {
   function bill(id: number, payee: string, afterText?: number): BillEntityCard {
     return {
@@ -1776,6 +1920,66 @@ describe('anchorEntityCards', () => {
     const goalText = 'Your savings goal is within reach.';
     const [anchoredGoal] = anchorEntityCards(goalText, [goal]);
     expect(anchoredGoal?.afterText).toBe(77);
+  });
+
+  it('anchors merchants and profiles after their name', () => {
+    const merchant: MerchantEntityCard = {
+      id: 1,
+      entityId: 'merchant:m-1',
+      kind: 'merchant',
+      payload: { merchantId: 'm-1', name: 'Whole Foods Market' }
+    };
+    const profile: ProfileEntityCard = {
+      id: 2,
+      entityId: 'profile:cust-maya',
+      kind: 'profile',
+      payload: { customerId: 'cust-maya', name: 'Maya Chen' },
+      afterText: 99
+    };
+
+    const merchantText = 'Whole Foods Market is nearby.';
+    const [anchoredMerchant] = anchorEntityCards(merchantText, [merchant]);
+    expect(anchoredMerchant?.afterText).toBe(merchantText.indexOf('is'));
+
+    const profileText = 'Maya Chen banks here.';
+    const [anchoredProfile] = anchorEntityCards(profileText, [profile]);
+    expect(anchoredProfile?.afterText).toBe(profileText.indexOf('banks'));
+
+    const firstNameText = 'I found your profile, Maya.';
+    const [fallbackProfile] = anchorEntityCards(firstNameText, [profile]);
+    expect(fallbackProfile?.afterText).toBe(firstNameText.indexOf('.') + 1);
+  });
+
+  it('leaves goal and list cards unchanged while anchoring a merchant', () => {
+    const merchant: MerchantEntityCard = {
+      id: 1,
+      entityId: 'merchant:m-1',
+      kind: 'merchant',
+      payload: { merchantId: 'm-1', name: 'Blue Bottle Coffee' }
+    };
+    const goal: GoalEntityCard = {
+      id: 2,
+      entityId: 'goal:acct-1:20000',
+      kind: 'goal',
+      payload: { goalId: 'goal:acct-1:20000', target: 20000, current: 5000, monthsToTarget: 4 },
+      afterText: 33
+    };
+    const list = transactionListCard(
+      { items: [{ _id: 'a', description: 'APPLE', amount: 1 }] },
+      44,
+      3
+    );
+    if (!list) throw new Error('expected list card');
+
+    const anchored = anchorEntityCards('Try Blue Bottle Coffee this week.', [
+      merchant,
+      goal,
+      list
+    ]);
+
+    expect(anchored[0]?.afterText).toBe('Try Blue Bottle Coffee this week.'.indexOf('this'));
+    expect(anchored[1]).toEqual(goal);
+    expect(anchored[2]).toEqual(list);
   });
 
   it('preserves bill and account cards through mergeEntityCards without counting the cap', () => {

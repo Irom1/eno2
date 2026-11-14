@@ -77,6 +77,12 @@ describe("buildSystemInstruction", () => {
       'For rewards, a savings goal, or monthly cashflow, show one primitive card with one balance, target, or month; keep comparisons, progress narratives, and advice in the prose, and do not repeat the card\'s values.'
     );
     expect(instruction).toContain(
+      'For merchants and profiles, show one primitive card at most: one merchant or one customer.'
+    );
+    expect(instruction).toContain(
+      'Keep merchant lists and multiple customers in the prose, never put account or contact identifiers in the card, and keep the insight and tip in the prose.'
+    );
+    expect(instruction).toContain(
       'Do not ask for or describe a broad “everything” card.'
     );
     expect(instruction).toContain(

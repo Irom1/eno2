@@ -13,8 +13,10 @@
     goalCard,
     loanCard,
     locationCard,
+    merchantCard,
     mergeEntityCards,
     mergeTransactionListCards,
+    profileCard,
     recurringCard,
     rewardCard,
     spendingPieCard,
@@ -49,6 +51,8 @@
   import RewardCard from './inline-cards/RewardCard.svelte';
   import GoalCard from './inline-cards/GoalCard.svelte';
   import CashflowPointCard from './inline-cards/CashflowPointCard.svelte';
+  import MerchantCard from './inline-cards/MerchantCard.svelte';
+  import ProfileCard from './inline-cards/ProfileCard.svelte';
 
   interface Props {
     open: boolean;
@@ -469,6 +473,22 @@
               const incoming = cashflowCard(payload, anchor, cardSeq + 1);
               if (incoming) replaceInlineCard(message, incoming);
             }
+            if (chatCardKind(data.kind) === 'merchants') {
+              // One primitive merchant per turn: the first valid merchant, with
+              // a later merchant insight replacing the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = merchantCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (chatCardKind(data.kind) === 'customer') {
+              // One primitive profile per turn, and only for a single-customer
+              // payload; a customer list stays in prose. Later profiles replace.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = profileCard(payload, anchor, cardSeq + 1);
+              if (incoming) replaceInlineCard(message, incoming);
+            }
             if (chatCardKind(data.kind) === 'transactions') {
               // Deposits and withdrawals in one turn share a single merged list.
               const anchor =
@@ -688,6 +708,10 @@
                         <GoalCard {card} />
                       {:else if card.kind === 'cashflow'}
                         <CashflowPointCard {card} />
+                      {:else if card.kind === 'merchant'}
+                        <MerchantCard {card} />
+                      {:else if card.kind === 'profile'}
+                        <ProfileCard {card} />
                       {/if}
                     {/each}
                   {/if}

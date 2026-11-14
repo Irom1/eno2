@@ -202,6 +202,36 @@ export interface CashflowPointEntityCard {
   afterText?: number;
 }
 
+export interface MerchantCardPayload {
+  merchantId: string;
+  name: string;
+  category?: string;
+  address?: string;
+  customerId?: string;
+}
+
+export interface MerchantEntityCard {
+  id: number;
+  entityId: string; // 'merchant:<id>'
+  kind: 'merchant';
+  payload: MerchantCardPayload;
+  afterText?: number;
+}
+
+export interface ProfileCardPayload {
+  customerId: string;
+  name: string;
+  location?: string; // "City, State" only
+}
+
+export interface ProfileEntityCard {
+  id: number;
+  entityId: string; // 'profile:<id>'
+  kind: 'profile';
+  payload: ProfileCardPayload;
+  afterText?: number;
+}
+
 export type EntityCard =
   | TransactionEntityCard
   | TransactionListEntityCard
@@ -213,7 +243,9 @@ export type EntityCard =
   | RecurringChargeEntityCard
   | RewardEntityCard
   | GoalEntityCard
-  | CashflowPointEntityCard;
+  | CashflowPointEntityCard
+  | MerchantEntityCard
+  | ProfileEntityCard;
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
 export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
@@ -1235,6 +1267,124 @@ export function cashflowCard(
   }
 }
 
+function merchantAddress(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const street = trimmedString(value.street);
+  const city = trimmedString(value.city);
+  const state = trimmedString(value.state);
+  const cityState = [city, state].filter(Boolean).join(', ');
+  const text = [street, cityState].filter(Boolean).join(', ');
+  return text.length > 0 ? text : undefined;
+}
+
+/**
+ * Build one primitive merchant card from a merchant tool payload. The first
+ * valid merchant is shown; malformed rows and rows without an id or name are
+ * skipped. Never renders an entire merchant list.
+ */
+export function merchantCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): MerchantEntityCard | null {
+  try {
+    const items = asItems(payload);
+    for (const item of items) {
+      const rawId = item._id ?? item.id;
+      const merchantId =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+      const name = trimmedString(item.name);
+      if (!merchantId || !name) continue;
+
+      const category = optionalTrimmed(item.category);
+      const address = merchantAddress(item.address);
+      const customerId = optionalTrimmed(context?.customerId);
+      const payloadOut: MerchantCardPayload = {
+        merchantId,
+        name,
+        ...(category ? { category } : {}),
+        ...(address ? { address } : {}),
+        ...(customerId ? { customerId } : {})
+      };
+
+      const card: MerchantEntityCard = {
+        id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+        entityId: `merchant:${merchantId}`,
+        kind: 'merchant',
+        payload: payloadOut
+      };
+      if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+        card.afterText = afterText;
+      }
+      return card;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function profileLocation(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const city = trimmedString(value.city);
+  const state = trimmedString(value.state);
+  const text = [city, state].filter(Boolean).join(', ');
+  return text.length > 0 ? text : undefined;
+}
+
+/**
+ * Build one primitive profile card from a single-customer payload. Lists (zero
+ * or more than one row) return null so the prose answers. Only the name and
+ * city/state are included; street, zip, phone, email, and account identifiers
+ * never reach the payload.
+ */
+export function profileCard(
+  payload: unknown,
+  afterText: number,
+  startId: number
+): ProfileEntityCard | null {
+  try {
+    const items = asItems(payload);
+    if (items.length !== 1) return null;
+
+    const item = items[0];
+    const rawId = item._id ?? item.id;
+    const customerId =
+      (typeof rawId === 'string' || typeof rawId === 'number') &&
+      String(rawId).trim().length > 0
+        ? String(rawId).trim()
+        : '';
+    const firstName = trimmedString(item.firstName);
+    const lastName = trimmedString(item.lastName);
+    const name = [firstName, lastName].filter(Boolean).join(' ');
+    if (!customerId || !name) return null;
+
+    const location = profileLocation(item.address);
+    const payloadOut: ProfileCardPayload = {
+      customerId,
+      name,
+      ...(location ? { location } : {})
+    };
+
+    const card: ProfileEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: `profile:${customerId}`,
+      kind: 'profile',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Merge rows into a single list card, dedupe by transaction id, cap the rows,
  * and keep the earliest anchor (a real anchor beats end-of-text).
@@ -1437,6 +1587,17 @@ function anchorCandidates(card: EntityCard): string[][] {
     return keys.length > 0 ? [keys] : [];
   }
 
+  if (card.kind === 'merchant' || card.kind === 'profile') {
+    const name = typeof card.payload?.name === 'string' ? card.payload.name : '';
+    const keys = tokenize(name).map((token) => token.norm);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
   return [];
 }
 
@@ -1444,9 +1605,10 @@ function anchorCandidates(card: EntityCard): string[][] {
  * Reposition entity cards after the mention they introduce: transactions and
  * recurring charges after their description, bills after their payee, accounts
  * after their nickname (falling back to type), loans after their type,
- * locations after their name, rewards after their label, and cashflow after
- * its period. Returns copies; cards with no mention keep their existing
- * `afterText`. Non-anchored kinds (lists, pies, goals) are left unchanged.
+ * locations after their name, rewards after their label, cashflow after its
+ * period, and merchants/profiles after their name. Returns copies; cards with
+ * no mention keep their existing `afterText`. Non-anchored kinds (lists, pies,
+ * goals) are left unchanged.
  */
 export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard[] {
   const source = typeof text === 'string' ? text : '';
@@ -1468,7 +1630,9 @@ export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard
         card.kind !== 'location' &&
         card.kind !== 'recurring' &&
         card.kind !== 'reward' &&
-        card.kind !== 'cashflow'
+        card.kind !== 'cashflow' &&
+        card.kind !== 'merchant' &&
+        card.kind !== 'profile'
       ) {
         anchored.push({ ...card });
         continue;

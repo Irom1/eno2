@@ -18,15 +18,15 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
 - [x] `RewardCard` — one reward balance: label and points from the highest credit-account rewards, or the overview total; no invented dollar value.
 - [x] `GoalCard` — one goal projection: target, current, months to target, projected date; no on-track or advice copy.
 - [x] `CashflowPointCard` — one complete month: period, inflow, outflow, net; no interpretation.
+- [x] `MerchantCard` — one merchant: name, category when present, address (street, city, state) when present; no spend/count, no recommendation.
+- [x] `ProfileCard` — one customer from a single-row payload: name and city/state only; no street, zip, contact, or identifier fields.
 - [x] Shared `StatusChip` primitive — factual state only, theme-aware, never colour-only.
 - [x] Shared `EntityKeyValue` primitive — one compact label/value row, theme-aware and tabular; used by `GoalCard` and `CashflowPointCard`.
 - [x] Buffering, markdown-safe anchoring, and deep links — `revealInlineCards`, `inlineBlocks`, `anchorEntityCards`, `transactionHref`, `accountHref`.
-- [x] Prompt rules for primitive cards and the single-bill/single-account/single-loan/location/recurring-charge/reward/goal/cashflow rules.
+- [x] Prompt rules for primitive cards and the single-bill/single-account/single-loan/location/recurring-charge/reward/goal/cashflow/merchant/profile rules.
 
 ## Remaining
 
-- [ ] `MerchantCard` — one merchant: name, amount, count.
-- [ ] `ProfileCard` — one customer: name and optional safe contact fields only, no sensitive identifiers.
 - [ ] Shared primitives still planned in `CARD_PLAN.md` §6: `DateLabel`/`RelativeDate`, `AccountTag`, `ProgressMeter`, `ShareBar`, `DeltaBadge`, `Sparkline`, `InlineAction`, `TruncationFooter`, `InlineEmpty`, `ExpandRow`, `DefinitionHint`, `BufferedPlaceholder` (plus promoting `Money`/`SignedAmount`).
 - [ ] `present_card` tool, ownership validation, normalized `card` SSE event, and the `off`/`v2` flag.
 - [ ] Phase 4 cleanup: remove legacy registry/relevance coupling, migrate follow-ups to `EntityCard`, rewrite stale E2E card assertions.
