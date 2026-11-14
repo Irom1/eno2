@@ -18,6 +18,9 @@
     position: relative;
     overflow: hidden;
     width: 100%;
+    /* Same cap as the Eno chat bubble (.bubble in ChatPanel.svelte). */
+    max-width: 88%;
+    align-self: flex-start;
     min-width: 0;
     box-sizing: border-box;
     background: var(--surface);
@@ -29,13 +32,5 @@
     box-shadow:
       0 8px 24px color-mix(in srgb, var(--ink) 12%, transparent),
       0 1px 2px color-mix(in srgb, var(--ink) 10%, transparent);
-  }
-  .entity-card::before {
-    content: '';
-    position: absolute;
-    inset: 0 0 auto;
-    height: 3px;
-    background: color-mix(in srgb, var(--link) 82%, var(--border));
-    pointer-events: none;
   }
 </style>

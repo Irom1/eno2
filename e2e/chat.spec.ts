@@ -1477,11 +1477,11 @@ test.describe('chat prompts', () => {
     await expect(frame).toHaveCount(1);
     const frameStyle = await frame.evaluate((element) => ({
       shadow: getComputedStyle(element).boxShadow,
-      accent: Number.parseFloat(getComputedStyle(element, '::before').height),
+      accent: getComputedStyle(element, '::before').content,
       border: Number.parseFloat(getComputedStyle(element).borderTopWidth)
     }));
     expect(frameStyle.shadow).not.toBe('none');
-    expect(frameStyle.accent).toBeGreaterThan(2);
+    expect(['none', 'normal'], 'no ::before accent bar').toContain(frameStyle.accent);
     expect(frameStyle.border).toBeGreaterThanOrEqual(1);
 
     expectNoErrors(errors);
@@ -2111,13 +2111,12 @@ test.describe('Eno mascot', () => {
         return {
           shadow: style.boxShadow,
           borderTopWidth: Number.parseFloat(style.borderTopWidth),
-          accentHeight: Number.parseFloat(accent.height)
+          accentContent: accent.content
         };
       });
     expect(surface.shadow, 'dark cards should still lift').not.toBe('none');
     expect(surface.borderTopWidth).toBeGreaterThanOrEqual(1);
-    expect(surface.accentHeight).toBeGreaterThan(2);
-    expect(surface.accentHeight).toBeLessThan(4);
+    expect(['none', 'normal'], 'no ::before accent bar').toContain(surface.accentContent);
 
     await expectCardStyle(page);
     expectNoErrors(errors);

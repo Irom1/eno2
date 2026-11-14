@@ -186,7 +186,9 @@ export async function assistantText(page: Page): Promise<string> {
 /**
  * Primitive card style contract: no legacy `.chat-card` chrome or eyebrow
  * labels, and every standalone card sits in a framed `.entity-card` surface
- * with lift, a border, and the 3px accent strip. Inline transaction rows are
+ * with lift and a border. There is no top accent strip. Standalone cards are
+ * left-aligned in the assistant content column and capped at the same maximum
+ * width as the Eno chat bubble (88% of the column). Inline transaction rows are
  * exempt from the standalone frame.
  */
 export async function expectCardStyle(page: Page): Promise<void> {
@@ -209,17 +211,26 @@ export async function expectCardStyle(page: Page): Promise<void> {
           framed: false,
           shadow: 'none',
           borderTopWidth: 0,
-          accentHeight: 0
+          accentContent: 'none',
+          leftAligned: false,
+          withinBubbleWidth: false
         };
       }
       const style = getComputedStyle(frame);
       const accent = getComputedStyle(frame, '::before');
+      const column = frame.closest('.assistant-content');
+      const frameRect = frame.getBoundingClientRect();
+      const columnRect = column?.getBoundingClientRect();
       return {
         inline,
         framed: true,
         shadow: style.boxShadow,
         borderTopWidth: Number.parseFloat(style.borderTopWidth),
-        accentHeight: Number.parseFloat(accent.height)
+        accentContent: accent.content,
+        leftAligned: columnRect ? Math.abs(frameRect.left - columnRect.left) <= 1 : false,
+        withinBubbleWidth: columnRect
+          ? frameRect.width <= columnRect.width * 0.88 + 1
+          : false
       };
     })
   );
@@ -229,8 +240,18 @@ export async function expectCardStyle(page: Page): Promise<void> {
     expect(surface.framed, 'standalone primitive cards sit in a contrast frame').toBe(true);
     expect(surface.shadow, 'cards should lift off the chat surface').not.toBe('none');
     expect(surface.borderTopWidth, 'cards need a visible border').toBeGreaterThanOrEqual(1);
-    expect(surface.accentHeight, 'cards need a 3px accent strip').toBeGreaterThan(2);
-    expect(surface.accentHeight, 'cards need a 3px accent strip').toBeLessThan(4);
+    expect(
+      ['none', 'normal'],
+      'cards must not render a ::before accent bar'
+    ).toContain(surface.accentContent);
+    expect(
+      surface.leftAligned,
+      'standalone cards align to the assistant content column left edge'
+    ).toBe(true);
+    expect(
+      surface.withinBubbleWidth,
+      'standalone cards must not exceed the chat bubble max width'
+    ).toBe(true);
   }
 }
 

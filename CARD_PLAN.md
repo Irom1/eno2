@@ -42,7 +42,7 @@ Next:
 - **Prefer omission.** Prefer omitting a card over showing a broad or interpretive one.
 - **Card budget.** At most 1–2 cards per turn. Lists stay prose unless a specific list card is warranted; the transaction list is the current exception.
 - **Inline placement.** Intended rhythm: one short intro sentence → card → takeaway. Cards are buffered until the streamed prose reaches their anchor.
-- **Shared frame.** Standalone cards use the high-contrast `CardFrame`; single-transaction rows may render inside `.bubble.assistant.inline-transactions` without the frame.
+- **Shared frame.** Standalone cards use the high-contrast `CardFrame` (surface, border, lift shadow — no top accent strip). Cards are left-aligned and capped at the Eno chat bubble max width (88% of the assistant content column). Single-transaction rows may render inside `.bubble.assistant.inline-transactions` without the frame.
 - **No duplicated data.** Prose does not restate values, names, dates, statuses, or rows visible in a card. It adds meaning or a next step.
 
 Examples:
@@ -85,7 +85,7 @@ Buffering details:
 
 | File | Props / API | Status | Notes |
 | --- | --- | --- | --- |
-| `src/routes/[view=wallet]/inline-cards/CardFrame.svelte` | `label?: string`, `children` snippet | Shipped | Shared standalone frame: surface, border, radius, top accent, contrast shadow. No title slot. |
+| `src/routes/[view=wallet]/inline-cards/CardFrame.svelte` | `label?: string`, `children` snippet | Shipped | Shared standalone frame: surface, border, radius, contrast shadow. No accent strip. Width capped at the chat bubble max (88% of the assistant content column) and left-aligned. No title slot. |
 | `src/routes/[view=wallet]/inline-cards/OpenIcon.svelte` | none | Shipped | External-link icon for deep-linked rows; decorative. |
 | `src/routes/[view=wallet]/inline-cards/TransactionCard.svelte` | `card: TransactionEntityCard`, `inline?: boolean` | Shipped | Single merchant/date/amount. `inline` mode renders a compact row inside `.bubble.assistant.inline-transactions`; no flags or reasons. Deep link. |
 | `src/routes/[view=wallet]/inline-cards/TransactionListCard.svelte` | `card: TransactionListEntityCard` | Shipped | Multiple rows, cap 8 plus “N more”; every row deep-links; standalone `CardFrame`. |
@@ -110,7 +110,7 @@ Buffering details:
 | `src/lib/chat/inline.ts` | `revealInlineCards`, `inlineBlocks` | Shipped | Pending buffer, markdown-safe anchors, text/card block split. |
 | `src/lib/chat/entityCards.ts` | types plus `anomalyTransactionCards`, `transactionListCard`, `mergeTransactionListCard`, `spendingPieCard`, `billCard`, `accountCard`, `loanCard`, `locationCard`, `recurringCard`, `rewardCard`, `goalCard`, `cashflowCard`, `merchantCard`, `profileCard`, `anchorEntityCards`, `mergeEntityCards`, `transactionHref`, `accountHref` | Shipped | Pure, client-safe normalization and placement helpers. |
 
-Avatar/layout note: the assistant turn uses `EnoThinking` beside `.assistant-content`; chat bubbles and standalone cards are siblings inside that content column. The pie and list cards are intentionally standalone `CardFrame` cards, never pulled into the transaction bubble.
+Avatar/layout note: the assistant turn uses `EnoThinking` beside `.assistant-content`; chat bubbles and standalone cards are siblings inside that content column. Standalone cards are left-aligned and capped at the bubble max width (88% of the column); `CardFrame` provides surface, border, and lift shadow with no accent strip. The pie and list cards are intentionally standalone `CardFrame` cards, never pulled into the transaction bubble.
 
 ## 5. Card catalog
 
