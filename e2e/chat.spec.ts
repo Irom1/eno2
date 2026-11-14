@@ -432,11 +432,15 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('cards render below the assistant response text', async ({ page }) => {
+  test('cards render inline between assistant prose blocks', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);
 
     const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: "Here is what's coming up:"
+      })}`,
       `event: insight\ndata: ${JSON.stringify({
         type: 'insight',
         kind: 'insight_upcoming_bills',
@@ -455,7 +459,7 @@ test.describe('chat prompts', () => {
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'Here is a quick look at what needs attention.'
+        delta: 'That is the only item due.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -474,27 +478,30 @@ test.describe('chat prompts', () => {
     expect(await cardTitles(page)).toEqual(['Bills']);
 
     const lastTurn = page.locator('.assistant-turn').last();
-    await expect(lastTurn.locator('.bubble.assistant .richtext')).toBeVisible();
+    await expect(lastTurn.locator('.bubble.assistant .richtext')).toHaveCount(2);
 
     const order = await lastTurn.evaluate((turn) => {
+      const rich = Array.from(turn.querySelectorAll('.bubble.assistant .richtext'));
       const cards = turn.querySelector('.chat-cards');
-      const bubble = turn.querySelector('.bubble.assistant');
-      const rich = turn.querySelector('.richtext');
+      const intro = rich[0];
+      const takeaway = rich[1];
+      const follows = (first: Element | undefined, second: Element | undefined): boolean =>
+        Boolean(
+          first &&
+            second &&
+            first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
       return {
-        hasCards: Boolean(cards),
-        hasBubble: Boolean(bubble),
-        hasRich: Boolean(rich),
-        cardsAfterBubble:
-          Boolean(cards && bubble) &&
-          Boolean(bubble!.compareDocumentPosition(cards!) & Node.DOCUMENT_POSITION_FOLLOWING)
+        texts: rich.map((element) => element.textContent?.trim() ?? ''),
+        introBeforeCards: follows(intro, cards ?? undefined),
+        cardsBeforeTakeaway: follows(cards ?? undefined, takeaway)
       };
     });
-    expect(order).toEqual({
-      hasCards: true,
-      hasBubble: true,
-      hasRich: true,
-      cardsAfterBubble: true
-    });
+    expect(order.texts).toHaveLength(2);
+    expect(order.texts[0]).toContain('coming up');
+    expect(order.texts[1]).toContain('only item due');
+    expect(order.introBeforeCards).toBe(true);
+    expect(order.cardsBeforeTakeaway).toBe(true);
 
     expectNoErrors(errors);
   });

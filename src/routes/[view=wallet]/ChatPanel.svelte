@@ -4,6 +4,7 @@
   import { createSseParser } from '$lib/sse.js';
   import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
   import { filterCardDuplication } from '$lib/chat/dedupe.js';
+  import { inlineBlocks } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
   import {
     friendlyToolLabel,
@@ -240,7 +241,8 @@
               id: ++cardSeq,
               kind: chatCardKind(data.kind),
               tool: data.kind,
-              payload
+              payload,
+              afterText: message.text.length
             });
             scrollLog();
             break;
@@ -347,48 +349,51 @@
         {@const allowedKinds = allowedKindsFor(classifyIntents(message.prompt ?? ''))}
         {@const creditOnly = isCreditOnlyPrompt(message.prompt ?? '')}
         {@const shownCards = visibleCards(message.cards ?? [], message.prompt ?? '')}
-        {@const hasCards = shownCards.length > 0}
-        {@const displayText = filterCardDuplication(message.text, shownCards)}
-        {@const showText = displayText.length > 0}
-        {@const isThinking = message.pending && !showText && !hasCards}
-        {#if showText || message.pending || hasCards}
+        {@const blocks = inlineBlocks(message.text, shownCards)}
+        {@const hasBlocks = blocks.length > 0}
+        {@const isThinking = message.pending && !hasBlocks}
+        {#if hasBlocks || message.pending}
           <div class="assistant-turn" class:intro={message.intro}>
-            <EnoThinking {variant} active={isThinking} size={40} />
+            <EnoThinking {variant} active={message.pending} size={40} />
             <div class="assistant-content">
-              {#if showText || (message.pending && !hasCards)}
+              {#if isThinking}
                 <div class="bubble assistant">
-                  {#if isThinking}
-                    <div class="thinking-row">
-                      <ol class="thinking-steps" aria-label="Eno is working">
-                        {#each thinking.steps as step, index (step + index)}
-                          <li class="step done">
-                            <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            <span>{step}</span>
-                          </li>
-                        {/each}
-                        <li class="step current status-line">
-                          <span class="step-dot" aria-hidden="true"></span>
-                          <span>{thinking.current || 'Looking that up'}</span>
+                  <div class="thinking-row">
+                    <ol class="thinking-steps" aria-label="Eno is working">
+                      {#each thinking.steps as step, index (step + index)}
+                        <li class="step done">
+                          <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                          <span>{step}</span>
                         </li>
-                      </ol>
+                      {/each}
+                      <li class="step current status-line">
+                        <span class="step-dot" aria-hidden="true"></span>
+                        <span>{thinking.current || 'Looking that up'}</span>
+                      </li>
+                    </ol>
+                  </div>
+                </div>
+              {/if}
+              {#each blocks as block, index (block.type + index)}
+                {#if block.type === 'text'}
+                  {@const clean = filterCardDuplication(block.text, shownCards)}
+                  {#if clean.trim()}
+                    <div class="bubble assistant">
+                      <div class="richtext">{@html renderMarkdown(clean)}</div>
                     </div>
                   {/if}
-                  {#if showText}
-                    <div class="richtext">{@html renderMarkdown(displayText)}</div>
-                  {/if}
-                </div>
-              {/if}
-              {#if hasCards}
-                <div class="chat-cards">
-                  {#each shownCards as card (card.id)}
-                    <ChatCardRenderer
-                      {card}
-                      allowedKinds={allowedKinds.size > 0 ? allowedKinds : undefined}
-                      accountFilter={creditOnly ? 'credit' : 'all'}
-                    />
-                  {/each}
-                </div>
-              {/if}
+                {:else}
+                  <div class="chat-cards">
+                    {#each block.cards as card (card.id)}
+                      <ChatCardRenderer
+                        {card}
+                        allowedKinds={allowedKinds.size > 0 ? allowedKinds : undefined}
+                        accountFilter={creditOnly ? 'credit' : 'all'}
+                      />
+                    {/each}
+                  </div>
+                {/if}
+              {/each}
               {#if message.intro && (booting || !ready)}
                 <p class="status-line intro-status">{status || 'Connecting…'}</p>
               {/if}

@@ -49,6 +49,15 @@ describe("buildSystemInstruction", () => {
     expect(instruction).toContain(
       'Good: "This is your only card." / "You\'re close to your next reward."'
     );
+    expect(instruction).toContain(
+      'Cards render inline with your prose. When a card will help, write one short introductory sentence before calling the tool, then let the card render, then add a concise takeaway that explains what stands out.'
+    );
+    expect(instruction).toContain(
+      'Both sentences must add information the card does not show: a comparison, what it means, or a next step.'
+    );
+    expect(instruction).toContain(
+      'Do not repeat card values, names, dates, or rows.'
+    );
     expect(instruction).toContain("Capital One's virtual assistant");
     expect(instruction).toContain("Use the category breakdown as returned.");
     expect(instruction).toContain(

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "./events";
 import type { ToolCallResult } from "./mcp";
-import { mockAgent, routeIntent, type MockAgentDeps } from "./mockAgent";
+import { composeIntro, mockAgent, routeIntent, type MockAgentDeps } from "./mockAgent";
 import { createSession } from "./session";
 
 const customer = { id: "cust-1", firstName: "Maya", lastName: "Chen" };
@@ -99,7 +99,19 @@ describe("mockAgent", () => {
     });
 
     const types = events.map((event) => event.type);
-    expect(types).toEqual(["tool_start", "tool_result", "insight", "text", "usage", "done"]);
+    expect(types).toEqual(["tool_start", "tool_result", "text", "insight", "text", "usage", "done"]);
+
+    const introIndex = events.findIndex(
+      (event) => event.type === "text" && event.delta.includes("Here is what's coming up:")
+    );
+    const insightIndex = events.findIndex((event) => event.type === "insight");
+    const answerIndex = events.findIndex(
+      (event, index) => index > insightIndex && event.type === "text"
+    );
+    expect(introIndex).toBeGreaterThanOrEqual(0);
+    expect(introIndex).toBeLessThan(insightIndex);
+    expect(insightIndex).toBeLessThan(answerIndex);
+    expect(text).toContain("Here is what's coming up:");
 
     expect(text).toContain("8 bills");
     expect(text).toContain("4,283.59");
@@ -164,6 +176,17 @@ describe("mockAgent", () => {
     expect(toolResult).toMatchObject({ type: "tool_result", ok: false });
     expect(text).toContain("couldn't read that data");
     expect(events[events.length - 1]?.type).toBe("done");
+  });
+
+  it("composes friendly intros that avoid card tokens", () => {
+    expect(composeIntro("insight_spending_breakdown")).toBe(
+      "Here is your top spending by category:"
+    );
+    expect(composeIntro("insight_upcoming_bills")).toBe("Here is what's coming up:");
+    expect(composeIntro("insight_anomalies")).toBe("Here is what stood out:");
+    expect(composeIntro("find_nearby_atms")).toBe("Here is what's nearby:");
+    expect(composeIntro("nessie_list_account_loans")).toBe("Here is what I found:");
+    expect(composeIntro("nessie_list_account_loans").toLowerCase()).not.toContain("loan");
   });
 
   it("routes topic questions to the grounded tool for that topic", () => {

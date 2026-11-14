@@ -343,6 +343,32 @@ function composeAnswer(name: string, data: unknown, now: Date, message: string):
   }
 }
 
+/** A short leading sentence that invites the card without restating its values. */
+export function composeIntro(name: string): string {
+  switch (name) {
+    case "insight_spending_breakdown":
+      return "Here is your top spending by category:";
+    case "insight_upcoming_bills":
+      return "Here is what's coming up:";
+    case "insight_anomalies":
+      return "Here is what stood out:";
+    case "nessie_list_account_deposits":
+    case "nessie_list_account_withdrawals":
+    case "nessie_list_account_transactions":
+      return "Here are the latest entries:";
+    case "nessie_list_customer_accounts":
+    case "nessie_get_account":
+      return "Here is a look at your accounts:";
+    case "find_nearby_atms":
+    case "find_nearby_branches":
+      return "Here is what's nearby:";
+    case "insight_financial_overview":
+      return "Here is your financial snapshot:";
+    default:
+      return "Here is what I found:";
+  }
+}
+
 export async function mockAgent({ session, message, emit, deps }: MockAgentInput): Promise<void> {
   const { callTool, now } = deps;
   const intent = routeIntent(message);
@@ -352,6 +378,7 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
   const startedAt = Date.now();
 
   let text: string;
+  let intro = "";
   try {
     const result = await callTool(intent.tool, args);
     const ms = Date.now() - startedAt;
@@ -365,6 +392,8 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
     if (!result.ok) {
       text = "I couldn't read that data right now. Please try again in a moment.";
     } else {
+      intro = composeIntro(intent.tool);
+      emit({ type: "text", delta: intro });
       emit({ type: "insight", kind: intent.tool, payload: result.data });
       text = composeAnswer(intent.tool, result.data, now(), message);
     }
@@ -382,10 +411,11 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
 
   emit({ type: "text", delta: text });
 
+  const sessionText = intro ? `${intro}\n\n${text}` : text;
   session.contents = trimContents([
     ...session.contents,
     { role: "user", parts: [{ text: message }] },
-    { role: "model", parts: [{ text }] }
+    { role: "model", parts: [{ text: sessionText }] }
   ]);
   session.updatedAt = Date.now();
 

@@ -27,6 +27,8 @@ export interface ChatCard {
   kind: ChatCardKind;
   tool: string;
   payload: unknown;
+  /** Character offset in the assistant text when this card arrived. */
+  afterText?: number;
 }
 
 /** Every kind a card can render, excluding the unknown fallback. */
