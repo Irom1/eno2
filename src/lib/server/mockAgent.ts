@@ -30,6 +30,22 @@ const num = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+/**
+ * Relative due timing for prose. The bill card already shows the exact due
+ * date, so deterministic answers describe timing analytically instead of
+ * restating the date.
+ */
+function relativeDue(daysUntil: unknown): string {
+  const days = typeof daysUntil === "number" ? daysUntil : Number(daysUntil);
+  if (!Number.isFinite(days)) return "in the coming weeks";
+  if (days <= 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days <= 7) return "within the next week";
+  if (days <= 14) return "within the next two weeks";
+  if (days <= 21) return "within the next three weeks";
+  return "in the coming weeks";
+}
+
 function money(value: unknown): string {
   const amount = Math.round(num(value) * 100) / 100;
   return `$${amount.toLocaleString("en-US", {
@@ -188,9 +204,9 @@ function billsAnswer(data: unknown): string {
       : `Checking holds ${money(payload.checkingBalance)}, which covers them.`;
   return `You have ${num(payload.count)} bills due in the next 30 days, totaling ${money(
     payload.total
-  )}. ${coverage} The largest is ${String(largest.payee ?? "a bill")} at ${money(
-    largest.amount
-  )}, due ${String(largest.dueDate ?? "soon")}. Liquid balances including savings are ${money(
+  )}. ${coverage} The largest payment is due ${relativeDue(
+    largest.daysUntil
+  )}. Liquid balances including savings are ${money(
     payload.liquidBalance
   )}, but coverage is measured against checking.`;
 }
@@ -383,8 +399,9 @@ export function composeAnswer(name: string, data: unknown, now: Date, message: s
 
 /**
  * Grounded narration for the single-tool fast path. Bills deliberately avoids
- * repeating the dollar totals already shown on the card, matching the product
- * rule that prose must not duplicate card values.
+ * repeating the dollar totals and the payee/amount/due date already shown on
+ * the card, matching the product rule that prose must not duplicate card
+ * values; it uses relative timing as the analysis instead.
  */
 function billsFastAnswer(data: unknown): string {
   const payload = rec(data);
@@ -397,9 +414,9 @@ function billsFastAnswer(data: unknown): string {
     num(payload.shortfall) > 0
       ? "Your checking balance is slightly short of covering them all, but savings can cover the difference."
       : "Your checking balance covers them.";
-  return `You have ${num(payload.count)} bills due in the next 30 days. ${coverage} The largest is ${String(
-    largest.payee ?? "a bill"
-  )}, due ${String(largest.dueDate ?? "soon")}.`;
+  return `You have ${num(payload.count)} bills due in the next 30 days. ${coverage} The largest payment is due ${relativeDue(
+    largest.daysUntil
+  )}.`;
 }
 
 /** Deterministic answer used when a known single-tool intent is answered locally. */

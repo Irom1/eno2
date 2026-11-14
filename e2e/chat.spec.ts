@@ -1189,6 +1189,19 @@ test.describe('chat prompts', () => {
     await expectNoCardValueDuplicate(page, ['$4,283.59', '$65.59']);
     await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
     await expectCardStyle(page);
+
+    // The bill card shows the largest bill's payee, amount, and due date, so
+    // the prose must use timing analytically instead of restating those fields.
+    const prose = await assistantText(page);
+    expect(prose, 'prose must not restate the card payee').not.toContain('MIT Bursar');
+    expect(prose, 'prose must not restate the card amount').not.toContain('1,800');
+    expect(prose, 'prose must not restate the card due date').not.toMatch(
+      /2026-12-05|Dec 5/
+    );
+    expect(prose, 'prose uses relative timing').toMatch(
+      /largest payment is due (within the next three weeks|in the coming weeks)/
+    );
+    expect(prose).toContain('Tip:');
     expectNoErrors(errors);
   });
 
