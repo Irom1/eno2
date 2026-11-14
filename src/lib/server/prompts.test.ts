@@ -53,6 +53,21 @@ describe("buildSystemInstruction", () => {
       'Every answer must include at least one insight and one practical tip.'
     );
     expect(instruction).toContain(
+      'For a spending-by-category answer, write one short intro sentence before calling insight_spending_breakdown so the category chart follows it, then add a takeaway/tip after the chart; do not restate the chart\'s amounts or shares.'
+    );
+    expect(instruction).toContain(
+      'Cards are simple, primitive data displays: one entity or one basic series.'
+    );
+    expect(instruction).toContain(
+      'Do not rely on a card to carry analysis, rankings, recommendations, or combined insights.'
+    );
+    expect(instruction).toContain(
+      'Prefer the smallest primitive card(s) needed, and put the novel insight, comparison, and tip in the prose.'
+    );
+    expect(instruction).toContain(
+      'Do not ask for or describe a broad “everything” card.'
+    );
+    expect(instruction).toContain(
       'The insight explains what the data means or what stands out.'
     );
     expect(instruction).toContain(

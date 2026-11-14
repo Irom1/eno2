@@ -1016,17 +1016,159 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Where did my money go last month?" renders one Spending card', async ({ page }) => {
+  test('"Where did my money go last month?" renders a primitive spending pie', async ({ page }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Where did my money go last month?');
 
-    await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(titles).toEqual(['Spending']);
+    const pie = page.locator('.pie-chart-card');
+    await expect(pie).toHaveCount(1);
+    await expect(pie).toBeVisible();
+    await expect(pie).toHaveAttribute('data-kind', 'spending-pie');
 
-    await expect(page.locator('.chat-card .badge')).toHaveCount(1);
-    await expect(page.locator('.chat-card .badge')).toContainText('$');
-    await expectCardStyle(page);
+    // The pie is a standalone card, not legacy chat-card chrome.
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .pie-chart-card')).toHaveCount(1);
+    expect(
+      await pie.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the pie is standalone, not folded into the assistant bubble'
+    ).toBe(false);
+
+    // A period label plus one legend row per wedge.
+    const periodText = await pie.locator('.period').innerText();
+    expect(periodText).toMatch(/(January|February|March|April|May|June|July|August|September|October|November|December) \d{4}|Last 3 months/);
+
+    const legendRows = pie.locator('.legend-rows .legend-row');
+    const legendCount = await legendRows.count();
+    expect(legendCount, 'at least one category in the legend').toBeGreaterThan(0);
+    expect(legendCount, 'top 5 plus Other at most').toBeLessThanOrEqual(6);
+
+    const legendText = await pie.locator('.legend').innerText();
+    expect(legendText).toMatch(/\d+%/);
+    expect(legendText).toMatch(/\$/);
+
+    const wedgeCount = await pie.locator('svg .pie-slice').count();
+    expect(wedgeCount, 'one wedge per legend row').toBe(legendCount);
+
+    // Primitive content only: no editorial labels or recommendations baked in.
+    const cardText = (await pie.innerText()).toLowerCase();
+    expect(cardText).not.toMatch(/top category|biggest|you spent|recommend|tip:/);
+    await expect(pie.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+
+    // The prose carries the insight and tip, without dumping the chart values.
+    const prose = (await assistantText(page)).trim();
+    expect(prose.length, 'assistant prose introduces the chart').toBeGreaterThan(0);
+    expect(prose).toMatch(/tip|insight|you can|worth|compare|watch/i);
+
+    const frame = page.locator('.entity-card').filter({ has: pie });
+    await expect(frame).toHaveCount(1);
+    const frameStyle = await frame.evaluate((element) => ({
+      shadow: getComputedStyle(element).boxShadow,
+      accent: Number.parseFloat(getComputedStyle(element, '::before').height),
+      border: Number.parseFloat(getComputedStyle(element).borderTopWidth)
+    }));
+    expect(frameStyle.shadow).not.toBe('none');
+    expect(frameStyle.accent).toBeGreaterThan(2);
+    expect(frameStyle.border).toBeGreaterThanOrEqual(1);
+
+    expectNoErrors(errors);
+  });
+
+  test('buffers the spending pie until its reveal point and keeps it standalone', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const spendingPayload = {
+      months: 3,
+      monthlyTotals: [
+        { month: '2026-09', total: 2100 },
+        { month: '2026-10', total: 2470 },
+        { month: '2026-11', total: 0 }
+      ],
+      monthlyBreakdown: [
+        {
+          month: '2026-09',
+          total: 2100,
+          transactionCount: 18,
+          categories: [{ category: 'housing', total: 2100, share: 1 }]
+        },
+        {
+          month: '2026-10',
+          total: 2470,
+          transactionCount: 20,
+          categories: [
+            { category: 'shopping', total: 1800, share: 0.7287 },
+            { category: 'groceries', total: 670, share: 0.2713 }
+          ]
+        },
+        { month: '2026-11', total: 0, transactionCount: 0, categories: [] }
+      ],
+      categories: [],
+      totalSpend: 4570
+    };
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'tool_start',
+        data: { type: 'tool_start', name: 'insight_spending_breakdown', label: '' }
+      },
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_spending_breakdown',
+          accountId: 'acct-checking',
+          payload: spendingPayload
+        }
+      },
+      {
+        delay: 1500,
+        event: 'text',
+        data: { type: 'text', delta: 'Here is your spending by category.' }
+      },
+      {
+        delay: 1500,
+        event: 'text',
+        data: { type: 'text', delta: ' Shopping is where most of it went.' }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Where did my money go last month?');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await composer.press('Enter');
+
+    const turn = page.locator('.assistant-turn').last();
+    const prose = turn.locator('.bubble.assistant .richtext');
+
+    // The insight arrived before the prose introduced it; the card is buffered.
+    await expect(prose).toContainText('spending by category', { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.pie-chart-card')).toHaveCount(0);
+    await expect(page.locator('.loading-line')).toBeVisible();
+
+    // Once the turn completes the buffered pie appears after the prose.
+    await expect(turn.locator('.pie-chart-card')).toHaveCount(1, { timeout: 10_000 });
+    await waitForChatSettled(page);
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'false');
+
+    const pie = turn.locator('.pie-chart-card');
+    expect(
+      await pie.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the buffered pie stays a standalone card'
+    ).toBe(false);
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(turn.locator('.bubble.assistant.inline-transactions')).toHaveCount(0);
+
     expectNoErrors(errors);
   });
 

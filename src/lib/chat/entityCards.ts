@@ -46,9 +46,33 @@ export interface TransactionListEntityCard {
   afterText?: number;
 }
 
-export type EntityCard = TransactionEntityCard | TransactionListEntityCard;
+export interface PieSlice {
+  label: string;
+  amount: number;
+  share: number; // 0..1
+}
+
+export interface SpendingPiePayload {
+  period: string; // e.g. "October 2026"
+  total: number;
+  slices: PieSlice[];
+}
+
+export interface SpendingPieEntityCard {
+  id: number;
+  entityId: string; // 'spending-pie'
+  kind: 'spending-pie';
+  payload: SpendingPiePayload;
+  afterText?: number;
+}
+
+export type EntityCard =
+  | TransactionEntityCard
+  | TransactionListEntityCard
+  | SpendingPieEntityCard;
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
+export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
 
 /**
  * Deep link into the dashboard account activity view for one transaction.
@@ -255,6 +279,149 @@ export function transactionListCard(
       entityId: TRANSACTION_LIST_ENTITY_ID,
       kind: 'transaction-list',
       payload: { rows: visible, more: rows.length - visible.length }
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+const MONTH_KEY = /^\d{4}-\d{2}$/;
+
+function utcMonthKey(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** `"2026-10"` -> `"October 2026"`; malformed keys are returned unchanged. */
+export function spendingPiePeriod(month: string): string {
+  if (!MONTH_KEY.test(month)) return month;
+  const [year, monthIndex] = month.split('-').map(Number);
+  const date = new Date(Date.UTC(year, monthIndex - 1, 1));
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(date);
+  } catch {
+    return month;
+  }
+}
+
+interface CategoryTotal {
+  label: string;
+  amount: number;
+}
+
+/** Whitelist `{category, total}` entries, dropping non-positive totals. */
+function categoryTotals(value: unknown): CategoryTotal[] {
+  if (!Array.isArray(value)) return [];
+  const totals: CategoryTotal[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const label = typeof entry.category === 'string' ? entry.category.trim() : '';
+    const amount =
+      typeof entry.total === 'number' && Number.isFinite(entry.total) ? entry.total : 0;
+    if (!label || amount <= 0) continue;
+    totals.push({ label, amount });
+  }
+  return totals;
+}
+
+/**
+ * Normalize the insight_spending_breakdown payload into a primitive pie card:
+ * one period and category shares. The latest complete month wins; if none is
+ * complete, the latest positive month is used, then the window-wide categories.
+ * The top five categories stay distinct and the rest merge into `Other`.
+ */
+export function spendingPieCard(
+  payload: unknown,
+  afterText: number,
+  startId: number
+): SpendingPieEntityCard | null {
+  try {
+    if (!isRecord(payload)) return null;
+
+    const currentKey = utcMonthKey(new Date());
+    const breakdowns: Array<{
+      month: string;
+      total: number;
+      categories: CategoryTotal[];
+    }> = [];
+    if (Array.isArray(payload.monthlyBreakdown)) {
+      for (const entry of payload.monthlyBreakdown) {
+        if (!isRecord(entry)) continue;
+        const month = typeof entry.month === 'string' ? entry.month : '';
+        if (!MONTH_KEY.test(month)) continue;
+        const total =
+          typeof entry.total === 'number' && Number.isFinite(entry.total) ? entry.total : 0;
+        breakdowns.push({ month, total, categories: categoryTotals(entry.categories) });
+      }
+    }
+
+    const complete = breakdowns.filter(
+      (entry) => entry.month < currentKey && entry.total > 0 && entry.categories.length > 0
+    );
+    const pool = complete.length > 0
+      ? complete
+      : breakdowns.filter((entry) => entry.total > 0 && entry.categories.length > 0);
+    const latest = pool.reduce<(typeof pool)[number] | undefined>(
+      (best, entry) => (!best || entry.month > best.month ? entry : best),
+      undefined
+    );
+
+    let categories: CategoryTotal[];
+    let total: number;
+    let period: string;
+    if (latest) {
+      categories = latest.categories;
+      total = latest.total;
+      period = spendingPiePeriod(latest.month);
+    } else {
+      categories = categoryTotals(payload.categories);
+      total =
+        typeof payload.totalSpend === 'number' && Number.isFinite(payload.totalSpend)
+          ? payload.totalSpend
+          : 0;
+      period = 'Last 3 months';
+    }
+    if (categories.length === 0) return null;
+
+    const sorted = [...categories].sort((a, b) => b.amount - a.amount);
+    const top = sorted.slice(0, 5);
+    const remainder = sorted.slice(5);
+    const slices: Array<{ label: string; amount: number }> = top.map((entry) => ({
+      label: entry.label,
+      amount: entry.amount
+    }));
+    if (remainder.length > 0) {
+      slices.push({
+        label: 'Other',
+        amount: remainder.reduce((sum, entry) => sum + entry.amount, 0)
+      });
+    }
+
+    const sliceTotal = slices.reduce((sum, slice) => sum + slice.amount, 0);
+    if (sliceTotal <= 0) return null;
+    const denominator = total > 0 ? total : sliceTotal;
+    const rawShares = slices.map((slice) => slice.amount / denominator);
+    const shareSum = rawShares.reduce((sum, share) => sum + share, 0);
+    if (shareSum <= 0) return null;
+
+    const normalized: PieSlice[] = slices.map((slice, index) => ({
+      label: slice.label,
+      amount: slice.amount,
+      share: rawShares[index] / shareSum
+    }));
+
+    const card: SpendingPieEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: SPENDING_PIE_ENTITY_ID,
+      kind: 'spending-pie',
+      payload: { period, total: denominator, slices: normalized }
     };
     if (typeof afterText === 'number' && Number.isFinite(afterText)) {
       card.afterText = afterText;

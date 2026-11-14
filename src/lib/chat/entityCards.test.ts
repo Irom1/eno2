@@ -1,13 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   anchorTransactionCards,
   anomalyExplanation,
   anomalyTransactionCards,
   mergeEntityCards,
   mergeTransactionListCards,
+  spendingPieCard,
+  spendingPiePeriod,
   transactionHref,
   transactionListCard,
   type EntityCard,
+  type SpendingPieEntityCard,
   type TransactionEntityCard,
   type TransactionListEntityCard
 } from './entityCards.js';
@@ -626,5 +629,234 @@ describe('mergeEntityCards', () => {
         [{ id: 2 } as unknown as EntityCard]
       ).map((entry) => entry.entityId)
     ).toEqual(['a']);
+  });
+});
+
+describe('spendingPieCard', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function breakdown(month: string, total: number, categories: unknown[]): unknown {
+    return { month, total, transactionCount: 10, categories };
+  }
+
+  function category(name: string, total: number, share = 0): unknown {
+    return { category: name, total, share };
+  }
+
+  it('chooses the latest complete month and formats the period', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T12:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-09', 100, [category('housing', 100, 1)]),
+          breakdown('2026-10', 240, [
+            category('shopping', 180, 0.75),
+            category('groceries', 60, 0.25)
+          ]),
+          // Current/partial month: ignored even though it has data.
+          breakdown('2026-11', 50, [category('dining', 50, 1)])
+        ]
+      },
+      42,
+      7
+    );
+
+    expect(card).not.toBeNull();
+    expect(card).toMatchObject({
+      id: 7,
+      entityId: 'spending-pie',
+      kind: 'spending-pie',
+      afterText: 42
+    });
+    expect(card?.payload.period).toBe('October 2026');
+    expect(card?.payload.total).toBe(240);
+    expect(card?.payload.slices).toEqual([
+      { label: 'shopping', amount: 180, share: 0.75 },
+      { label: 'groceries', amount: 60, share: 0.25 }
+    ]);
+    expect(card?.payload.slices[0]).not.toHaveProperty('category');
+    expect(card?.payload.slices[0]).not.toHaveProperty('total');
+  });
+
+  it('falls back to the latest positive breakdown when no month is complete', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-05T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-02', 80, [category('travel', 80, 1)]),
+          breakdown('2026-03', 120, [category('dining', 120, 1)])
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(card?.payload.period).toBe('March 2026');
+    expect(card?.payload.slices.map((slice) => slice.label)).toEqual(['dining']);
+  });
+
+  it('falls back to top-level categories and totalSpend', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        categories: [category('shopping', 300, 0.6), category('groceries', 200, 0.4)],
+        totalSpend: 500
+      },
+      5,
+      2
+    );
+
+    expect(card?.payload).toMatchObject({ period: 'Last 3 months', total: 500 });
+    expect(card?.payload.slices).toEqual([
+      { label: 'shopping', amount: 300, share: 0.6 },
+      { label: 'groceries', amount: 200, share: 0.4 }
+    ]);
+    expect(card?.afterText).toBe(5);
+  });
+
+  it('keeps the top five categories and aggregates the rest into Other', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-10', 490, [
+            category('one', 100),
+            category('two', 90),
+            category('three', 80),
+            category('four', 70),
+            category('five', 60),
+            category('six', 50),
+            category('seven', 40)
+          ])
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(card?.payload.slices.map((slice) => slice.label)).toEqual([
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'Other'
+    ]);
+    expect(card?.payload.slices[5]).toMatchObject({ label: 'Other', amount: 90 });
+    expect(card?.payload.slices[5]?.share).toBeCloseTo(90 / 490, 10);
+    expect(card?.payload.slices.reduce((sum, slice) => sum + slice.amount, 0)).toBe(490);
+  });
+
+  it('computes shares from amounts and normalizes them to one', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-10', 200, [
+            // Rounded incoming shares disagree with the amounts and must be ignored.
+            category('a', 50, 0.9),
+            category('b', 30, 0.05),
+            category('c', 20, 0.05)
+          ])
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(card?.payload.slices.map((slice) => slice.share)).toEqual([0.5, 0.3, 0.2]);
+    const sum = card?.payload.slices.reduce((total, slice) => total + slice.share, 0) ?? 0;
+    expect(sum).toBeCloseTo(1, 10);
+  });
+
+  it('drops non-positive categories and returns null when nothing remains', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-10', 100, [
+            category('rent', 100),
+            category('refund', -20),
+            category('empty', 0)
+          ])
+        ]
+      },
+      0,
+      1
+    );
+    expect(card?.payload.slices).toEqual([{ label: 'rent', amount: 100, share: 1 }]);
+
+    expect(
+      spendingPieCard(
+        { monthlyBreakdown: [breakdown('2026-10', 0, [category('rent', 0)])] },
+        0,
+        1
+      )
+    ).toBeNull();
+    expect(spendingPieCard({ categories: [category('refund', -5)], totalSpend: 0 }, 0, 1)).toBeNull();
+  });
+
+  it('never throws and returns null for malformed or empty payloads', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    expect(spendingPieCard(null, 0, 1)).toBeNull();
+    expect(spendingPieCard(undefined, 0, 1)).toBeNull();
+    expect(spendingPieCard('spending', 0, 1)).toBeNull();
+    expect(spendingPieCard([], 0, 1)).toBeNull();
+    expect(spendingPieCard({ monthlyBreakdown: 'nope' }, 0, 1)).toBeNull();
+    expect(spendingPieCard({ monthlyBreakdown: [null, 7, 'x'] }, 0, 1)).toBeNull();
+    expect(spendingPieCard({ categories: [] }, 0, 1)).toBeNull();
+    expect(spendingPieCard({}, 0, 1)).toBeNull();
+  });
+
+  it('formats month keys and tolerates malformed ones', () => {
+    expect(spendingPiePeriod('2026-01')).toBe('January 2026');
+    expect(spendingPiePeriod('2026-10')).toBe('October 2026');
+    expect(spendingPiePeriod('not-a-month')).toBe('not-a-month');
+  });
+
+  it('is left unchanged by transaction anchoring and merging', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const pie = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-10', 250, [category('shopping', 250)])
+        ]
+      },
+      77,
+      4
+    );
+    if (!pie) throw new Error('expected a pie card');
+
+    const anchored = anchorTransactionCards('You spent at APPLE STORE.', [pie]);
+    expect(anchored[0]?.kind).toBe('spending-pie');
+    expect(anchored[0]?.afterText).toBe(77);
+    expect(anchored[0]).not.toBe(pie);
+
+    const merged = mergeEntityCards([pie], []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toBe(pie);
+    expect((merged[0] as SpendingPieEntityCard).payload.period).toBe('October 2026');
+
+    const mixed = mergeEntityCards([pie], [transactionCard(1, 'a')]);
+    expect(mixed[0]).toBe(pie);
+    expect(mixed.map((entry) => entry.kind)).toEqual(['spending-pie', 'transaction']);
   });
 });

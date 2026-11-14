@@ -9,8 +9,10 @@
     anomalyTransactionCards,
     mergeEntityCards,
     mergeTransactionListCards,
+    spendingPieCard,
     transactionListCard,
     type EntityCard,
+    type SpendingPieEntityCard,
     type TransactionListEntityCard
   } from '$lib/chat/entityCards.js';
   import { inlineBlocks, revealInlineCards } from '$lib/chat/inline.js';
@@ -30,6 +32,7 @@
   import FollowUps from './FollowUps.svelte';
   import TransactionCard from './inline-cards/TransactionCard.svelte';
   import TransactionListCard from './inline-cards/TransactionListCard.svelte';
+  import PieChartCard from './inline-cards/PieChartCard.svelte';
 
   interface Props {
     open: boolean;
@@ -292,6 +295,24 @@
               cardSeq += incoming.length;
               message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
             }
+            if (data.kind === 'insight_spending_breakdown') {
+              // One primitive pie card per turn: a later spending insight in the
+              // same turn replaces the earlier one rather than stacking charts.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = spendingPieCard(payload, anchor, cardSeq + 1);
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card): card is SpendingPieEntityCard => card.kind === 'spending-pie'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'spending-pie' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
             if (chatCardKind(data.kind) === 'transactions') {
               // Deposits and withdrawals in one turn share a single merged list.
               const anchor =
@@ -433,7 +454,7 @@
           !blocks.some(
             (block) =>
               block.type === 'cards' &&
-              block.cards.some((card) => card.kind === 'transaction-list')
+              block.cards.some((card) => card.kind !== 'transaction')
           )}
         {#if hasBlocks || message.pending}
           <div class="assistant-turn" class:intro={message.intro}>
@@ -493,6 +514,8 @@
                         <TransactionCard {card} />
                       {:else if card.kind === 'transaction-list'}
                         <TransactionListCard {card} />
+                      {:else if card.kind === 'spending-pie'}
+                        <PieChartCard {card} />
                       {/if}
                     {/each}
                   {/if}
