@@ -378,8 +378,10 @@ export function transactionCard(
 }
 
 /**
- * Normalize insight_anomalies findings into at most `cap` single-transaction
- * cards. Malformed payloads and entries are skipped rather than thrown on.
+ * Normalize insight_anomalies findings into single-transaction cards: one card
+ * per finding, capped at 8 by default for layout/performance. The old 1–2 card
+ * budget was a layout budget, not a limit on flagged findings. Malformed
+ * payloads and entries are skipped rather than thrown on.
  */
 export function anomalyTransactionCards(
   payload: unknown,
@@ -387,7 +389,7 @@ export function anomalyTransactionCards(
   startId: number,
   context?: TransactionCardContext
 ): TransactionEntityCard[] {
-  const limit = normalizeCap(context?.cap ?? 2);
+  const limit = normalizeCap(context?.cap ?? 8);
   if (limit === 0) return [];
 
   try {
@@ -1768,17 +1770,19 @@ export function anomalyExplanation(cards: EntityCard[]): string {
 }
 
 /**
- * Merge anomaly transaction cards by entityId. Non-transaction cards already
- * present (for example a transaction list) are preserved unchanged and never
- * count toward `cap`. Result order: preserved non-transaction cards in their
- * existing order, followed by anomaly cards in first-seen order (existing,
- * then incoming), capped at `cap` anomaly cards.
+ * Merge anomaly transaction cards by entityId. Every flagged transaction gets
+ * its own inline card, capped at 8 by default for layout/performance; the old
+ * 1–2 budget applied to other cards, not anomaly findings. Non-transaction
+ * cards already present (for example a transaction list or a pie) are
+ * preserved unchanged and never count toward `cap`. Result order: preserved
+ * non-transaction cards in their existing order, followed by anomaly cards in
+ * first-seen order (existing, then incoming), capped at `cap` anomaly cards.
  * Malformed entries are ignored.
  */
 export function mergeEntityCards(
   existing: EntityCard[],
   incoming: EntityCard[],
-  cap = 2
+  cap = 8
 ): EntityCard[] {
   const limit = normalizeCap(cap);
 

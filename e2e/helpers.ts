@@ -185,11 +185,11 @@ export async function assistantText(page: Page): Promise<string> {
 
 /**
  * Primitive card style contract: no legacy `.chat-card` chrome or eyebrow
- * labels, and every standalone card sits in a framed `.entity-card` surface
- * with lift and a border. There is no top accent strip. Standalone cards are
- * left-aligned in the assistant content column and capped at the same maximum
- * width as the Eno chat bubble (88% of the column). Inline transaction rows are
- * exempt from the standalone frame.
+ * labels. Single-entity cards render inline inside the assistant bubble, with
+ * no lift shadow, no accent strip, and a width capped by the bubble. Multi or
+ * series cards (`transaction-list`, `spending-pie`) stay standalone: a framed
+ * `.entity-card` surface with lift, a border, left alignment, and the same 88%
+ * column cap as the Eno chat bubble.
  */
 export async function expectCardStyle(page: Page): Promise<void> {
   await expect(
@@ -203,40 +203,57 @@ export async function expectCardStyle(page: Page): Promise<void> {
 
   const surfaces = await page.locator(PRIMITIVE_CARD_SELECTOR).evaluateAll((cards) =>
     cards.map((card) => {
-      const inline = Boolean(card.closest('.bubble.assistant'));
+      const bubble = card.closest('.bubble.assistant');
+      const inline = Boolean(bubble);
       const frame = card.closest('.entity-card');
-      if (!frame) {
-        return {
-          inline,
-          framed: false,
-          shadow: 'none',
-          borderTopWidth: 0,
-          accentContent: 'none',
-          leftAligned: false,
-          withinBubbleWidth: false
-        };
-      }
-      const style = getComputedStyle(frame);
-      const accent = getComputedStyle(frame, '::before');
-      const column = frame.closest('.assistant-content');
-      const frameRect = frame.getBoundingClientRect();
+      const bubbleRect = bubble?.getBoundingClientRect();
+      const target = frame ?? card;
+      const style = getComputedStyle(target);
+      const accent = getComputedStyle(target, '::before');
+      const column = target.closest('.assistant-content');
+      const targetRect = target.getBoundingClientRect();
       const columnRect = column?.getBoundingClientRect();
       return {
         inline,
-        framed: true,
+        framed: Boolean(frame),
         shadow: style.boxShadow,
         borderTopWidth: Number.parseFloat(style.borderTopWidth),
         accentContent: accent.content,
-        leftAligned: columnRect ? Math.abs(frameRect.left - columnRect.left) <= 1 : false,
+        leftAligned: columnRect ? Math.abs(targetRect.left - columnRect.left) <= 1 : false,
         withinBubbleWidth: columnRect
-          ? frameRect.width <= columnRect.width * 0.88 + 1
+          ? targetRect.width <= columnRect.width * 0.88 + 1
+          : false,
+        withinInlineBubbleWidth: bubbleRect
+          ? targetRect.width <= bubbleRect.width + 1
           : false
       };
     })
   );
 
   for (const surface of surfaces) {
-    if (surface.inline) continue;
+    if (surface.inline) {
+      // Inline cards keep the shared border but lose the standalone lift and
+      // accent, and never exceed the bubble they sit in.
+      expect(surface.shadow, 'inline cards must not use the standalone frame lift').toBe(
+        'none'
+      );
+      expect(
+        ['none', 'normal'],
+        'inline cards must not render a ::before accent bar'
+      ).toContain(surface.accentContent);
+      if (surface.framed) {
+        expect(
+          surface.borderTopWidth,
+          'inline cards keep the 1px frame border'
+        ).toBeGreaterThanOrEqual(1);
+      }
+      expect(
+        surface.withinInlineBubbleWidth,
+        'inline cards must not exceed the assistant bubble width'
+      ).toBe(true);
+      continue;
+    }
+
     expect(surface.framed, 'standalone primitive cards sit in a contrast frame').toBe(true);
     expect(surface.shadow, 'cards should lift off the chat surface').not.toBe('none');
     expect(surface.borderTopWidth, 'cards need a visible border').toBeGreaterThanOrEqual(1);
@@ -254,6 +271,7 @@ export async function expectCardStyle(page: Page): Promise<void> {
     ).toBe(true);
   }
 }
+
 
 /**
  * Card values must not be repeated in the assistant prose. `values` are the

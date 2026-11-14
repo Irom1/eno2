@@ -150,8 +150,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .loan-card')).toHaveCount(1);
     expect(
       await loan.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the loan card is standalone, not folded into the prose bubble'
-    ).toBe(false);
+      'the loan card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -210,8 +210,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .reward-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the reward card is standalone'
-    ).toBe(false);
+      'the reward card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -286,8 +286,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .merchant-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the merchant card is standalone'
-    ).toBe(false);
+      'the merchant card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -355,8 +355,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .profile-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the profile card is standalone'
-    ).toBe(false);
+      'the profile card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -423,8 +423,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .goal-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the goal card is standalone'
-    ).toBe(false);
+      'the goal card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -487,8 +487,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .cashflow-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the cashflow card is standalone'
-    ).toBe(false);
+      'the cashflow card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -567,7 +567,7 @@ test.describe('chat prompts', () => {
     await expectFollowupsMatchBubble(page);
     await expectFollowupBorders(page);
 
-    // The mascot sits to the left of the intro bubble, aligned near its top.
+    // The mascot sits to the left of the intro bubble, aligned to its bottom.
     const introAvatar = page.locator('.assistant-turn.intro .eno-thinking');
     const introBubble = page.locator('.assistant-turn.intro .bubble.assistant');
     await expect(introAvatar).toBeVisible();
@@ -581,9 +581,19 @@ test.describe('chat prompts', () => {
       'intro mascot should sit left of the bubble'
     ).toBeLessThanOrEqual(introBubbleBox!.x + 1);
     expect(
-      Math.abs(introAvatarBox!.y - introBubbleBox!.y),
-      'intro mascot should align with the top of the bubble'
+      Math.abs(
+        introAvatarBox!.y +
+          introAvatarBox!.height -
+          (introBubbleBox!.y + introBubbleBox!.height)
+      ),
+      'intro mascot should align with the bottom of the bubble'
     ).toBeLessThan(20);
+    if (introBubbleBox!.height > introAvatarBox!.height + 20) {
+      expect(
+        introAvatarBox!.y,
+        'intro mascot should sit below the top of the bubble'
+      ).toBeGreaterThan(introBubbleBox!.y);
+    }
 
     await askChat(page, 'Show me my loans');
 
@@ -625,9 +635,19 @@ test.describe('chat prompts', () => {
       'responder mascot should sit left of its content'
     ).toBeLessThanOrEqual(responderContentBox!.x + 1);
     expect(
-      Math.abs(responderAvatarBox!.y - responderContentBox!.y),
-      'responder mascot should align with the top of its content'
+      Math.abs(
+        responderAvatarBox!.y +
+          responderAvatarBox!.height -
+          (responderContentBox!.y + responderContentBox!.height)
+      ),
+      'responder mascot should align with the bottom of its content'
     ).toBeLessThan(20);
+    if (responderContentBox!.height > responderAvatarBox!.height + 20) {
+      expect(
+        responderAvatarBox!.y,
+        'responder mascot should sit below the top of its content'
+      ).toBeGreaterThan(responderContentBox!.y);
+    }
 
     // Switching customers resets to exactly one fresh intro.
     await page.locator('.profile').click();
@@ -1166,8 +1186,8 @@ test.describe('chat prompts', () => {
         .locator('.merchant-card')
         .first()
         .evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the buffered merchant card is standalone'
-    ).toBe(false);
+      'the buffered merchant card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await waitForChatSettled(page);
     await expect(turn.locator('.merchant-card')).toHaveCount(1);
@@ -1189,6 +1209,19 @@ test.describe('chat prompts', () => {
     await expectNoCardValueDuplicate(page, ['$4,283.59', '$65.59']);
     await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
     await expectCardStyle(page);
+
+    // The bill card shows the largest bill's payee, amount, and due date, so
+    // the prose must use timing analytically instead of restating those fields.
+    const prose = await assistantText(page);
+    expect(prose, 'prose must not restate the card payee').not.toContain('MIT Bursar');
+    expect(prose, 'prose must not restate the card amount').not.toContain('1,800');
+    expect(prose, 'prose must not restate the card due date').not.toMatch(
+      /2026-12-05|Dec 5/
+    );
+    expect(prose, 'prose uses relative timing').toMatch(
+      /largest payment is due (within the next three weeks|in the coming weeks)/
+    );
+    expect(prose).toContain('Tip:');
     expectNoErrors(errors);
   });
 
@@ -1423,8 +1456,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .recurring-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the recurring card is standalone'
-    ).toBe(false);
+      'the recurring card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -1581,7 +1614,7 @@ test.describe('chat prompts', () => {
       'the buffered pie stays a standalone card'
     ).toBe(false);
     await expect(page.locator('.chat-card')).toHaveCount(0);
-    await expect(turn.locator('.bubble.assistant.inline-transactions')).toHaveCount(0);
+    await expect(turn.locator('.bubble.assistant .pie-chart-card')).toHaveCount(0);
 
     expectNoErrors(errors);
   });
@@ -1597,7 +1630,7 @@ test.describe('chat prompts', () => {
       kind: 'insight_anomalies',
       accountId: 'acct-checking',
       payload: {
-        count: 2,
+        count: 3,
         findings: [
           {
             _id: 'txn-apple',
@@ -1613,6 +1646,14 @@ test.describe('chat prompts', () => {
             amount: 15.49,
             date: '2026-11-02',
             duplicateOf: '2026-11-01'
+          },
+          {
+            _id: 'txn-spotify',
+            type: 'duplicate',
+            description: 'SPOTIFY',
+            amount: 9.99,
+            date: '2026-11-04',
+            duplicateOf: '2026-11-03'
           }
         ]
       }
@@ -1629,7 +1670,11 @@ test.describe('chat prompts', () => {
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'both posted this week.'
+        delta: ' and another duplicate at SPOTIFY: '
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'all three posted this week.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -1648,8 +1693,7 @@ test.describe('chat prompts', () => {
     await expect(cards.first()).toBeVisible({ timeout: 20_000 });
 
     const count = await cards.count();
-    expect(count, 'render 1–2 single-transaction cards').toBeGreaterThanOrEqual(1);
-    expect(count, 'render 1–2 single-transaction cards').toBeLessThanOrEqual(2);
+    expect(count, 'one card per flagged transaction').toBe(3);
 
     for (let index = 0; index < count; index += 1) {
       await expect(cards.nth(index)).toHaveAttribute('data-kind', 'transaction');
@@ -1659,6 +1703,7 @@ test.describe('chat prompts', () => {
     const cardsText = (await cards.allInnerTexts()).join('\n');
     expect(cardsText, 'cards name the merchant').toContain('APPLE STORE');
     expect(cardsText, 'cards name the merchant').toContain('NETFLIX.COM');
+    expect(cardsText, 'cards name the merchant').toContain('SPOTIFY');
     expect(cardsText, 'cards show the amount').toContain('1,299');
     expect(cardsText).not.toContain('Possible duplicate');
     expect(cardsText).not.toContain('Unusual amount');
@@ -1682,7 +1727,8 @@ test.describe('chat prompts', () => {
     }
     expect(cardHrefs.map((link) => link.href)).toEqual([
       expect.stringMatching(/txn=txn-apple$/),
-      expect.stringMatching(/txn=txn-netflix$/)
+      expect.stringMatching(/txn=txn-netflix$/),
+      expect.stringMatching(/txn=txn-spotify$/)
     ]);
 
     // Single transaction rows render inside the assistant bubble, not as
@@ -1711,7 +1757,7 @@ test.describe('chat prompts', () => {
     expect(prose).toMatch(/duplicate|large|suspicious/i);
 
     const order = await page.locator('.assistant-turn').last().evaluate((turn) => {
-      const bubble = turn.querySelector('.bubble.assistant.inline-transactions');
+      const bubble = turn.querySelector('.bubble.assistant.inline-entities');
       const content = bubble ?? turn.querySelector('.assistant-content');
       if (!content) return [];
       return Array.from(content.children).flatMap((child) => {
@@ -1722,7 +1768,9 @@ test.describe('chat prompts', () => {
         return [];
       });
     });
-    expect(order, 'text → card → text → card → text ordering').toEqual([
+    expect(order, 'text → card → text → card → text → card → text ordering').toEqual([
+      'text',
+      'card',
       'text',
       'card',
       'text',
@@ -1756,8 +1804,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .location-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the location card is standalone'
-    ).toBe(false);
+      'the location card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -2114,7 +2162,7 @@ test.describe('Eno mascot', () => {
           accentContent: accent.content
         };
       });
-    expect(surface.shadow, 'dark cards should still lift').not.toBe('none');
+    expect(surface.shadow, 'inline cards lose the standalone lift').toBe('none');
     expect(surface.borderTopWidth).toBeGreaterThanOrEqual(1);
     expect(['none', 'normal'], 'no ::before accent bar').toContain(surface.accentContent);
 
@@ -2226,8 +2274,8 @@ test.describe('primitive bill and account cards', () => {
     await expect(page.locator('.entity-card .bill-card')).toHaveCount(1);
     expect(
       await bill.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the bill card is standalone, not folded into the prose bubble'
-    ).toBe(false);
+      'the bill card renders inline inside the prose bubble'
+    ).toBe(true);
 
     // It deep-links to the owning account when the ids are present.
     const link = bill.locator('a.bill-link');
@@ -2358,8 +2406,8 @@ test.describe('primitive bill and account cards', () => {
     await expect(card.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the account card is standalone'
-    ).toBe(false);
+      'the account card renders inline inside the prose bubble'
+    ).toBe(true);
 
     const link = card.locator('a.account-link');
     await expect(link).toHaveCount(1);

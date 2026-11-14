@@ -7,7 +7,7 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
 ## Shipped
 
 - [x] Phase 0: legacy broad cards archived; chat is prose-first. No app import of `src/lib/chat/archive/legacy-cards/`.
-- [x] `TransactionCard` — one merchant/date/amount for anomaly findings; 1–2 per turn; no reason chip; deep link when ids exist.
+- [x] `TransactionCard` — one merchant/date/amount per anomaly finding (one inline card each, capped at 8 per turn); no reason chip; deep link when ids exist. The previous 1–2 cap was a layout budget, not a limit on flagged findings.
 - [x] `TransactionListCard` — merged deposit/withdrawal list, cap 8 plus “N more”; every row deep-links; standalone `CardFrame`.
 - [x] `SpendingPieCard` — latest complete month, top 5 plus `Other`, period and legend; no editorial labels.
 - [x] `BillCard` — one largest upcoming bill from `insight_upcoming_bills`; payee, due date, amount, factual status chip; optional account link; coverage/total stay in prose.
@@ -25,7 +25,7 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
 - [x] Shared primitives library — pure helpers in `src/lib/chat/primitives.ts` and components in `src/routes/[view=wallet]/inline-cards/primitives/`: `MoneyText`/`signedMoney`, `DateText`/`relativeDateLabel`, `AccountTag`, `ProgressMeter`, `ShareBar`, `DeltaBadge`, `Sparkline`, `InlineAction`, `TruncationFooter`, `InlineEmpty`, `ExpandRow`, `DefinitionHint`, and `BufferedPlaceholder`.
   - Used by existing cards: `MoneyText` (`TransactionCard`, `TransactionListCard`, `BillCard`, `LoanCard`, `RecurringChargeCard`, `CashflowPointCard`, `AccountCard`), `DateText` (`TransactionCard`, `TransactionListCard`, `BillCard`, `RecurringChargeCard`), `TruncationFooter` (`TransactionListCard`), `ProgressMeter` (`GoalCard`).
   - Library-only: `AccountTag`, `ShareBar`, `DeltaBadge`, `Sparkline`, `InlineAction`, `InlineEmpty`, `ExpandRow`, `DefinitionHint`, `BufferedPlaceholder`.
-- [x] Buffering, markdown-safe anchoring, and deep links — `revealInlineCards`, `inlineBlocks`, `anchorEntityCards`, `transactionHref`, `accountHref`.
+- [x] Buffering, markdown-safe anchoring, deep links, and inline grouping — `revealInlineCards`, `inlineBlocks`, `groupInlineCards` (`src/lib/chat/cardGroups.ts`), `anchorEntityCards`, `transactionHref`, `accountHref`. Single-entity cards render inside `.bubble.assistant`; `transaction-list`/`spending-pie` stay standalone.
 - [x] Prompt rules for primitive cards and the single-bill/single-account/single-loan/location/recurring-charge/reward/goal/cashflow/merchant/profile rules.
 - [x] `present_card` tool, ownership validation, normalized `card` SSE event, and the `off`/`v2` flag.
   - Server collects turn-local candidates from successful data-tool results, validates account ownership for account/bill/loan/transaction/profile, and emits a whitelisted `EntityCard`.
@@ -43,9 +43,9 @@ Each new primitive must satisfy all of the following before it is checked off. E
 
 - [x] **Primitive only.** One entity or one basic series. No titles, badges, reason tags, rankings, recommendations, combined summaries, or fallback/“everything” cards.
 - [x] **Normalized payload.** Whitelisted interface + pure builder in `src/lib/chat/entityCards.ts`; raw tool records never reach the SSE payload or DOM. Missing fields normalize safely; malformed input returns `null`/`[]` instead of throwing.
-- [x] **Stable identity and budget.** Stable `entityId`, finite render `id`, turn-level dedupe/replacement, and 1–2 cards per turn. Prefer no card over a broad or wrong one.
+- [x] **Stable identity and budget.** Stable `entityId`, finite render `id`, turn-level dedupe/replacement. Anomaly findings get one inline card each (cap 8); other cards remain at 1–2 per turn. The previous 1–2 cap was a layout budget, not a limit on flagged findings. Prefer no card over a broad or wrong one.
 - [x] **Inline placement and buffering.** Accept `afterText`; anchor after the named entity where applicable; markdown spans never split; pending reveal waits for the prose; `done` reveals unanchored cards at end-of-text. Non-target cards are untouched by anchoring/merging.
-- [x] **Component and renderer.** Standalone card uses `CardFrame` (surface, border, lift shadow — no accent strip; width capped at the chat bubble max of 88% of the assistant content column and left-aligned); add the `kind` branch in `ChatPanel.svelte`; never fold non-transaction cards into the inline transaction bubble. Deep link only when ids are complete; omit otherwise.
+- [x] **Component and renderer.** Every card uses `CardFrame`; single-entity cards (`transaction`, `bill`, `account`, `loan`, `location`, `recurring`, `reward`, `goal`, `cashflow`, `merchant`, `profile`) render inline inside the assistant bubble (bubble-scoped CSS: 1px border, no lift shadow, no accent, width capped by the bubble), while `transaction-list` and `spending-pie` stay standalone framed cards (surface, border, lift shadow — no accent strip; width capped at 88% of the assistant content column and left-aligned). `ChatCardView.svelte` centralizes the `kind` switch and `groupInlineCards` flushes/emits standalone cards in order. Deep link only when ids are complete; omit otherwise.
 - [x] **Prompt.** Add a short intro/takeaway or primitive-card rule only if the card needs framing; every answer keeps one insight and one tip in prose and never restates card values.
 - [x] **Tests.** Unit tests for valid/empty/malformed payloads, selection, whitelist, identity, anchoring, and dedupe. Update E2E expectations (do not run Playwright under current policy).
 - [x] **Verification.** `npm run check`, `npm test`, and `npm run build` pass. Browser E2E is intentionally skipped. Optionally confirm `/api/health` and `/chat` return 200.

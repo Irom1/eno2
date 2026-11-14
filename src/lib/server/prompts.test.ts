@@ -114,6 +114,15 @@ describe("buildSystemInstruction", () => {
       'Good: "This is your only card." / "You\'re close to your next reward."'
     );
     expect(instruction).toContain(
+      'An amount, date, status, or row should appear only as part of analysis, never as a bare restatement.'
+    );
+    expect(instruction).toContain(
+      'Bad: "The largest is MIT Bursar, due 2026-12-05." (the card already shows that bill and due date)'
+    );
+    expect(instruction).toContain(
+      'Good: "The largest payment is due within the next three weeks." (analysis/timing, not a restatement)'
+    );
+    expect(instruction).toContain(
       'Cards render inline with your prose. When a card will help, write one short introductory sentence before calling the tool, then let the card render, then add a concise takeaway that explains what stands out.'
     );
     expect(instruction).toContain(
