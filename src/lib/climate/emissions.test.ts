@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mergeTransactions } from '../server/accounts';
-import { buildReport, fromNessiePurchase, scoreFor, US_AVG_TONNES } from './emissions';
+import { buildReport, fromNessiePurchase, scoreFor, tierFor, US_AVG_TONNES } from './emissions';
 
 // Raw Nessie deposits/withdrawals, run through the same normalizer /api/accounts/:id uses,
 // so these tests break if that endpoint's transaction shape ever drifts from what ClimateWise reads.
@@ -32,13 +32,21 @@ describe('ClimateWise report', () => {
     expect(report.purchaseCount).toBe(4);
   });
 
-  it('keeps the score between 0 and 100 and pins the US average to 50', () => {
+  it('keeps the score between 300 and 850 and pins the US average to 670', () => {
     const report = buildReport(transactions, { days: 30, asOf });
-    expect(report.score).toBeGreaterThanOrEqual(0);
-    expect(report.score).toBeLessThanOrEqual(100);
-    expect(scoreFor(US_AVG_TONNES)).toBe(50);
-    expect(scoreFor(0)).toBe(100);
-    expect(scoreFor(1000)).toBe(0);
+    expect(report.score).toBeGreaterThanOrEqual(300);
+    expect(report.score).toBeLessThanOrEqual(850);
+    expect(scoreFor(US_AVG_TONNES)).toBe(670);
+    expect(scoreFor(0)).toBe(850);
+    expect(scoreFor(1000)).toBe(300);
+  });
+
+  it('uses FICO-style tiers', () => {
+    expect(tierFor(850)).toBe('Exceptional');
+    expect(tierFor(740)).toBe('Very good');
+    expect(tierFor(670)).toBe('Good');
+    expect(tierFor(580)).toBe('Fair');
+    expect(tierFor(300)).toBe('Poor');
   });
 
   it('returns an empty, valid report with no transactions', () => {

@@ -3,6 +3,8 @@
 	 * Score gauge built from the ClimateWise logo motif:
 	 * a dotted arc over the horizon, with the sun marking the score.
 	 */
+	import { SCORE_MAX, SCORE_MIN, scoreFraction } from './emissions';
+
 	let {
 		score = 0,
 		tier = '',
@@ -27,7 +29,7 @@
 		return { t, ...pt(START + (END - START) * t) };
 	});
 
-	let shown = $state(0);
+	let shown = $state(SCORE_MIN);
 	$effect(() => {
 		// gentle count-up; respects reduced motion
 		const target = score;
@@ -39,14 +41,14 @@
 		let raf = 0;
 		const step = (now: number) => {
 			const k = Math.min(1, (now - t0) / 900);
-			shown = Math.round(target * (1 - Math.pow(1 - k, 3)));
+			shown = Math.round(SCORE_MIN + (target - SCORE_MIN) * (1 - Math.pow(1 - k, 3)));
 			if (k < 1) raf = requestAnimationFrame(step);
 		};
 		raf = requestAnimationFrame(step);
 		return () => cancelAnimationFrame(raf);
 	});
 
-	let sun = $derived(pt(START + (END - START) * (shown / 100)));
+	let sun = $derived(pt(START + (END - START) * scoreFraction(shown)));
 </script>
 
 <svg
@@ -55,10 +57,10 @@
 	width={size}
 	height={(size * 150) / 220}
 	role="img"
-	aria-label="ClimateWise score {score} out of 100, {tier}"
+	aria-label="ClimateWise score {score} out of {SCORE_MAX}, {tier}"
 >
 	{#each dots as d}
-		<circle cx={d.x} cy={d.y} r="4.2" class:on={d.t * 100 <= shown} />
+		<circle cx={d.x} cy={d.y} r="4.2" class:on={d.t <= scoreFraction(shown)} />
 	{/each}
 	<circle class="sun-glow" cx={sun.x} cy={sun.y} r="17" />
 	<circle class="sun" cx={sun.x} cy={sun.y} r="11" />

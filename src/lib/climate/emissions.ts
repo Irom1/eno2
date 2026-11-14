@@ -172,7 +172,7 @@ export interface ClimateReport {
 	annualizedTonnes: number;
 	benchmarkTonnes: number;
 	targetTonnes: number;
-	score: number; // 0..100, higher is better
+	score: number; // 300..850 (credit-score scale), higher is better
 	tier: string;
 	categories: CategoryTotal[]; // fixed CATEGORIES order, includes zeroes
 	/** "How green" view: flexible spend split by rating. Fixed costs (rent) are left out. */
@@ -185,20 +185,32 @@ export interface ClimateReport {
 export const US_AVG_TONNES = 16; // per person per year, all sources
 export const TARGET_TONNES = 2.5; // ~per-capita level for a 1.5°C pathway by 2030 (IPCC AR6)
 
+/** Same range as a FICO credit score. */
+export const SCORE_MIN = 300;
+export const SCORE_MAX = 850;
+/** Score for being on pace with the US average — the bottom of FICO's "Good" band. */
+export const SCORE_US_AVG = 670;
+
+/** 0..1 position of a score within SCORE_MIN..SCORE_MAX (for gauges). */
+export const scoreFraction = (score: number) =>
+	Math.max(0, Math.min(1, (score - SCORE_MIN) / (SCORE_MAX - SCORE_MIN)));
+
+/** FICO-style bands. */
 export function tierFor(score: number): string {
-	if (score >= 80) return 'Excellent';
-	if (score >= 65) return 'Very good';
-	if (score >= 50) return 'Good';
-	if (score >= 35) return 'Fair';
-	return 'Needs work';
+	if (score >= 800) return 'Exceptional';
+	if (score >= 740) return 'Very good';
+	if (score >= 670) return 'Good';
+	if (score >= 580) return 'Fair';
+	return 'Poor';
 }
 
 /**
- * Score: 50 = on pace with the US average, 100 = zero purchase emissions.
- * Linear, clamped to 0..100.
+ * Score: 850 = zero purchase emissions, 670 = on pace with the US average.
+ * Linear, clamped to 300..850.
  */
 export function scoreFor(annualTonnes: number): number {
-	return Math.round(Math.max(0, Math.min(100, 100 - (annualTonnes / US_AVG_TONNES) * 50)));
+	const raw = SCORE_MAX - (annualTonnes / US_AVG_TONNES) * (SCORE_MAX - SCORE_US_AVG);
+	return Math.round(Math.max(SCORE_MIN, Math.min(SCORE_MAX, raw)));
 }
 
 const round = (n: number, d = 1) => Math.round(n * 10 ** d) / 10 ** d;

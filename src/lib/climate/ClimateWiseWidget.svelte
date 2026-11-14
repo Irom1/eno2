@@ -3,7 +3,7 @@
 	 * Dashboard tile. Same footprint as the CreditWise card (article.panel.utility),
 	 * so it sits beside it in "Your tools" without layout changes.
 	 */
-	import type { ClimateReport } from './emissions';
+	import { scoreFraction, type ClimateReport } from './emissions';
 
 	let { href = '/climatewise' }: { href?: string } = $props();
 	let report = $state<ClimateReport | null>(null);
@@ -16,7 +16,7 @@
 	});
 
 	// gauge covers 270° like CreditWise: 0..75% of the conic circle
-	let pct = $derived(report ? (report.score / 100) * 75 : 0);
+	let pct = $derived(report ? scoreFraction(report.score) * 75 : 0);
 </script>
 
 <article class="panel utility">
