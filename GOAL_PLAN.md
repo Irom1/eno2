@@ -39,14 +39,32 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
 
 ## Acceptance for every card slice
 
-Each new primitive must satisfy all of the following before it is checked off:
+Each new primitive must satisfy all of the following before it is checked off. Every shipped slice met them (see final verification below).
 
-- [ ] **Primitive only.** One entity or one basic series. No titles, badges, reason tags, rankings, recommendations, combined summaries, or fallback/“everything” cards.
-- [ ] **Normalized payload.** Whitelisted interface + pure builder in `src/lib/chat/entityCards.ts`; raw tool records never reach the SSE payload or DOM. Missing fields normalize safely; malformed input returns `null`/`[]` instead of throwing.
-- [ ] **Stable identity and budget.** Stable `entityId`, finite render `id`, turn-level dedupe/replacement, and 1–2 cards per turn. Prefer no card over a broad or wrong one.
-- [ ] **Inline placement and buffering.** Accept `afterText`; anchor after the named entity where applicable; markdown spans never split; pending reveal waits for the prose; `done` reveals unanchored cards at end-of-text. Non-target cards are untouched by anchoring/merging.
-- [ ] **Component and renderer.** Standalone card uses `CardFrame`; add the `kind` branch in `ChatPanel.svelte`; never fold non-transaction cards into the inline transaction bubble. Deep link only when ids are complete; omit otherwise.
-- [ ] **Prompt.** Add a short intro/takeaway or primitive-card rule only if the card needs framing; every answer keeps one insight and one tip in prose and never restates card values.
-- [ ] **Tests.** Unit tests for valid/empty/malformed payloads, selection, whitelist, identity, anchoring, and dedupe. Update E2E expectations (do not run Playwright under current policy).
-- [ ] **Verification.** `npm run check`, `npm test`, and `npm run build` pass. Browser E2E is intentionally skipped. Optionally confirm `/api/health` and `/chat` return 200.
-- [ ] **Docs.** Update this checklist and the corresponding status/table rows in `CARD_PLAN.md`.
+- [x] **Primitive only.** One entity or one basic series. No titles, badges, reason tags, rankings, recommendations, combined summaries, or fallback/“everything” cards.
+- [x] **Normalized payload.** Whitelisted interface + pure builder in `src/lib/chat/entityCards.ts`; raw tool records never reach the SSE payload or DOM. Missing fields normalize safely; malformed input returns `null`/`[]` instead of throwing.
+- [x] **Stable identity and budget.** Stable `entityId`, finite render `id`, turn-level dedupe/replacement, and 1–2 cards per turn. Prefer no card over a broad or wrong one.
+- [x] **Inline placement and buffering.** Accept `afterText`; anchor after the named entity where applicable; markdown spans never split; pending reveal waits for the prose; `done` reveals unanchored cards at end-of-text. Non-target cards are untouched by anchoring/merging.
+- [x] **Component and renderer.** Standalone card uses `CardFrame`; add the `kind` branch in `ChatPanel.svelte`; never fold non-transaction cards into the inline transaction bubble. Deep link only when ids are complete; omit otherwise.
+- [x] **Prompt.** Add a short intro/takeaway or primitive-card rule only if the card needs framing; every answer keeps one insight and one tip in prose and never restates card values.
+- [x] **Tests.** Unit tests for valid/empty/malformed payloads, selection, whitelist, identity, anchoring, and dedupe. Update E2E expectations (do not run Playwright under current policy).
+- [x] **Verification.** `npm run check`, `npm test`, and `npm run build` pass. Browser E2E is intentionally skipped. Optionally confirm `/api/health` and `/chat` return 200.
+- [x] **Docs.** Update this checklist and the corresponding status/table rows in `CARD_PLAN.md`.
+
+## Final verification
+
+Independent acceptance verification at HEAD `ef0167a` (remote `origin/main` in sync):
+
+- `npm run check` — 0 errors / 0 warnings.
+- `npm test` — 303 passed across 32 files.
+- `npm run build` — green.
+- Runtime smoke: `/api/health`, `/chat`, and `/dashboard` return 200.
+- Live SSE for bills and suspicious activity: no `error` events; insight and tip present; client-inferred card fallback works.
+- Active `src/` has no legacy cards/relevance/dedupe/`ChatCard`/`chatCardKind` coupling (archive-only).
+- E2E spec is type-valid; Playwright was intentionally not run under current policy.
+
+Residual limitations (unchanged):
+
+- `present_card` supports account, bill, loan, transaction, merchant, location, and profile kinds; category, cashflow, recurring, reward, and goal cards remain client-inferred because the tools expose no stable single entity id.
+- Several primitive library components remain library-only: `AccountTag`, `ShareBar`, `DeltaBadge`, `Sparkline`, `InlineAction`, `InlineEmpty`, `ExpandRow`, `DefinitionHint`, `BufferedPlaceholder`.
+- Data-source gaps: recurring charges carry no cadence or next date, ATMs carry no street address, and locations carry no distance. Cards omit those fields rather than inventing them.
