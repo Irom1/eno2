@@ -169,7 +169,7 @@
       </a>
 
       <div class="nav-actions">
-        <button type="button" class="theme-toggle" aria-label={themeLabel} aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
+        <button type="button" class="theme-toggle" disabled={!ready} aria-label={themeLabel} aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
             {#if isDark}
               <circle cx="12" cy="12" r="4" />
