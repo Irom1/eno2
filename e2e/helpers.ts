@@ -85,6 +85,15 @@ export async function waitForComposerReady(page: Page): Promise<void> {
  * changing across two samples.
  */
 export async function waitForChatSettled(page: Page): Promise<void> {
+  // Wait until the panel reports the stream has ended before sampling text.
+  await page
+    .waitForFunction(
+      () => document.querySelector('.chat-panel')?.getAttribute('data-streaming') === 'false',
+      undefined,
+      { timeout: 20_000 }
+    )
+    .catch(() => undefined);
+
   // The pending status line disappears on `done`.
   await page
     .waitForFunction(() => !document.querySelector('.chat-log .status-line'), undefined, {
@@ -169,6 +178,25 @@ export async function expectCardStyle(page: Page): Promise<void> {
     expect(title.toLowerCase(), 'card titles should be product language').not.toBe(
       'rewards points'
     );
+  }
+
+  const surfaces = await page.locator('.chat-card').evaluateAll((cards) =>
+    cards.map((card) => {
+      const style = getComputedStyle(card);
+      const accent = getComputedStyle(card, '::before');
+      return {
+        shadow: style.boxShadow,
+        borderTopWidth: Number.parseFloat(style.borderTopWidth),
+        accentHeight: Number.parseFloat(accent.height)
+      };
+    })
+  );
+
+  for (const surface of surfaces) {
+    expect(surface.shadow, 'cards should lift off the chat surface').not.toBe('none');
+    expect(surface.borderTopWidth, 'cards need a visible border').toBeGreaterThanOrEqual(1);
+    expect(surface.accentHeight, 'cards need a 3px accent strip').toBeGreaterThan(2);
+    expect(surface.accentHeight, 'cards need a 3px accent strip').toBeLessThan(4);
   }
 }
 

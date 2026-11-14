@@ -29,6 +29,20 @@
     return () => query.removeEventListener('change', onChange);
   });
 
+  // Preload every pose for both variants once on mount. This keeps frame and
+  // theme switches instant instead of flashing an empty image while the new
+  // source decodes.
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const variants: EnoVariant[] = ['light', 'navy'];
+    for (const name of variants) {
+      for (const item of ENO_FRAMES) {
+        const preload = new Image();
+        preload.src = enoSrc(name, item.pose);
+      }
+    }
+  });
+
   // Advance through the frames while thinking. The index is a local variable so
   // writing `frame` never re-triggers this effect.
   $effect(() => {
@@ -62,58 +76,29 @@
   style:width="{size}px"
   style:height="{size}px"
 >
-  {#each ENO_FRAMES as item, index (item.pose)}
-    <img
-      src={enoSrc(variant, item.pose)}
-      alt=""
-      width={size}
-      height={size}
-      draggable="false"
-      decoding="async"
-      data-frame={index}
-      data-pose={item.pose}
-      data-visible={index === frame ? 'true' : 'false'}
-    />
-  {/each}
+  <img
+    src={enoSrc(variant, ENO_FRAMES[frame].pose)}
+    alt=""
+    width={size}
+    height={size}
+    loading="eager"
+    decoding="async"
+    draggable="false"
+    data-frame={frame}
+    data-pose={ENO_FRAMES[frame].pose}
+  />
 </div>
 
 <style>
   .eno-thinking {
-    position: relative;
     display: inline-block;
     flex: none;
     vertical-align: middle;
   }
-  .eno-thinking.thinking {
-    animation: eno-bob 1.6s ease-in-out infinite;
-  }
   .eno-thinking img {
-    position: absolute;
-    inset: 0;
+    display: block;
     width: 100%;
     height: 100%;
     object-fit: contain;
-    opacity: 0;
-    transition: opacity 80ms linear;
-  }
-  .eno-thinking img[data-visible='true'] {
-    opacity: 1;
-  }
-  @keyframes eno-bob {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-2px);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .eno-thinking.thinking {
-      animation: none;
-    }
-    .eno-thinking img {
-      transition: none;
-    }
   }
 </style>

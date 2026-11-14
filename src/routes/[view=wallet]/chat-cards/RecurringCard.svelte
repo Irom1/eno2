@@ -32,7 +32,7 @@
   }
 </script>
 
-<ChatCardShell title="Recurring payments" badge={rows.length ? `${rows.length}` : undefined}>
+<ChatCardShell title="Recurring payments">
   {#if items.length === 0}
     <p class="empty">No recurring payments found.</p>
   {:else}

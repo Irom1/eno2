@@ -31,7 +31,7 @@
   }
 </script>
 
-<ChatCardShell title="Worth a look" badge={findings.length ? `${findings.length}` : undefined}>
+<ChatCardShell>
   {#if items.length === 0}
     <p class="empty">Nothing unusual right now.</p>
   {:else}

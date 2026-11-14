@@ -26,11 +26,9 @@
     const parsed = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
   }
-
-  const count = $derived(summary ? num(data.count) : all.length);
 </script>
 
-<ChatCardShell title="Loans" badge={count ? `${count}` : undefined}>
+<ChatCardShell title="Loans">
   {#if summary && num(data.monthlyPayment) > 0}
     <div class="summary">
       <span class="sum-label">Monthly payments</span>

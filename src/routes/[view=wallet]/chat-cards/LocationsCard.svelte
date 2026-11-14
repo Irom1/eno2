@@ -44,7 +44,7 @@
   }
 </script>
 
-<ChatCardShell title={scope} badge={all.length ? `${all.length}` : undefined}>
+<ChatCardShell title={scope}>
   {#if items.length === 0}
     <p class="empty">No nearby locations found.</p>
   {:else}
