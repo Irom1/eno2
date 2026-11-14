@@ -1,10 +1,8 @@
 <script lang="ts">
-  import DeleteCustomerButton from '$lib/components/DeleteCustomerButton.svelte';
-  import CustomerRemovalNotice from '$lib/components/CustomerRemovalNotice.svelte';
-  import { customerName } from '$lib/customerDeletion';
+  import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
+  import { orderCustomers, savedCustomerId, rememberCustomerId } from '$lib/customerSelection';
   import { demoCreditScore, creditScoreRating } from '$lib/creditWise';
-  import { changeCustomerRemoval, lastRemovedCustomer, rememberRemovedCustomer, forgetRemovedCustomer, type RemovedCustomer } from '$lib/customerRemoval';
-  import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
+  import { afterNavigate, beforeNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
   import { GUEST_CUSTOMER_ID, OPEN_ACCOUNT_MESSAGE } from '$lib/chat/guest';
@@ -68,10 +66,8 @@
   let accountMenuEl = $state<HTMLDivElement>();
   let customers = $state<Customer[]>([]);
   let activeCustomerId = $state('');
-  let deletingId = $state('');
-  let removalError = $state('');
-  let removedCustomer = $state<RemovedCustomer | null>(null);
   let customersLoading = $state(true);
+  let customersError = $state(false);
   let activeCustomer = $derived(
     customers.find((customer) => customer.id === activeCustomerId) ?? null
   );
@@ -80,7 +76,7 @@
   );
   let activeInitial = $derived(activeCustomer?.firstName?.[0]?.toUpperCase() ?? 'A');
   let activeFirstName = $derived(activeCustomer?.firstName || 'Account');
-  let creditScore = $derived(demoCreditScore(activeCustomerId));
+  let creditScore = $derived(demoCreditScore(activeCustomerId, activeCustomer ?? undefined));
   let creditRating = $derived(creditScoreRating(creditScore));
   let creditGaugeProgress = $derived(Math.max(2, (creditScore - 300) / 550 * 75));
 
@@ -150,10 +146,10 @@
   let rewardPoints = $derived(snapshotOverview?.overview?.totalRewards ?? creditRewards);
 
   function focusActiveOption(): void {
-    const active = accountMenuEl?.querySelector<HTMLButtonElement>(
+    const active = accountMenuEl?.querySelector<HTMLElement>(
       '.account-option[aria-checked="true"]'
     );
-    const first = accountMenuEl?.querySelector<HTMLButtonElement>('.account-option');
+    const first = accountMenuEl?.querySelector<HTMLElement>('.account-option');
     (active ?? first)?.focus();
   }
 
@@ -195,6 +191,12 @@
 
   async function selectCustomer(id: string): Promise<void> {
     activeCustomerId = id;
+    rememberCustomerId(id);
+    const next = new URL(page.url);
+    next.searchParams.set('customer', id);
+    next.searchParams.delete('account');
+    next.searchParams.delete('txn');
+    replaceState(next, page.state);
     accountNotice = '';
     accountOpen = false;
     walletView = null;
@@ -203,41 +205,9 @@
     void loadSnapshot(id);
   }
 
-  async function deleteCustomer(customer: Customer) {
-    if (deletingId) return;
-    deletingId = customer.id; removalError = '';
-    try {
-      await changeCustomerRemoval(customer.id, true);
-      customers = customers.filter((item) => item.id !== customer.id);
-      removedCustomer = rememberRemovedCustomer({ id: customer.id, name: customerName(customer) });
-      if (activeCustomerId === customer.id) {
-        const fallback = customers.find((item) => `${item.firstName} ${item.lastName}`.toLowerCase() === 'maya chen') ?? customers[0];
-        if (!fallback) { await goto('/'); return; }
-        await selectCustomer(fallback.id);
-        const next = new URL(page.url); next.searchParams.set('customer', fallback.id);
-        await goto(next.pathname + next.search + next.hash, { replaceState: true, keepFocus: true, noScroll: true });
-        accountOpen = true;
-      } else if (page.url.searchParams.get('customer') === customer.id) {
-        const next = new URL(page.url); next.searchParams.set('customer', activeCustomerId);
-        await goto(next.pathname + next.search + next.hash, { replaceState: true, keepFocus: true, noScroll: true });
-      }
-      await tick(); focusActiveOption();
-    } catch (cause) { removalError = cause instanceof Error ? cause.message : 'Couldn’t delete this account.'; }
-    finally { deletingId = ''; }
-  }
-
-  async function undoRemoval() {
-    if (!removedCustomer || deletingId) return;
-    const id = removedCustomer.id; deletingId = id; removalError = '';
-    try {
-      await changeCustomerRemoval(id, false);
-      removedCustomer = forgetRemovedCustomer(id);
-      await loadCustomers();
-    } catch (cause) { removalError = cause instanceof Error ? cause.message : 'Couldn’t restore this account.'; }
-    finally { deletingId = ''; }
-  }
-
   async function loadCustomers() {
+    customersLoading = true;
+    customersError = false;
     try {
       const [response, sessionResponse] = await Promise.all([
         fetch('/api/customers'),
@@ -250,28 +220,35 @@
         ? await sessionResponse.json() as { customer?: Customer }
         : null;
       const requestedCustomerId = page.url.searchParams.get('customer') ||
+        savedCustomerId() ||
         (currentSession?.customer?.id === GUEST_CUSTOMER_ID ? undefined : currentSession?.customer?.id);
       if (requestedCustomerId && !list.some((customer) => customer.id === requestedCustomerId)) {
         const selectedResponse = await fetch(`/api/customers?customer=${encodeURIComponent(requestedCustomerId)}`);
         if (!selectedResponse.ok) throw new Error('Could not load selected customer.');
         const selectedPayload = await selectedResponse.json() as { customers?: Customer[] };
         const selected = selectedPayload.customers?.find((customer) => customer.id === requestedCustomerId);
-        if (!selected) throw new Error('Selected customer was not found.');
-        list.push(selected);
+        if (selected) list.push(selected);
       }
-      customers = list;
+      customers = orderCustomers(list);
       const preferred =
-        list.find((customer) => customer.id === requestedCustomerId) ??
-        list.find((customer) => customer.lastName === 'Chen') ??
-        list[0];
+        customers.find((customer) => customer.id === requestedCustomerId) ?? customers[0];
       if (preferred) {
         activeCustomerId = preferred.id;
+        rememberCustomerId(preferred.id);
+        if (requestedCustomerId && requestedCustomerId !== preferred.id) {
+          const next = new URL(page.url);
+          next.searchParams.set('customer', preferred.id);
+          next.searchParams.delete('account');
+          next.searchParams.delete('txn');
+          replaceState(next, page.state);
+        }
         void loadSnapshot(preferred.id);
       } else {
         snapshotLoading = false;
       }
     } catch {
       customers = [];
+      customersError = true;
       snapshotError = "We couldn't load your accounts.";
       snapshotLoading = false;
     } finally {
@@ -547,7 +524,6 @@
   });
 
   onMount(() => {
-    removedCustomer = lastRemovedCustomer();
     // Other pages (e.g. ClimateWise "Eno ideas") open Eno with /chat?ask=<prompt> or /dashboard?ask=<prompt>.
     const ask = page.url.searchParams.get('ask')?.trim();
     if (ask) {
@@ -634,33 +610,8 @@
               <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             {#if accountOpen}
-              <div class="account-dropdown" id="account-dropdown" role="menu" aria-label="Switch account">
-                <p class="account-dropdown-title">Switch account</p>
-                <CustomerRemovalNotice removed={removedCustomer} error={removalError} busy={!!deletingId} onundo={undoRemoval} />
-                {#each customers as customer (customer.id)}
-                  <div class="customer-row" role="none">
-                  <button
-                    class="account-option"
-                    role="menuitemradio"
-                    aria-checked={customer.id === activeCustomerId}
-                    onclick={() => selectCustomer(customer.id)}
-                  >
-                    <span class="avatar" aria-hidden="true">{customer.firstName[0] ?? '?'}</span>
-                    <span class="account-meta">
-                      <strong>{customer.firstName} {customer.lastName}</strong>
-                      {#if customer.city}<small>{customer.city}, {customer.state}</small>{/if}
-                    </span>
-                    {#if customer.id === activeCustomerId}
-                      <svg class="account-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    {/if}
-                  </button>
-                  <DeleteCustomerButton {customer} menuItem disabled={!!deletingId} ondelete={() => deleteCustomer(customer)} />
-                  </div>
-                {/each}
-                {#if customers.length === 0}
-                  <p class="muted">{customersLoading ? 'Loading accounts…' : 'No accounts available.'}</p>
-                {/if}
-              </div>
+              <CustomerDropdown id="account-dropdown" {customers} dark={isDark} activeId={activeCustomerId}
+                loading={customersLoading} error={customersError} onretry={loadCustomers} onselect={selectCustomer} />
             {/if}
           </div>
           {/if}
@@ -1010,50 +961,6 @@
   .avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--banner); color: var(--link); }
   .profile .chevron { width: 13px; height: 13px; color: var(--muted); }
   .account-menu { position: relative; }
-  .account-dropdown {
-    max-height: min(500px, calc(100dvh - 110px));
-    overflow-y: auto;
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    z-index: 30;
-    width: min(17rem, calc(100vw - 32px));
-    padding: 6px;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    background: var(--surface);
-    box-shadow: 0 18px 40px #0b182326;
-  }
-  .account-dropdown-title {
-    padding: 6px 10px 8px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .customer-row { display: flex; align-items: center; border-radius: 12px; }.customer-row:hover { background: var(--page); }
-  .account-option {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    text-align: left;
-    border: 0;
-    border-radius: 10px;
-    padding: 8px 10px;
-    background: transparent;
-    color: var(--ink);
-  }
-  .account-option:hover, .account-option:focus-visible { background: var(--page); }
-  .account-option[aria-checked='true'] { background: var(--banner); }
-  .account-meta { display: grid; gap: 1px; min-width: 0; }
-  .account-meta strong { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
-  .account-meta small { font-size: 11px; color: var(--muted); }
-  .account-option .avatar { width: 28px; height: 28px; font-size: 12px; }
-  .account-check { width: 16px; height: 16px; margin-left: auto; color: var(--link); flex: none; }
   .theme-toggle {
     display: grid;
     place-items: center;

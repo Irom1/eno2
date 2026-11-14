@@ -1,5 +1,8 @@
+import { customerName, type CustomerIdentity } from './customerDeletion';
+
 /** Stable, fictional score seeded by each Nessie customer's randomly assigned ID. */
-export function demoCreditScore(customerId: string): number {
+export function demoCreditScore(customerId: string, customer?: CustomerIdentity): number {
+  if (customer && customerName(customer).toLowerCase().replace(/\s+/g, ' ') === 'maya chen') return 762;
   let hash = 2166136261;
   for (const character of customerId) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0;
   return 300 + hash % 551;
