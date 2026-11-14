@@ -3,6 +3,7 @@
  * events emitted as text and tools complete. Numbers always come from tools.
  */
 import type { RuntimeEnv } from './env';
+import { GUEST_CUSTOMER_ID } from '../chat/guest';
 import type {
   FunctionCallRequest,
   GenerateParams,
@@ -222,6 +223,7 @@ export async function runGeminiAgent({
   }
 
   const startedAt = deps.now();
+  const isGuest = session.customer.id === GUEST_CUSTOMER_ID;
   const contents: Content[] = [...session.contents, { role: 'user', parts: [{ text: message }] }];
   const allowlist = buildAllowlist(session.customer.id, session.accounts);
   const systemInstruction = buildSystemInstruction(
@@ -240,7 +242,7 @@ export async function runGeminiAgent({
     if (!deps.isConfigured()) {
       throw new Error('GEMINI_API_KEY is not set. Run with LLM=mock or add the key to the environment.');
     }
-    declarations = await deps.getDeclarations();
+    if (!isGuest) declarations = await deps.getDeclarations();
   } catch (error) {
     emit({ type: 'error', message: "I couldn't finish that request.", hint: safeReason(error) });
     return;
@@ -278,7 +280,7 @@ export async function runGeminiAgent({
         contents.push({ role: 'model', parts: round.parts });
       }
 
-      if (round.functionCalls.length === 0) break;
+      if (isGuest || round.functionCalls.length === 0) break;
 
       const responseParts: ContentPart[] = [];
       for (const call of round.functionCalls) {

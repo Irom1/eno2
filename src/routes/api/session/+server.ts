@@ -1,5 +1,6 @@
-import { json } from '@sveltejs/kit';
+import { json, type Cookies } from '@sveltejs/kit';
 import type { RequestEvent } from './$types';
+import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
 import { resolveEnv } from '$lib/server/env';
 import { callTool, withMcp } from '$lib/server/mcp';
 import {
@@ -7,7 +8,8 @@ import {
   destroySession,
   getSession,
   type AccountSummary,
-  type CustomerIdentity
+  type CustomerIdentity,
+  type Session
 } from '$lib/server/session';
 import { SESSION_COOKIE, publicSession } from '$lib/server/sessionCookie';
 
@@ -33,6 +35,17 @@ const num = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+function respondWithSession(cookies: Cookies, request: Request, session: Session): Response {
+  cookies.set(SESSION_COOKIE, session.id, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 1800,
+    secure: new URL(request.url).protocol === 'https:'
+  });
+  return json(publicSession(session));
+}
+
 export async function POST({ request, cookies, platform }: RequestEvent): Promise<Response> {
   let body: { customerId?: unknown };
   try {
@@ -43,6 +56,14 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
 
   const customerId = typeof body.customerId === 'string' ? body.customerId.trim() : '';
   if (!customerId) return json({ error: 'customerId is required' }, { status: 400 });
+
+  if (customerId === GUEST_CUSTOMER_ID) {
+    return respondWithSession(cookies, request, createSession({
+      id: customerId,
+      firstName: 'Guest',
+      lastName: ''
+    }, []));
+  }
 
   const runtime = resolveEnv(platform);
   try {
@@ -72,16 +93,7 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
         accountNumber: account.accountNumber ?? ''
       }));
 
-      const session = createSession(customer, accounts);
-      cookies.set(SESSION_COOKIE, session.id, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 1800,
-        secure: new URL(request.url).protocol === 'https:'
-      });
-
-      return json(publicSession(session));
+      return respondWithSession(cookies, request, createSession(customer, accounts));
     });
   } catch (error) {
     return json(

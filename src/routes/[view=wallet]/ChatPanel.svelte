@@ -16,6 +16,7 @@
   import { inlineBlocks } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
   import { STARTER_PROMPTS } from '$lib/chat/starters.js';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
   import {
     friendlyToolLabel,
     initialThinking,
@@ -70,7 +71,10 @@
   let messageSeq = 0;
 
   function introMessage(): ChatMessage {
-    return { id: ++messageSeq, role: 'assistant', text: INTRO, intro: true, pending: false };
+    const text = customerId === GUEST_CUSTOMER_ID
+      ? "Hi, I'm Eno 2.0. I can help you explore how to open an account."
+      : INTRO;
+    return { id: ++messageSeq, role: 'assistant', text, intro: true, pending: false };
   }
 
   let messages = $state<ChatMessage[]>([introMessage()]);
@@ -84,7 +88,7 @@
   let logEl: HTMLDivElement;
 
   const suggestions = $derived.by(() => {
-    if (streaming) return [];
+    if (streaming || customerId === GUEST_CUSTOMER_ID) return [];
     const hasUserMessage = messages.some((message) => message.role === 'user');
     if (!hasUserMessage) return [...STARTER_PROMPTS];
     const last = [...messages].reverse().find((message) => message.role === 'assistant');

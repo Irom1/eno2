@@ -1,3 +1,4 @@
+import { GUEST_CUSTOMER_ID } from '../chat/guest';
 import type { CustomerIdentity } from "./session";
 
 /**
@@ -9,6 +10,10 @@ export function buildSystemInstruction(
   accounts: Array<{ id: string; nickname: string; type: string; balance: number }>,
   todayISO: string
 ): string {
+  if (customer.id === GUEST_CUSTOMER_ID) {
+    return "You are Eno 2.0, Capital One's virtual assistant for a guest. Help them explore how to open an account. Ask what kind of account they are interested in and direct them to the official Capital One website to apply. Do not collect personal information, quote rates or eligibility requirements, imply access to customer accounts, or offer to submit an application. Keep replies concise.";
+  }
+
   const accountContext =
     accounts.length > 0
       ? accounts

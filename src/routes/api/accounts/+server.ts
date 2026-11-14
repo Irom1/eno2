@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestEvent } from './$types';
+import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
 import {
   mergeTransactions,
   normalizeAccount,
@@ -34,6 +35,9 @@ function itemsOf(data: unknown): unknown[] {
 export async function GET({ cookies, platform }: RequestEvent): Promise<Response> {
   const session = getSession(cookies.get(SESSION_COOKIE));
   if (!session) return json({ error: 'No active session' }, { status: 401 });
+  if (session.customer.id === GUEST_CUSTOMER_ID) {
+    return json({ error: 'Select a customer to view account data' }, { status: 403 });
+  }
 
   const runtime = resolveEnv(platform);
   try {
