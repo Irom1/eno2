@@ -67,6 +67,7 @@
   let customers = $state<Customer[]>([]);
   let activeCustomerId = $state('');
   let customersLoading = $state(true);
+  let customersError = $state(false);
   let activeCustomer = $derived(
     customers.find((customer) => customer.id === activeCustomerId) ?? null
   );
@@ -145,10 +146,10 @@
   let rewardPoints = $derived(snapshotOverview?.overview?.totalRewards ?? creditRewards);
 
   function focusActiveOption(): void {
-    const active = accountMenuEl?.querySelector<HTMLButtonElement>(
+    const active = accountMenuEl?.querySelector<HTMLElement>(
       '.account-option[aria-checked="true"]'
     );
-    const first = accountMenuEl?.querySelector<HTMLButtonElement>('.account-option');
+    const first = accountMenuEl?.querySelector<HTMLElement>('.account-option');
     (active ?? first)?.focus();
   }
 
@@ -205,6 +206,8 @@
   }
 
   async function loadCustomers() {
+    customersLoading = true;
+    customersError = false;
     try {
       const [response, sessionResponse] = await Promise.all([
         fetch('/api/customers'),
@@ -245,6 +248,7 @@
       }
     } catch {
       customers = [];
+      customersError = true;
       snapshotError = "We couldn't load your accounts.";
       snapshotLoading = false;
     } finally {
@@ -577,7 +581,7 @@
             </button>
             {#if accountOpen}
               <CustomerDropdown id="account-dropdown" {customers} dark={isDark} activeId={activeCustomerId}
-                loading={customersLoading} onselect={selectCustomer} />
+                loading={customersLoading} error={customersError} onretry={loadCustomers} onselect={selectCustomer} />
             {/if}
           </div>
           {/if}

@@ -1,25 +1,22 @@
 <script lang="ts">
-  import CustomerRemovalNotice from './CustomerRemovalNotice.svelte';
   import { orderCustomers } from '$lib/customerSelection';
-  import type { RemovedCustomer } from '$lib/customerRemoval';
 
   interface Customer { id: string; firstName: string; lastName: string; city?: string; state?: string }
   let {
     customers, id, dark = false, open = true, loading = false, error = false,
-    activeId = '', deletingId = '', removed = null, removalError = '',
-    element = $bindable(), onselect, onundo, onretry
+    activeId = '', element = $bindable(), onselect, onretry
   }: {
     customers: Customer[]; id: string; dark?: boolean; open?: boolean; loading?: boolean; error?: boolean;
-    activeId?: string; deletingId?: string; removed?: RemovedCustomer | null; removalError?: string;
+    activeId?: string;
     element?: HTMLDivElement; onselect?: (id: string) => void;
-    onundo?: () => void; onretry?: () => void;
+    onretry?: () => void;
   } = $props();
   let orderedCustomers = $derived(orderCustomers(customers));
 </script>
 
-{#snippet arrow(selected = false)}
+{#snippet arrow()}
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    {#if selected}<path d="m5 12 5 5 9-10" />{:else}<path d="M5 12h14m-6-6 6 6-6 6" />{/if}
+    <path d="M5 12h14m-6-6 6 6-6 6" />
   </svg>
 {/snippet}
 
@@ -40,20 +37,15 @@
     <nav class="account-links" role={onselect ? 'group' : undefined} aria-label="Current accounts">
       {#each orderedCustomers as customer (customer.id)}
         <div class="customer-row" role={onselect ? 'none' : undefined}>
-          {#if onselect}
-            <button type="button" class="account-choice account-option" role="menuitemradio" aria-checked={customer.id === activeId} onclick={() => onselect?.(customer.id)}>
-              {@render identity(customer)}{@render arrow(customer.id === activeId)}
-            </button>
-          {:else}
-            <a class="account-choice" href={`/dashboard?customer=${encodeURIComponent(customer.id)}`}>
-              {@render identity(customer)}{@render arrow()}
-            </a>
-          {/if}
+          <a class="account-choice account-option" href={`/dashboard?customer=${encodeURIComponent(customer.id)}`}
+            role={onselect ? 'menuitemradio' : undefined} aria-checked={onselect ? customer.id === activeId : undefined}
+            onclick={(event) => { if (onselect) { event.preventDefault(); onselect(customer.id); } }}>
+            {@render identity(customer)}{@render arrow()}
+          </a>
         </div>
       {/each}
     </nav>
   {/if}
-  {#if onundo}<CustomerRemovalNotice {removed} error={removalError} busy={!!deletingId} {onundo} />{/if}
 </div>
 
 <style>
@@ -74,7 +66,7 @@
   .customer-row { display: flex; align-items: center; border-radius: 10px; }
   .customer-row:hover { background: var(--hover); }
   .account-choice { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; padding: 11px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; text-decoration: none; font: inherit; cursor: pointer; }
-  .account-choice:hover, .account-choice[aria-checked='true'] { background: var(--hover); }
+  .account-choice:hover { background: var(--hover); }
   .account-choice:focus-visible, .retry:focus-visible { outline: 2px solid var(--avatar-text); outline-offset: -2px; }
   .avatar { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; color: var(--avatar-text); background: var(--avatar-background); font-weight: 650; }
   .account-name { flex: 1; min-width: 0; }

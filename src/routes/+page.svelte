@@ -1,6 +1,5 @@
 <script lang="ts">
   import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
-  import { changeCustomerRemoval, lastRemovedCustomer, forgetRemovedCustomer, type RemovedCustomer } from '$lib/customerRemoval';
   import { onMount, tick } from 'svelte';
   import Eno from '$lib/components/Eno.svelte';
   import CapitalOneLogo from './[view=wallet]/CapitalOneLogo.svelte';
@@ -53,9 +52,6 @@
   let customers = $state<Customer[]>([]);
   let customersLoading = $state(true);
   let customersError = $state(false);
-  let deletingId = $state('');
-  let removalError = $state('');
-  let removedCustomer = $state<RemovedCustomer | null>(null);
   let signInArea: HTMLDivElement;
   let signInButton: HTMLButtonElement;
   let accountList = $state<HTMLDivElement>();
@@ -75,17 +71,6 @@
     } finally {
       customersLoading = false;
     }
-  }
-
-  async function undoRemoval() {
-    if (!removedCustomer || deletingId) return;
-    const id = removedCustomer.id; deletingId = id; removalError = '';
-    try {
-      await changeCustomerRemoval(id, false);
-      removedCustomer = forgetRemovedCustomer(id);
-      await loadCustomers();
-    } catch (cause) { removalError = cause instanceof Error ? cause.message : 'Couldn’t restore this account.'; }
-    finally { deletingId = ''; }
   }
 
   async function toggleAccounts(): Promise<void> {
@@ -122,7 +107,6 @@
   }
 
   onMount(() => {
-    removedCustomer = lastRemovedCustomer();
     try {
       const saved = localStorage.getItem('dashboard-theme');
       if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved;
@@ -194,8 +178,7 @@
             Sign in
           </button>
           <CustomerDropdown id="account-list" {customers} dark={isDark} open={accountsOpen}
-            loading={customersLoading} error={customersError} {deletingId} removed={removedCustomer}
-            {removalError} bind:element={accountList} onundo={undoRemoval} onretry={loadCustomers} />
+            loading={customersLoading} error={customersError} bind:element={accountList} onretry={loadCustomers} />
         </div>
         <button type="button" class="theme-toggle" disabled={!ready} aria-label={themeLabel} aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">

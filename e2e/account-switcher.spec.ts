@@ -18,8 +18,10 @@ async function fixtures(page: Page) {
   await page.route('**/api/climate?**', (route) => route.fulfill({ json: {} }));
 }
 
-test('sign-in and switcher share the same styling and pin Maya then Demo', async ({ page }) => {
+test('sign-in and switcher display identical dropdown content, row icons and styling', async ({ page }) => {
   await fixtures(page);
+  // Old removal notices must not add page-specific content to the dropdown.
+  await page.addInitScript(() => localStorage.setItem('eno-removed-customers', JSON.stringify([{ id: 'removed', name: 'Removed Person' }])));
   await page.goto('/');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const signIn = page.locator('.customer-dropdown');
@@ -31,6 +33,9 @@ test('sign-in and switcher share the same styling and pin Maya then Demo', async
     return { width: style.width, padding: style.padding, borderRadius: style.borderRadius, font: style.font, background: style.backgroundColor };
   };
   const signInStyle = await signIn.evaluate(appearance);
+  const signInText = await signIn.innerText();
+  const signInIcons = await signIn.locator('.account-choice svg path').evaluateAll((paths) => paths.map((path) => path.getAttribute('d')));
+  await expect(signIn.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: /Maya Chen/ }).click();
   await expect(page.locator('.profile-name')).toHaveText('Maya');
   await expect(page.getByRole('img', { name: 'Demo credit score: 762 out of 850, Very good', exact: true })).toBeVisible();
@@ -38,6 +43,8 @@ test('sign-in and switcher share the same styling and pin Maya then Demo', async
   const switcher = page.getByRole('menu', { name: 'Switch account' });
   await expect(switcher.locator('.account-name strong')).toHaveText(['Maya Chen', 'Demo Tester', 'Future Person']);
   expect(await switcher.evaluate(appearance)).toEqual(signInStyle);
+  expect(await switcher.innerText()).toBe(signInText);
+  expect(await switcher.locator('.account-choice svg path').evaluateAll((paths) => paths.map((path) => path.getAttribute('d')))).toEqual(signInIcons);
   await expect(switcher.getByRole('menuitem', { name: /^Delete / })).toHaveCount(0);
   await expect(switcher.locator('.delete-customer')).toHaveCount(0);
 });
