@@ -329,8 +329,9 @@ describe('anomalyExplanation', () => {
     ]);
 
     expect(sentence).toBe(
-      'You have a suspiciously large transaction at APPLE STORE and a possible duplicate transaction at NETFLIX.COM.'
+      'You have a suspiciously large transaction at APPLE STORE and a possible duplicate transaction at NETFLIX.COM. Review both charges and report anything you don’t recognize.'
     );
+    expect(sentence).toContain('Review both charges and report anything you don’t recognize.');
     expect(sentence).not.toContain('$');
     expect(sentence).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     expect(sentence.toLowerCase()).not.toContain('outlier');
@@ -338,10 +339,10 @@ describe('anomalyExplanation', () => {
 
   it('handles a single unusual or duplicate card', () => {
     expect(anomalyExplanation([transactionCard(1, 'APPLE STORE')])).toBe(
-      'You have a suspiciously large transaction at APPLE STORE.'
+      'You have a suspiciously large transaction at APPLE STORE. Review the charge and report anything you don’t recognize.'
     );
     expect(anomalyExplanation([transactionCard(1, 'NETFLIX.COM', 'duplicate')])).toBe(
-      'You have a possible duplicate transaction at NETFLIX.COM.'
+      'You have a possible duplicate transaction at NETFLIX.COM. Review the charge and report anything you don’t recognize.'
     );
   });
 

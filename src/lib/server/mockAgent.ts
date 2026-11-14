@@ -53,6 +53,43 @@ const MONTHS = [
   "December"
 ];
 
+/**
+ * Safe, concrete next steps per known intent. Tips never restate card data
+ * (amounts, balances, dates, names, statuses, or rows).
+ */
+const INTENT_TIPS: Record<string, string> = {
+  insight_upcoming_bills:
+    "Tip: if you want to cover the shortfall, you can move money to checking before the due dates.",
+  insight_spending_breakdown:
+    "Tip: you can open a category in Activity to see the transactions behind it.",
+  insight_anomalies:
+    "Tip: if you don’t recognize a charge, you can review and dispute it in the app.",
+  insight_recurring_charges:
+    "Tip: you can review subscriptions you no longer use in the app.",
+  nessie_list_account_loans: "Tip: open the loan details to see the payment schedule.",
+  nessie_list_account_deposits: "Tip: open any transaction to see its full details.",
+  nessie_list_account_withdrawals: "Tip: open any transaction to see its full details.",
+  nessie_list_account_transactions: "Tip: open any transaction to see its full details.",
+  nessie_list_customer_accounts: "Tip: switch accounts to compare balances.",
+  nessie_get_account: "Tip: switch accounts to compare balances.",
+  find_nearby_atms: "Tip: open the location in Maps for directions.",
+  find_nearby_branches: "Tip: open the location in Maps for directions.",
+  insight_financial_overview:
+    "Tip: review bills and spending together when you plan the month."
+};
+
+const DEFAULT_TIP = "Tip: you can review the related details in your account activity.";
+
+/**
+ * Ensures deterministic answers honor the answer contract: at least one insight
+ * and one practical tip. Existing explicit tips are left alone.
+ */
+function withTip(name: string, text: string): string {
+  if (typeof text !== "string" || text.trim().length === 0) return text;
+  if (/Tip:/.test(text)) return text;
+  return `${text} ${INTENT_TIPS[name] ?? DEFAULT_TIP}`;
+}
+
 function monthLabel(key: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(key);
   if (!match) return key;
@@ -372,8 +409,8 @@ export function composeFastAnswer(
   now: Date,
   message: string
 ): string {
-  if (name === "insight_upcoming_bills") return billsFastAnswer(data);
-  return composeAnswer(name, data, now, message);
+  if (name === "insight_upcoming_bills") return withTip(name, billsFastAnswer(data));
+  return withTip(name, composeAnswer(name, data, now, message));
 }
 
 /** A short leading sentence that invites the card without restating its values. */
@@ -450,7 +487,7 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
         payload: result.data,
         ...(accountId ? { accountId } : {})
       });
-      text = composeAnswer(intent.tool, result.data, now(), message);
+      text = withTip(intent.tool, composeAnswer(intent.tool, result.data, now(), message));
     }
   } catch {
     const ms = Date.now() - startedAt;

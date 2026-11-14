@@ -462,9 +462,13 @@ export function anomalyExplanation(cards: EntityCard[]): string {
       ...transactions.filter((card) => card.payload?.flag === 'duplicate')
     ];
     const phrases = ordered.map(anomalyPhrase);
+    const tip =
+      transactions.length > 1
+        ? 'Review both charges and report anything you don’t recognize.'
+        : 'Review the charge and report anything you don’t recognize.';
 
-    if (phrases.length === 1) return `You have ${phrases[0]}.`;
-    return `You have ${phrases[0]} and ${phrases[1]}.`;
+    if (phrases.length === 1) return `You have ${phrases[0]}. ${tip}`;
+    return `You have ${phrases[0]} and ${phrases[1]}. ${tip}`;
   } catch {
     return '';
   }

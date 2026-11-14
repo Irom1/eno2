@@ -119,6 +119,11 @@ describe("mockAgent", () => {
     expect(text).toContain("65.59");
     expect(text).toContain("Rent");
     expect(text).toContain("1,650");
+    expect(text).toContain("Tip:");
+    const tip = text.slice(text.indexOf("Tip:"));
+    expect(tip).not.toContain("4,283.59");
+    expect(tip).not.toContain("4,218");
+    expect(tip).not.toContain("65.59");
     expect(text).not.toContain("not financial advice");
     expect(text).not.toContain("read-only");
   });
@@ -134,6 +139,10 @@ describe("mockAgent", () => {
     expect(text).toContain("shopping");
     expect(text).toContain("$1,800");
     expect(text).toContain("20 transactions");
+    expect(text).toContain("Tip:");
+    const tip = text.slice(text.indexOf("Tip:"));
+    expect(tip).not.toContain("$2,470");
+    expect(tip).not.toContain("$1,800");
     expect(text).not.toContain("estimated");
     expect(text).not.toContain("descriptions");
     expect(text).not.toContain("November 2026");
@@ -164,6 +173,10 @@ describe("mockAgent", () => {
 
     expect(text).toContain("possible duplicate");
     expect(text).toContain("unusually large purchase");
+    expect(text).toContain("Tip:");
+    const tip = text.slice(text.indexOf("Tip:"));
+    expect(tip).not.toContain("15.99");
+    expect(tip).not.toContain("1,200");
     expect(text).not.toMatch(/outlier|median|MAD|threshold|findings/i);
 
     const insight = events.find(

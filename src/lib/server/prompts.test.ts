@@ -47,16 +47,28 @@ describe("buildSystemInstruction", () => {
       'Exception: when an inline single-entity card introduces a merchant or payee, name that merchant or payee in the sentence that introduces its card; still do not restate its amount, date, status, or row.'
     );
     expect(instruction).toContain(
-      'Every answer must include at least one explanation or insight sentence.'
+      'Answer in two to five sentences or a short bullet list, including one insight and one tip.'
+    );
+    expect(instruction).toContain(
+      'Every answer must include at least one insight and one practical tip.'
+    );
+    expect(instruction).toContain(
+      'The insight explains what the data means or what stands out.'
+    );
+    expect(instruction).toContain(
+      'The tip is a safe, concrete next step, phrased as an option (“you can …”) rather than an instruction (“you should …”).'
     );
     expect(instruction).toContain(
       'Never return only a card or a bare tool result.'
     );
     expect(instruction).toContain(
+      'Do not repeat information already visible in a card: amounts, balances, dates, names, statuses, or rows.'
+    );
+    expect(instruction).toContain(
       'You have a suspiciously large transaction at APPLE and a possible duplicate transaction at Netflix.'
     );
     expect(instruction).toContain(
-      'The transaction card shows only the transaction; put the reason in the prose.'
+      'Put the reason in the prose; the transaction card shows only the transaction details.'
     );
     expect(instruction).not.toContain('or no prose.');
     expect(instruction).toContain(
