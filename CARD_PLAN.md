@@ -120,6 +120,8 @@ ATM map note: `find_nearby_atms` results carry geocoded `lat`/`lng` and no stree
 
 Geographic search note: `find_nearby_atms` and `find_nearby_branches` first geocode the requested place with OpenStreetMap Nominatim (`src/lib/server/geo.ts`: ~4s timeout, descriptive User-Agent, in-memory ~1h cache including misses, one request per second). Rows with finite `geocode.lat/lng` are scored with a haversine distance, kept within 25 miles when any qualify (otherwise the nearest rows are returned), sorted nearest-first, and capped at 20 with `distanceMiles` rounded to one decimal. If geocoding fails or no rows carry coordinates, the tool falls back to the previous case-insensitive name/address substring match. `locationCard` parses `distanceMiles` into the normalized payload.
 
+Nessie ATM data limitation: the raw Nessie ATM dataset contains 13 ATMs, all in Arlington, VA (~396 straight-line miles from Cambridge, MA). Because the geographic search returns the nearest available rows even when none fall inside 25 miles, `atmAnswer` must not imply proximity: when the nearest `distanceMiles` exceeds 25 it says no ATMs were found within 25 miles and states the honest nearest straight-line distance (keeping the numeric distance for transparency, even though the card also shows it). The `find_nearby_atms` intro is neutral (“Here are the closest ATMs I found:”) while branch intros keep “Here is what's nearby:”. A Cambridge/Boston ATM source (for example OpenStreetMap Overpass) would be a separate feature; no such data is claimed today.
+
 ## 5. Card catalog
 
 | Card | Kind / entity | Normalized payload | Source / insight or tool | Placement | Status | File / path | Notes |

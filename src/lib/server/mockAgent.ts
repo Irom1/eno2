@@ -297,14 +297,27 @@ function overviewAnswer(data: unknown): string {
   )} with ${num(payload.totalRewards).toLocaleString("en-US")} rewards.`;
 }
 
+/** Search radius used by the ATM tool when anything is actually nearby. */
+const ATM_NEARBY_RADIUS_MILES = 25;
+
 function atmAnswer(data: unknown, location: string): string {
   const payload = rec(data);
   if (num(payload.count) === 0) {
     return `I couldn't find any ATMs near "${location}".`;
   }
-  return `I found ${num(
-    payload.count
-  )} ATMs near "${location}". The nearest options are shown here, with straight-line distances from the search location.`;
+  const results = Array.isArray(payload.results) ? payload.results.map(rec) : [];
+  const rawNearest = results[0]?.distanceMiles;
+  const nearest =
+    typeof rawNearest === "number" ? rawNearest : Number(rawNearest);
+  const count = num(payload.count);
+  // The dataset may only contain ATMs hundreds of miles away. Never imply
+  // proximity in that case: state the radius gap and the honest nearest
+  // straight-line distance instead.
+  if (Number.isFinite(nearest) && nearest > ATM_NEARBY_RADIUS_MILES) {
+    const distance = Math.round(nearest).toLocaleString("en-US");
+    return `I couldn't find any ATMs within ${ATM_NEARBY_RADIUS_MILES} miles of "${location}" in the available data. The closest option is ${distance} miles away; distances are straight-line.`;
+  }
+  return `I found ${count} ATMs near "${location}". The nearest options are shown here, with straight-line distances from the search location.`;
 }
 
 function branchAnswer(data: unknown, location: string): string {
@@ -442,6 +455,7 @@ export function composeIntro(name: string): string {
     case "nessie_get_account":
       return "Here is a look at your accounts:";
     case "find_nearby_atms":
+      return "Here are the closest ATMs I found:";
     case "find_nearby_branches":
       return "Here is what's nearby:";
     case "insight_financial_overview":

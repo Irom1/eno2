@@ -1826,6 +1826,31 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('"Find an ATM near Cambridge, MA" is honest about distant results', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await runPrompt(page, 'Find an ATM near Cambridge, MA');
+
+    const prose = await assistantText(page);
+    expect(prose).toContain("couldn't find any ATMs within 25 miles");
+    expect(prose).toMatch(/closest option is [\d,]+ miles away/);
+    expect(prose).toMatch(/straight-line/i);
+    expect(prose).not.toMatch(/ATMs near/i);
+    expect(prose).not.toMatch(/near "Cambridge/i);
+
+    // The nearest ATM still renders its map card, even though it is far away.
+    const card = page.locator('.atm-locator-card');
+    await expect(card).toHaveCount(1);
+    const map = card.locator('iframe.atm-map');
+    await expect(map).toHaveCount(1);
+    const src = await map.getAttribute('src');
+    expect(src).toMatch(/^https:\/\/www\.openstreetmap\.org\/export\/embed\.html\?/);
+    await expect(card.locator('.distance')).toContainText('mi away');
+
+    expectNoErrors(errors);
+  });
+
   test('a branch prompt renders an address when the data has one', async ({ page }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Find a branch in Arlington');

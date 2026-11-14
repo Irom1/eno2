@@ -215,13 +215,57 @@ describe("mockAgent", () => {
     expect(events[events.length - 1]?.type).toBe("done");
   });
 
+  it("describes distant ATM results honestly instead of claiming they are near", async () => {
+    const { text } = await run("Find an ATM near Cambridge, MA", async (name) => {
+      expect(name).toBe("find_nearby_atms");
+      return ok({
+        count: 13,
+        results: [
+          {
+            name: "Arlington ATM",
+            distanceMiles: 396,
+            lat: 38.88,
+            lng: -77.1
+          }
+        ]
+      });
+    });
+
+    expect(text).not.toContain("ATMs near");
+    expect(text).not.toContain('near "Cambridge');
+    expect(text).toContain("within 25 miles");
+    expect(text).toContain("396");
+    expect(text).toContain("straight-line");
+    expect(text).toContain("Tip:");
+    expect(text).toContain("Here are the closest ATMs I found:");
+  });
+
+  it("keeps the near wording when the nearest ATM is inside the radius", async () => {
+    const { text } = await run("Find an ATM near Arlington", async (name) => {
+      expect(name).toBe("find_nearby_atms");
+      return ok({
+        count: 2,
+        results: [
+          { name: "Clarendon ATM", distanceMiles: 5, lat: 38.88, lng: -77.1 },
+          { name: "Courthouse ATM", distanceMiles: 7, lat: 38.89, lng: -77.08 }
+        ]
+      });
+    });
+
+    expect(text).toContain("I found 2 ATMs near");
+    expect(text).not.toContain("couldn't find any ATMs");
+    expect(text).not.toContain("within 25 miles of");
+    expect(text).toContain("Tip:");
+  });
+
   it("composes friendly intros that avoid card tokens", () => {
     expect(composeIntro("insight_spending_breakdown")).toBe(
       "Here is your top spending by category:"
     );
     expect(composeIntro("insight_upcoming_bills")).toBe("Here is what's coming up:");
     expect(composeIntro("insight_anomalies")).toBe("Here is what stood out:");
-    expect(composeIntro("find_nearby_atms")).toBe("Here is what's nearby:");
+    expect(composeIntro("find_nearby_atms")).toBe("Here are the closest ATMs I found:");
+    expect(composeIntro("find_nearby_branches")).toBe("Here is what's nearby:");
     expect(composeIntro("nessie_list_account_loans")).toBe("Here is what I found:");
     expect(composeIntro("nessie_list_account_loans").toLowerCase()).not.toContain("loan");
   });
