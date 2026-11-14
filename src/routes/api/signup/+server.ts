@@ -9,6 +9,7 @@ import { SESSION_COOKIE } from '$lib/server/sessionCookie';
 import { AddressValidationError, verifyAddress } from '$lib/server/address';
 import { recommendDemoCard, spendingComplete, spendingPreferencesSchema } from '$lib/spending';
 import type { DemoAccountType } from '$lib/server/nessie/seedTransactions';
+import { z } from 'zod';
 
 export const prerender = false;
 
@@ -22,9 +23,9 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
   if (!/^[a-z0-9-]{20,80}$/i.test(key)) return json({ error: 'Please refresh the page and try again.' }, { status: 400 });
   let body: unknown;
   try { body = await request.json(); } catch { return json({ error: 'That didn’t come through. Please try again.' }, { status: 400 }); }
-  const parsed = customerCreateSchema.extend({ accountChoice: accountChoiceSchema.refine((choice) => choice !== 'undecided', 'Choose checking, savings, both, or no accounts before continuing.'), spending: spendingPreferencesSchema.refine(spendingComplete, 'Tell Eno your spending priorities or skip the demo credit card before continuing.') }).safeParse(body);
+  const parsed = customerCreateSchema.extend({ accountChoice: accountChoiceSchema.refine((choice) => choice !== 'undecided', 'Choose your accounts before continuing.'), spending: spendingPreferencesSchema.refine(spendingComplete, 'Pick your spending priorities before continuing.'), includeCreditCard: z.boolean() }).safeParse(body);
   if (!parsed.success) return json({ error: parsed.error.issues[0].message, fields: parsed.error.flatten() }, { status: 400 });
-  const { accountChoice, spending, ...input } = parsed.data;
+  const { accountChoice, spending, includeCreditCard, ...input } = parsed.data;
   const now = Date.now();
   for (const [id, attempt] of attempts) if (now - attempt.createdAt > TTL) attempts.delete(id);
   const fingerprint = JSON.stringify(parsed.data);
@@ -40,7 +41,7 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
       if (check.status !== 'matched' || !check.address) throw new AddressValidationError(check);
       const created = await createNessieCustomer({ ...input, address: check.address }, runtime);
       if (!created.customerId) return created;
-      const card = recommendDemoCard(spending);
+      const card = includeCreditCard ? recommendDemoCard(spending) : null;
       const types: DemoAccountType[] = [...accountTypesFor(accountChoice), ...(card ? ['Credit Card' as const] : [])];
       return { ...created, ...await createNessieAccounts(created.customerId, types, runtime, undefined, { card, categories: spending.categories }) };
     })();

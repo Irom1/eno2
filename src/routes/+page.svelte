@@ -1,4 +1,8 @@
 <script lang="ts">
+  import DeleteCustomerButton from '$lib/components/DeleteCustomerButton.svelte';
+  import CustomerRemovalNotice from '$lib/components/CustomerRemovalNotice.svelte';
+  import { customerName } from '$lib/customerDeletion';
+  import { changeCustomerRemoval, lastRemovedCustomer, rememberRemovedCustomer, forgetRemovedCustomer, type RemovedCustomer } from '$lib/customerRemoval';
   import { onMount, tick } from 'svelte';
   import Eno from '$lib/components/Eno.svelte';
   import CapitalOneLogo from './[view=wallet]/CapitalOneLogo.svelte';
@@ -51,6 +55,9 @@
   let customers = $state<Customer[]>([]);
   let customersLoading = $state(true);
   let customersError = $state(false);
+  let deletingId = $state('');
+  let removalError = $state('');
+  let removedCustomer = $state<RemovedCustomer | null>(null);
   let signInArea: HTMLDivElement;
   let signInButton: HTMLButtonElement;
   let accountList: HTMLDivElement;
@@ -70,6 +77,28 @@
     } finally {
       customersLoading = false;
     }
+  }
+
+  async function deleteCustomer(customer: Customer) {
+    if (deletingId) return;
+    deletingId = customer.id; removalError = '';
+    try {
+      await changeCustomerRemoval(customer.id, true);
+      customers = customers.filter((item) => item.id !== customer.id);
+      removedCustomer = rememberRemovedCustomer({ id: customer.id, name: customerName(customer) });
+    } catch (cause) { removalError = cause instanceof Error ? cause.message : 'Couldn’t delete this account.'; }
+    finally { deletingId = ''; }
+  }
+
+  async function undoRemoval() {
+    if (!removedCustomer || deletingId) return;
+    const id = removedCustomer.id; deletingId = id; removalError = '';
+    try {
+      await changeCustomerRemoval(id, false);
+      removedCustomer = forgetRemovedCustomer(id);
+      await loadCustomers();
+    } catch (cause) { removalError = cause instanceof Error ? cause.message : 'Couldn’t restore this account.'; }
+    finally { deletingId = ''; }
   }
 
   async function toggleAccounts(): Promise<void> {
@@ -106,6 +135,7 @@
   }
 
   onMount(() => {
+    removedCustomer = lastRemovedCustomer();
     try {
       const saved = localStorage.getItem('dashboard-theme');
       if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved;
@@ -203,14 +233,18 @@
           {:else}
             <nav class="account-links" aria-label="Current accounts">
               {#each customers as customer (customer.id)}
+                <div class="customer-row">
                 <a class="account-choice" href={`/dashboard?customer=${encodeURIComponent(customer.id)}`}>
                   <span class="avatar" aria-hidden="true">{customer.firstName[0]?.toUpperCase() ?? 'A'}</span>
                   <span class="account-name"><strong>{`${customer.firstName} ${customer.lastName}`.trim() || 'Account'}</strong>{#if customer.city}<small>{customer.city}{customer.state ? `, ${customer.state}` : ''}</small>{/if}</span>
                   {@render arrowIcon()}
                 </a>
+                <DeleteCustomerButton {customer} disabled={!!deletingId} ondelete={() => deleteCustomer(customer)} />
+                </div>
               {/each}
             </nav>
           {/if}
+          <CustomerRemovalNotice removed={removedCustomer} error={removalError} busy={!!deletingId} onundo={undoRemoval} />
         </div>
         </div>
       </div>
@@ -560,10 +594,11 @@
   .account-list[hidden] { display: none; }
   .list-heading { margin: 8px 10px 12px; color: var(--muted); font-size: 12px; }
   .account-links { display: grid; gap: 3px; max-height: min(340px, 55dvh); overflow-y: auto; }
-  .account-choice { display: flex; align-items: center; gap: 11px; padding: 11px; border-radius: 10px; }
+  .customer-row { display: flex; align-items: center; border-radius: 10px; }.customer-row:hover { background: var(--hover); }
+  .account-choice { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; padding: 11px; border-radius: 10px; }
   .account-choice:hover { background: var(--hover); }
   .avatar { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; color: var(--brand); background: var(--avatar); font-weight: 650; }
-  .account-name { flex: 1; min-width: 0; }.account-name strong { display: block; font-size: 14px; }.account-name small { display: block; color: var(--muted); font-size: 12px; }
+  .account-name { flex: 1; min-width: 0; }.account-name strong { display: block; font-size: 14px; overflow-wrap: anywhere; }.account-name small { display: block; color: var(--muted); font-size: 12px; }
   .account-choice :global(svg), .retry :global(svg) { width: 18px; height: 18px; flex: none; }
   .list-message { margin: 0; padding: 10px; color: var(--muted); font-size: 13px; }.list-message p { margin: 0 0 10px; }
   .retry { display: inline-flex; align-items: center; gap: 8px; padding: 6px 0; border: 0; color: var(--brand); background: transparent; font: inherit; cursor: pointer; }

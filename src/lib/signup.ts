@@ -35,6 +35,8 @@ export const customerCreateSchema = z.object({
 export type CustomerCreate = z.infer<typeof customerCreateSchema>;
 export const accountChoiceSchema = z.enum(['undecided', 'none', 'checking', 'savings', 'both']);
 export type AccountChoice = z.infer<typeof accountChoiceSchema>;
+export interface AccountSelection { checking: boolean; savings: boolean; creditCard: boolean }
+export type SignupStage = 'details' | 'spending' | 'accounts' | 'review';
 export const accountTypesFor = (choice: AccountChoice): ('Checking' | 'Savings')[] => choice === 'both' ? ['Checking', 'Savings'] : choice === 'checking' ? ['Checking'] : choice === 'savings' ? ['Savings'] : [];
 
 /** Normalize obvious state-name typos, while leaving ambiguous answers alone. */

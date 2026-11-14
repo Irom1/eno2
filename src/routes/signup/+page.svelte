@@ -1,21 +1,26 @@
 <script lang="ts">
+  import { asksToConfirmAddress, isAffirmative, reviewFingerprint as profileFingerprint } from '$lib/signupConfirmation';
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
   import CapitalOneLogo from '../[view=wallet]/CapitalOneLogo.svelte';
+  import SignupChoices from '$lib/components/SignupChoices.svelte';
   import Eno from '$lib/components/Eno.svelte';
   import { emptySpending, spendingPreferencesSchema, spendingComplete, recommendDemoCard, categoryLabels, type SpendingPreferences, type DemoCard } from '$lib/spending';
   import AddressAutocomplete from '$lib/components/AddressAutocomplete.svelte';
   import { type AddressCandidate, type AddressCheck, type MailingAddress } from '$lib/address';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
-  import { accountChoiceSchema, accountTypesFor, emptyAnswers, SIGNUP_FIELDS, customerFromAnswers, type AccountChoice, type SignupAnswers } from '$lib/signup';
+  import { accountChoiceSchema, accountTypesFor, emptyAnswers, SIGNUP_FIELDS, customerFromAnswers, type AccountChoice, type SignupAnswers, type AccountSelection, type SignupStage } from '$lib/signup';
 
-  interface Message { id: number; role: 'eno' | 'you'; text: string; review?: SignupAnswers; accountChoice?: AccountChoice; spending?: SpendingPreferences; card?: DemoCard | null; retry?: 'turn' | 'signup'; retryText?: string; selectedAddress?: MailingAddress; addressCheck?: AddressCheck; recovery?: boolean; dashboard?: string }
-  interface ConversationReply { message: string; answers: SignupAnswers; accountChoice: AccountChoice; spending: SpendingPreferences; card: DemoCard | null; ready: boolean; confirmed: boolean; addressCheck?: AddressCheck }
+  interface ChoiceInput { selectedSpending?: SpendingPreferences['categories']; selectedAccounts?: AccountSelection }
+  interface Message { id: number; role: 'eno' | 'you'; text: string; review?: SignupAnswers; accountChoice?: AccountChoice; spending?: SpendingPreferences; includeCreditCard?: boolean | null; choices?: 'spending' | 'accounts'; selectedCategories?: SpendingPreferences['categories']; selection?: AccountSelection; recommendedCard?: DemoCard | null; retryChoices?: ChoiceInput; card?: DemoCard | null; retry?: 'turn' | 'signup'; retryText?: string; selectedAddress?: MailingAddress; addressCheck?: AddressCheck; recovery?: boolean; dashboard?: string }
+  interface ConversationReply { message: string; answers: SignupAnswers; accountChoice: AccountChoice; spending: SpendingPreferences; includeCreditCard: boolean | null; recommendedCard: DemoCard | null; stage: SignupStage; card: DemoCard | null; ready: boolean; confirmed: boolean; addressCheck?: AddressCheck }
   const draftKey = 'eno-signup-conversation-v2';
   let answers = $state(emptyAnswers());
   let accountChoice = $state<AccountChoice>('undecided');
   let spending = $state<SpendingPreferences>(emptySpending());
-  let matchingCard = $derived(recommendDemoCard(spending));
+  let includeCreditCard = $state<boolean | null>(null);
+  let latestChoiceId = $state(0);
+  let matchingCard = $derived(includeCreditCard === false ? null : recommendDemoCard(spending));
   let readyToCreate = $state(false);
   let messages = $state<Message[]>([{ id: 1, role: 'eno', text: 'Hey, I’m Eno. Really glad you’re here.\n\nLet’s get you set up. What should I call you?' }]);
   let nextId = 1;
@@ -29,6 +34,7 @@
   let completed = $state(false);
   let latestReviewId = $state(0);
   let reviewFingerprint = '';
+  let pendingAddress = $state<MailingAddress>();
   let createdCustomerId = $state('');
   let recovery = $state(false);
   let attemptKey = '';
@@ -93,10 +99,13 @@
     try {
       const draft = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
       if (draft && SIGNUP_FIELDS.every((key) => typeof draft.answers?.[key] === 'string') && accountChoiceSchema.safeParse(draft.accountChoice).success && Array.isArray(draft.messages) && draft.messages.every((entry: Message) => ['eno', 'you'].includes(entry.role) && typeof entry.text === 'string' && typeof entry.id === 'number')) {
+        pendingAddress = draft.pendingAddress;
         answers = draft.answers; accountChoice = draft.accountChoice; messages = draft.messages.slice(-40);
         nextId = Math.max(1, ...messages.map((entry) => entry.id));
         spending = spendingPreferencesSchema.safeParse(draft.spending).success ? draft.spending : emptySpending();
-        readyToCreate = draft.readyToCreate === true && spendingComplete(spending);
+        includeCreditCard = typeof draft.includeCreditCard === 'boolean' ? draft.includeCreditCard : null;
+        latestChoiceId = typeof draft.latestChoiceId === 'number' ? draft.latestChoiceId : 0;
+        readyToCreate = draft.readyToCreate === true && spendingComplete(spending) && includeCreditCard !== null;
         latestReviewId = typeof draft.latestReviewId === 'number' ? draft.latestReviewId : 0;
         reviewFingerprint = draft.reviewFingerprint || '';
         attemptKey = typeof draft.attemptKey === 'string' ? draft.attemptKey : attemptKey;
@@ -113,7 +122,7 @@
 
   $effect(() => {
     if (!ready || completed) return;
-    try { sessionStorage.setItem(draftKey, JSON.stringify({ answers, accountChoice, spending, messages, readyToCreate, latestReviewId, reviewFingerprint, attemptKey, recovery, createdCustomerId })); } catch { /* Keep the current conversation in memory. */ }
+    try { sessionStorage.setItem(draftKey, JSON.stringify({ answers, accountChoice, spending, includeCreditCard, latestChoiceId, messages, pendingAddress, readyToCreate, latestReviewId, reviewFingerprint, attemptKey, recovery, createdCustomerId })); } catch { /* Keep the current conversation in memory. */ }
   });
 
   function toggleTheme() { theme = isDark ? 'light' : 'dark'; try { localStorage.setItem('dashboard-theme', theme); } catch { /* Keep this visit’s choice. */ } }
@@ -127,19 +136,36 @@
 
   async function send(event: SubmitEvent) { event.preventDefault(); const text = reply.trim(); if (!text || busy || !ready || recovery) return; reply = ''; await sendText(text); }
 
-  async function sendText(text: string, selectedAddress?: MailingAddress) {
+  async function sendText(text: string, selectedAddress?: MailingAddress, choices: ChoiceInput = {}) {
     if (busy || recovery || createdCustomerId) return;
     stopSpeech();
+    const activeChoice = messages.find((message) => message.id === latestChoiceId && message.choices);
+    if (!selectedAddress && !choices.selectedSpending && !choices.selectedAccounts && activeChoice && isAffirmative(text)) {
+      const selected = choicesFor(activeChoice);
+      if (selected) choices = selected;
+      else {
+        messages.push({ id: ++nextId, role: 'you', text });
+        addEno('Pick at least one spending category first. “A bit of everything” works if you don’t have a favorite. Then you can just say yes.');
+        void settle();
+        return;
+      }
+    }
     const history = messages.slice(-32).map(({ role, text }) => ({ role, text }));
     messages.push({ id: ++nextId, role: 'you', text });
-    await requestTurn(text, history, selectedAddress);
+    const review = messages.find((message) => message.id === latestReviewId && message.review);
+    const reviewMatches = review?.review && profileFingerprint(review.review, review.accountChoice ?? accountChoice, review.spending ?? spending, review.includeCreditCard ?? includeCreditCard) === profileFingerprint(answers, accountChoice, spending, includeCreditCard);
+    if (!selectedAddress && !choices.selectedSpending && !choices.selectedAccounts && readyToCreate && reviewMatches && isAffirmative(text)) {
+      await submit();
+      return;
+    }
+    await requestTurn(text, history, selectedAddress, choices);
   }
 
-  async function retryTurn(text: string, selectedAddress?: MailingAddress) {
+  async function retryTurn(text: string, selectedAddress?: MailingAddress, choices: ChoiceInput = {}) {
     if (busy) return;
     const index = messages.findLastIndex((item) => item.role === 'you' && item.text === text);
     const history = messages.slice(0, index).slice(-32).map(({ role, text }) => ({ role, text }));
-    await requestTurn(text, history, selectedAddress);
+    await requestTurn(text, history, selectedAddress, choices);
   }
 
   function selectAddress(candidate: AddressCandidate) {
@@ -147,7 +173,7 @@
     void sendText(`My mailing address is ${candidate.label}.`, candidate.address);
   }
 
-  async function requestTurn(text: string, history: { role: 'eno' | 'you'; text: string }[], selectedAddress?: MailingAddress) {
+  async function requestTurn(text: string, history: { role: 'eno' | 'you'; text: string }[], selectedAddress?: MailingAddress, choices: ChoiceInput = {}) {
     waiting = true;
     void settle();
     turnController = new AbortController();
@@ -155,23 +181,42 @@
     try {
       const response = await fetch('/api/signup/chat', {
         method: 'POST', headers: { 'content-type': 'application/json' }, signal: turnController.signal,
-        body: JSON.stringify({ message: text, answers, accountChoice, spending, history, ...(selectedAddress ? { selectedAddress } : {}) })
+        body: JSON.stringify({ message: text, answers, accountChoice, spending, includeCreditCard, history, pendingAddress, ...choices, reviewedFingerprint: latestReviewId ? reviewFingerprint : undefined, ...(selectedAddress ? { selectedAddress } : {}) })
       });
       const result = await response.json() as ConversationReply & { error?: string };
       if (!response.ok || !result.answers || !accountChoiceSchema.safeParse(result.accountChoice).success || !spendingPreferencesSchema.safeParse(result.spending).success) throw new Error(result.error || 'I lost my train of thought. Your details are still here — let’s try that message again.');
       if (disposed) return;
-      answers = result.answers; accountChoice = result.accountChoice; spending = result.spending; readyToCreate = result.ready;
-      addEno(result.message, { addressCheck: result.addressCheck });
-      const fingerprint = JSON.stringify({ answers, accountChoice, spending });
+      answers = result.answers; accountChoice = result.accountChoice; spending = result.spending; includeCreditCard = result.includeCreditCard; readyToCreate = result.ready;
+      pendingAddress = result.addressCheck?.status === 'correction' && result.addressCheck.candidates?.length === 1 ? result.addressCheck.candidates[0].address : result.addressCheck?.status === 'matched' && asksToConfirmAddress(result.message) ? result.addressCheck.address : undefined;
+      const choiceStep = result.stage === 'spending' || result.stage === 'accounts' ? result.stage : undefined;
+      const messageId = addEno(result.message, { addressCheck: result.addressCheck, ...(choiceStep ? { choices: choiceStep, selectedCategories: [...spending.categories], selection: { checking: accountChoice === 'undecided' || accountChoice === 'both' || accountChoice === 'checking', savings: accountChoice === 'undecided' || accountChoice === 'both' || accountChoice === 'savings', creditCard: includeCreditCard !== false }, recommendedCard: result.recommendedCard ?? recommendDemoCard(spending) } : {}) });
+      latestChoiceId = choiceStep ? messageId : 0;
+      const fingerprint = profileFingerprint(answers, accountChoice, spending, includeCreditCard);
       if (result.ready && !result.confirmed && fingerprint !== reviewFingerprint) {
-        latestReviewId = addEno('Your profile, at a glance. Take a look before we make it official.', { review: { ...answers }, accountChoice, spending: { ...spending, categories: [...spending.categories] }, card: result.card ?? recommendDemoCard(spending), addressCheck: result.addressCheck }, false);
+        latestReviewId = addEno('Your profile, at a glance. Take a look before we make it official.', { review: { ...answers }, accountChoice, spending: { ...spending, categories: [...spending.categories] }, includeCreditCard, card: includeCreditCard === false ? null : result.card ?? recommendDemoCard(spending), addressCheck: result.addressCheck }, false);
         reviewFingerprint = fingerprint;
       }
       waiting = false;
       if (result.confirmed) await submit();
     } catch (cause) {
-      if (!disposed) addEno(cause instanceof Error && cause.name !== 'AbortError' ? cause.message : 'That reply took a little longer than expected. Your details are still here — want to try again?', { retry: 'turn', retryText: text, selectedAddress });
+      if (!disposed) addEno(cause instanceof Error && cause.name !== 'AbortError' ? cause.message : 'That reply took a little longer than expected. Your details are still here — want to try again?', { retry: 'turn', retryText: text, selectedAddress, retryChoices: choices });
     } finally { clearTimeout(timeout); waiting = false; void settle(); }
+  }
+
+  function choicesFor(message: Message): ChoiceInput | null {
+    if (message.choices === 'spending' && message.selectedCategories?.length) return { selectedSpending: [...message.selectedCategories] };
+    if (message.choices === 'accounts' && message.selection) return { selectedAccounts: { ...message.selection } };
+    return null;
+  }
+
+  function continueChoices(message: Message) {
+    const choices = choicesFor(message);
+    if (choices?.selectedSpending) {
+      void sendText(`My top spending categories are ${choices.selectedSpending.map((category) => categoryLabels[category]).join(', ')}.`, undefined, choices);
+    } else if (choices?.selectedAccounts && message.selection) {
+      const selected = [message.selection.checking ? 'checking' : '', message.selection.savings ? 'savings' : '', message.selection.creditCard ? `Capital One ${message.recommendedCard?.name ?? 'Quicksilver'} credit card` : ''].filter(Boolean);
+      void sendText(selected.length ? `I'd like ${selected.join(', ')}.` : 'No accounts yet, please.', undefined, choices);
+    }
   }
 
   function edit(label: string) { void sendText(`I’d like to change my ${label.toLowerCase()}.`); }
@@ -188,9 +233,10 @@
     void settle();
     try {
       if (!createdCustomerId) {
-        const response = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': attemptKey }, body: JSON.stringify({ ...customerFromAnswers(answers), accountChoice, spending }) });
+        const response = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': attemptKey }, body: JSON.stringify({ ...customerFromAnswers(answers), accountChoice, spending, includeCreditCard }) });
         const result = await response.json() as { customerId?: string; error?: string; created?: boolean; accountError?: string; addressCheck?: AddressCheck };
         if (!response.ok && result.addressCheck) {
+          pendingAddress = result.addressCheck.status === 'correction' && result.addressCheck.candidates?.length === 1 ? result.addressCheck.candidates[0].address : undefined;
           readyToCreate = result.addressCheck.status === 'unavailable';
           reviewFingerprint = '';
           addEno(result.error || result.addressCheck.message, { addressCheck: result.addressCheck, ...(readyToCreate ? { retry: 'signup' as const } : {}) });
@@ -240,6 +286,9 @@
                 {#if message.addressCheck?.status === 'correction'}
                   <div class="address-choices">{#each message.addressCheck.candidates ?? [] as candidate}<button disabled={busy || recovery || !!createdCustomerId} onclick={() => selectAddress(candidate)}>{candidate.label}</button>{/each}</div>
                 {/if}
+                {#if message.choices}
+                  <SignupChoices step={message.choices} bind:categories={message.selectedCategories} bind:selection={message.selection} card={message.recommendedCard} disabled={busy || message.id !== latestChoiceId || recovery || !!createdCustomerId} oncontinue={() => continueChoices(message)} />
+                {/if}
                 {#if message.review}
                   {#if message.addressCheck?.status === 'matched'}<p class="address-matched">✓ Street address matched · apartment/unit not verified</p>{/if}
                   <div class="profile-preview" aria-label="Your profile">
@@ -247,12 +296,12 @@
                       <div><span>{row.label}</span><strong>{row.value}</strong>{#if message.id === latestReviewId && readyToCreate && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit(row.label)} aria-label={`Edit ${row.label.toLowerCase()}`}>Edit</button>{/if}</div>
                     {/each}
                     <div><span>Accounts</span><strong>{message.accountChoice === 'none' ? message.card ? 'No checking or savings' : 'None yet — a fresh dashboard' : accountTypesFor(message.accountChoice ?? 'none').join(' + ') + ' · 100 sample transactions each'}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('account choice')} aria-label="Edit account choice">Edit</button>{/if}</div>
-                    <div><span>Spending</span><strong>{message.spending?.status === 'skip' ? 'Demo credit card skipped' : message.spending?.categories.map((category) => categoryLabels[category]).join(' · ')}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('spending priorities and demo credit card')} aria-label="Edit spending priorities">Edit</button>{/if}</div>
+                    <div><span>Spending</span><strong>{message.spending?.status === 'skip' ? 'No category preference' : message.spending?.categories.map((category) => categoryLabels[category]).join(' · ')}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('spending priorities and demo credit card')} aria-label="Edit spending priorities">Edit</button>{/if}</div>
                   </div>
-                  {#if message.card}<div class="card-match"><span class="card-demo-label">YOUR MATCH · DEMO CREDIT CARD</span><strong>{message.card.name}</strong><p>{message.card.reason}</p><small>100 fictional transactions · balance owed = purchases − payments · 1 demo point per $1 spent</small></div>{/if}
+                  {#if message.card}<div class="card-match"><span class="card-demo-label">YOUR MATCH · DEMO CREDIT CARD</span><strong>Capital One {message.card.name}</strong><p>{message.card.reason}</p><small>100 fictional transactions · balance owed = purchases − payments · 1 demo point per $1 spent</small></div>{/if}
                   {#if message.id === latestReviewId && readyToCreate && !recovery}<button class="confirm" disabled={busy} onclick={confirm}>Looks good. Let’s go {@render arrow()}</button>{/if}
                 {/if}
-                {#if message.retry && !recovery}<button class="confirm" disabled={busy} onclick={() => message.retry === 'turn' ? retryTurn(message.retryText || '', message.selectedAddress) : confirm()}>Try again {@render arrow()}</button>{/if}
+                {#if message.retry && !recovery}<button class="confirm" disabled={busy} onclick={() => message.retry === 'turn' ? retryTurn(message.retryText || '', message.selectedAddress, message.retryChoices) : confirm()}>Try again {@render arrow()}</button>{/if}
                 {#if message.recovery}<a class="confirm" href="/">Go to Sign in {@render arrow()}</a>{/if}
                 {#if message.dashboard}<a class="confirm" href={message.dashboard}>Open my dashboard {@render arrow()}</a>{/if}
               </div>

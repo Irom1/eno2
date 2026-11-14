@@ -11,7 +11,7 @@ vi.mock('$lib/server/nessie/createAccounts', () => ({ createNessieAccounts: vi.f
 
 const address = { street_number: '4600', street_name: 'Silver Hill Road', city: 'Washington', state: 'DC', zip: '20233' };
 function event(key = crypto.randomUUID(), spending: { status: 'skip' | 'personalize' | 'undecided'; categories: string[] } = { status: 'skip', categories: [] }) {
-  return { request: new Request('http://localhost/api/signup', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify({ first_name: 'Demo', last_name: 'Tester', address, accountChoice: 'both', spending }) }), cookies: { set: vi.fn() }, platform: undefined } as unknown as Parameters<typeof POST>[0];
+  return { request: new Request('http://localhost/api/signup', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify({ first_name: 'Demo', last_name: 'Tester', address, accountChoice: 'both', spending, includeCreditCard: spending.status === 'personalize' }) }), cookies: { set: vi.fn() }, platform: undefined } as unknown as Parameters<typeof POST>[0];
 }
 beforeEach(() => vi.resetAllMocks());
 

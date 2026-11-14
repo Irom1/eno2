@@ -3,6 +3,8 @@
  * httpOnly cookie; the transcript never leaves the server.
  */
 
+import { isDeletedDemoCustomer } from './deletedDemoCustomers';
+
 export interface CustomerIdentity {
   id: string;
   firstName: string;
@@ -93,7 +95,7 @@ export function getSession(id: string | undefined | null, now: number = Date.now
   const sessions = store();
   const session = sessions.get(id);
   if (!session) return null;
-  if (isExpired(session, now)) {
+  if (isExpired(session, now) || isDeletedDemoCustomer(session.customer.id)) {
     sessions.delete(id);
     return null;
   }
@@ -104,6 +106,10 @@ export function getSession(id: string | undefined | null, now: number = Date.now
 export function destroySession(id: string | undefined | null): boolean {
   if (!id) return false;
   return store().delete(id);
+}
+
+export function destroyCustomerSessions(customerId: string): void {
+  for (const [id, session] of store()) if (session.customer.id === customerId) store().delete(id);
 }
 
 const isFunctionResponsePart = (part: ContentPart): boolean =>

@@ -196,6 +196,7 @@
                   <span class="tx-main">
                     <strong>{transaction.description || 'Transaction'}</strong>
                     <small>{transactionLabel(transaction.kind)} · {label(transaction.status)}</small>
+                    {#if transaction.demoImpact}<small class="impact-label" class:green-impact={transaction.demoImpact === 'green'}>{transaction.demoImpact === 'green' ? 'Green demo purchase' : 'Non-green demo purchase'}</small>{/if}
                   </span>
                   <span class="tx-amount" class:deposit={transaction.kind === 'deposit'}>
                     {signedAmount(transaction)}
@@ -346,6 +347,7 @@
   }
   .hero h2 { margin: 0; font-size: 22px; line-height: 1.25; }
   .hero-ending { margin: 3px 0 0; font-size: 12px; opacity: .78; }
+  .tx-main .impact-label { color: var(--muted); font-size: 10px; }.tx-main .green-impact { color: var(--dark, #9eddb3) var(--light, #286b41); }
   .hero-rewards { margin: 0; font-size: 13px; font-weight: 650; }
   .hero-balance { display: grid; gap: 2px; }
   .hero-balance small { font-size: 12px; opacity: .78; }

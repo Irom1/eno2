@@ -2,6 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestEvent } from './$types';
 import { resolveEnv } from '$lib/server/env';
 import { callTool, withMcp } from '$lib/server/mcp';
+import { isDeletedDemoCustomer } from '$lib/server/deletedDemoCustomers';
+import { isRemovedCustomer } from '$lib/customerDeletion';
 import {
   createSession,
   destroySession,
@@ -43,13 +45,14 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
 
   const customerId = typeof body.customerId === 'string' ? body.customerId.trim() : '';
   if (!customerId) return json({ error: 'customerId is required' }, { status: 400 });
+  if (isDeletedDemoCustomer(customerId)) return json({ error: 'Unknown customerId' }, { status: 404 });
 
   const runtime = resolveEnv(platform);
   try {
     return await withMcp(runtime, async (mcp) => {
       const customerResult = await callTool(mcp, 'nessie_get_customer', { customerId });
       const match = customerResult.data as RawCustomer | null;
-      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId) {
+      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId || isRemovedCustomer(match)) {
         return json({ error: 'Unknown customerId' }, { status: 404 });
       }
 
