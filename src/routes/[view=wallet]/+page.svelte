@@ -364,6 +364,10 @@
     }
   }
   onMount(() => {
+    if (inChat && page.url.searchParams.get('topic') === 'open-account') {
+      query = 'I’d like to open an account';
+    }
+
     try {
       const saved = localStorage.getItem('dashboard-theme');
       if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved;
