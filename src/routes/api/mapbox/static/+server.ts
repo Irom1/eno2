@@ -49,8 +49,13 @@ export async function GET({ url, platform }: RequestEvent): Promise<Response> {
     return new Response('Invalid map coordinates', { status: 400 });
   }
 
+  // Mapbox tokens with URL restrictions only allow requests whose Referer is
+  // on the token's allowlist; send it explicitly instead of relying on the
+  // caller-supplied (often absent) header.
+  const referer = runtime.MAPBOX_REFERER || 'http://localhost:5184/';
+
   try {
-    const upstream = await fetch(target);
+    const upstream = await fetch(target, { headers: { Referer: referer } });
     if (!upstream.ok || !upstream.body) {
       return new Response('Map preview unavailable', { status: 502 });
     }

@@ -18,6 +18,11 @@ export interface RuntimeEnv {
   LLM: 'gemini' | 'mock';
   /** Server-only Mapbox public token for ATM Static Images previews. */
   MAPBOX_API_KEY?: string;
+  /**
+   * Referer sent to Mapbox by the static image proxy. Mapbox tokens with URL
+   * restrictions reject requests whose Referer is not on the allowlist.
+   */
+  MAPBOX_REFERER?: string;
   /** Cards v2 pipeline: `off` keeps today's client-only inference. Defaults to `v2`. */
   CARDS_MODE?: CardsMode;
 }
@@ -44,6 +49,7 @@ export function resolveEnv(platform?: App.Platform): RuntimeEnv {
   const GEMINI_API_KEY = read(sources, 'GEMINI_API_KEY');
   const GEMINI_MODEL = read(sources, 'GEMINI_MODEL') || DEFAULT_MODEL;
   const MAPBOX_API_KEY = read(sources, 'MAPBOX_API_KEY');
+  const MAPBOX_REFERER = read(sources, 'MAPBOX_REFERER');
 
   const requested = read(sources, 'LLM').toLowerCase();
   const LLM: RuntimeEnv['LLM'] =
@@ -59,6 +65,7 @@ export function resolveEnv(platform?: App.Platform): RuntimeEnv {
     GEMINI_MODEL,
     LLM,
     MAPBOX_API_KEY,
+    MAPBOX_REFERER,
     CARDS_MODE
   };
 }
