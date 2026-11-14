@@ -3,6 +3,7 @@
  * by keyword, and composes answers from tool payloads only. No LLM calls.
  */
 import type { ToolCallResult } from "./mcp";
+import { GUEST_CUSTOMER_ID } from "../chat/guest";
 import type { AgentEvent, Emit } from "./events";
 import { trimContents, type Session } from "./session";
 import { summarizeToolResult, toolLabel } from "./toolBridge";
@@ -370,6 +371,19 @@ export function composeIntro(name: string): string {
 }
 
 export async function mockAgent({ session, message, emit, deps }: MockAgentInput): Promise<void> {
+  if (session.customer.id === GUEST_CUSTOMER_ID) {
+    const text = "You can explore account options and apply on the Capital One website. Are you interested in checking, savings, or a credit card?";
+    emit({ type: "text", delta: text });
+    session.contents = trimContents([
+      ...session.contents,
+      { role: "user", parts: [{ text: message }] },
+      { role: "model", parts: [{ text }] }
+    ]);
+    session.updatedAt = Date.now();
+    emit({ type: "usage", promptTokens: 0, outputTokens: 0, rounds: 1 });
+    emit({ type: "done", sessionId: session.id });
+    return;
+  }
   const { callTool, now } = deps;
   const intent = routeIntent(message);
   const args = intent.args(session);

@@ -69,8 +69,10 @@ function requestBody(params: StreamParams | GenerateParams): Record<string, unkn
   return {
     contents: params.contents,
     systemInstruction: { role: 'user', parts: [{ text: params.systemInstruction }] },
-    tools: [{ functionDeclarations: params.declarations }],
-    toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+    ...(params.declarations.length > 0 && {
+      tools: [{ functionDeclarations: params.declarations }],
+      toolConfig: { functionCallingConfig: { mode: 'AUTO' } }
+    }),
     generationConfig: { temperature: TEMPERATURE, maxOutputTokens: MAX_OUTPUT_TOKENS }
   };
 }

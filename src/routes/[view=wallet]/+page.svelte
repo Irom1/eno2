@@ -2,6 +2,7 @@
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
+  import { GUEST_CUSTOMER_ID, OPEN_ACCOUNT_MESSAGE } from '$lib/chat/guest';
   import { dateLabel, money } from '$lib/format';
   import {
     accountEnding,
@@ -57,8 +58,8 @@
   );
   let isDark = $derived(effectiveTheme === 'dark');
   let accountOpen = $state(false);
-  let accountButton: HTMLButtonElement;
-  let accountMenuEl: HTMLDivElement;
+  let accountButton = $state<HTMLButtonElement>();
+  let accountMenuEl = $state<HTMLDivElement>();
   let customers = $state<Customer[]>([]);
   let activeCustomerId = $state('');
   let customersLoading = $state(true);
@@ -194,7 +195,8 @@
       const currentSession = sessionResponse?.ok
         ? await sessionResponse.json() as { customer?: Customer }
         : null;
-      const requestedCustomerId = page.url.searchParams.get('customer') || currentSession?.customer?.id;
+      const requestedCustomerId = page.url.searchParams.get('customer') ||
+        (currentSession?.customer?.id === GUEST_CUSTOMER_ID ? undefined : currentSession?.customer?.id);
       if (requestedCustomerId && !list.some((customer) => customer.id === requestedCustomerId)) {
         const selectedResponse = await fetch(`/api/customers?customer=${encodeURIComponent(requestedCustomerId)}`);
         if (!selectedResponse.ok) throw new Error('Could not load selected customer.');
@@ -296,6 +298,7 @@
   }
   let hidden = $state<Record<string, boolean>>({});
   let inChat = $derived(page.params.view === 'chat');
+  let guestChat = $derived(inChat && page.url.searchParams.get('topic') === 'open-account');
   let query = $state('');
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
   let promptSeq = 0;
@@ -336,7 +339,10 @@
     }
   });
 
-  afterNavigate(() => {
+  afterNavigate(({ from }) => {
+    if (guestChat && from?.url.searchParams.get('topic') !== 'open-account') {
+      chatPrompt = { text: OPEN_ACCOUNT_MESSAGE, id: ++promptSeq };
+    }
     if (!previousComposerBounds) return;
 
     const { left, top, height } = composer.getBoundingClientRect();
@@ -405,11 +411,15 @@
       send(query);
     }
   }
-  onMount(() => {
-    if (inChat && page.url.searchParams.get('topic') === 'open-account') {
-      query = 'I’d like to open an account';
+  let customersRequested = false;
+  $effect(() => {
+    if (!guestChat && !customersRequested) {
+      customersRequested = true;
+      void loadCustomers();
     }
+  });
 
+  onMount(() => {
     try {
       const saved = localStorage.getItem('dashboard-theme');
       if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved;
@@ -423,8 +433,6 @@
       systemPrefersDark = event.matches;
     };
     media.addEventListener('change', onMediaChange);
-
-    void loadCustomers();
 
     return () => media.removeEventListener('change', onMediaChange);
   });
@@ -460,48 +468,55 @@
     <div class="wallet-band" style:--composer-half-height={`${composerHeight / 2}px`}>
       <div class="wallet-gradient" bind:this={gradient} aria-hidden="true"></div>
       <div class="container header-inner">
-        <a class="brand" href="/dashboard"><CapitalOneLogo label="Capital One dashboard" /></a>
+        <a class="brand" href="/"><CapitalOneLogo label="Capital One home" /></a>
         <div class="header-actions">
-          <div class="account-menu" role="presentation" bind:this={accountMenuEl} onkeydown={handleMenuKeydown}>
-            <button
-              class="profile"
-              bind:this={accountButton}
-              aria-label={`Switch account${activeName ? `: ${activeName}` : ''}`}
-              aria-haspopup="menu"
-              aria-expanded={accountOpen}
-              aria-controls="account-dropdown"
-              onclick={toggleAccountMenu}
-            >
-              <span class="avatar" aria-hidden="true">{activeInitial}</span>
-              <span class="profile-name">{activeFirstName}</span>
-              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            {#if accountOpen}
-              <div class="account-dropdown" id="account-dropdown" role="menu" aria-label="Switch account">
-                <p class="account-dropdown-title">Switch account</p>
-                {#each customers as customer (customer.id)}
-                  <button
-                    class="account-option"
-                    role="menuitemradio"
-                    aria-checked={customer.id === activeCustomerId}
-                    onclick={() => selectCustomer(customer.id)}
-                  >
-                    <span class="avatar" aria-hidden="true">{customer.firstName[0] ?? '?'}</span>
-                    <span class="account-meta">
-                      <strong>{customer.firstName} {customer.lastName}</strong>
-                      {#if customer.city}<small>{customer.city}, {customer.state}</small>{/if}
-                    </span>
-                    {#if customer.id === activeCustomerId}
-                      <svg class="account-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    {/if}
-                  </button>
-                {/each}
-                {#if customers.length === 0}
-                  <p class="muted">{customersLoading ? 'Loading accounts…' : 'No accounts available.'}</p>
-                {/if}
-              </div>
-            {/if}
-          </div>
+          {#if guestChat}
+            <div class="profile">
+              <span class="avatar" aria-hidden="true">G</span>
+              <span class="profile-name">Guest</span>
+            </div>
+          {:else}
+            <div class="account-menu" role="presentation" bind:this={accountMenuEl} onkeydown={handleMenuKeydown}>
+              <button
+                class="profile"
+                bind:this={accountButton}
+                aria-label={`Switch account${activeName ? `: ${activeName}` : ''}`}
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+                aria-controls="account-dropdown"
+                onclick={toggleAccountMenu}
+              >
+                <span class="avatar" aria-hidden="true">{activeInitial}</span>
+                <span class="profile-name">{activeFirstName}</span>
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              {#if accountOpen}
+                <div class="account-dropdown" id="account-dropdown" role="menu" aria-label="Switch account">
+                  <p class="account-dropdown-title">Switch account</p>
+                  {#each customers as customer (customer.id)}
+                    <button
+                      class="account-option"
+                      role="menuitemradio"
+                      aria-checked={customer.id === activeCustomerId}
+                      onclick={() => selectCustomer(customer.id)}
+                    >
+                      <span class="avatar" aria-hidden="true">{customer.firstName[0] ?? '?'}</span>
+                      <span class="account-meta">
+                        <strong>{customer.firstName} {customer.lastName}</strong>
+                        {#if customer.city}<small>{customer.city}, {customer.state}</small>{/if}
+                      </span>
+                      {#if customer.id === activeCustomerId}
+                        <svg class="account-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      {/if}
+                    </button>
+                  {/each}
+                  {#if customers.length === 0}
+                    <p class="muted">{customersLoading ? 'Loading accounts…' : 'No accounts available.'}</p>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
           <button
             class="theme-toggle"
             aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -529,7 +544,7 @@
           <ChatPanel
             bind:this={chatPanel}
             open={inChat}
-            customerId={activeCustomerId}
+            customerId={guestChat ? GUEST_CUSTOMER_ID : activeCustomerId}
             initialPrompt={chatPrompt}
             bind:canSend
             variant={isDark ? 'dark' : 'light'}
@@ -888,10 +903,6 @@
     border-bottom: 1px solid var(--border);
   }
   .composer { position: relative; z-index: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 8px 24px #102b421c; }
-  .composer:focus-within {
-    border-color: color-mix(in srgb, var(--link) 65%, var(--border));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 15%, transparent), 0 8px 24px #102b421c;
-  }
   .composer-field {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
