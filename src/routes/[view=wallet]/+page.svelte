@@ -119,11 +119,10 @@
       ''
   );
   let firstCredit = $derived(
-    liveAccounts.find((account) => isCredit(account.type)) ?? null
+    liveAccounts.find((account) => account.rewards > 0) ?? liveAccounts.find((account) => isCredit(account.type)) ?? null
   );
   let creditRewards = $derived(
     liveAccounts
-      .filter((account) => isCredit(account.type))
       .reduce((sum, account) => sum + account.rewards, 0)
   );
   let rewardPoints = $derived(snapshotOverview?.overview?.totalRewards ?? creditRewards);

@@ -8,6 +8,8 @@
  *  - The API key never appears in thrown errors or logs.
  */
 
+import { reconcileDemoAccount } from './demoBalances';
+
 const DEFAULT_BASE_URL = "https://prod-api.nessieisreal.com";
 const TIMEOUT_MS = 8000;
 const CACHE_TTL_MS = 60_000;
@@ -113,11 +115,16 @@ export class NessieClient {
           );
         }
 
-        const data = (await response.json()) as T;
+        let data: unknown = await response.json();
+        if (/^\/(?:customers\/[^/]+\/accounts|accounts)$/.test(normalizedPath) && Array.isArray(data)) {
+          data = await Promise.all(data.map((account) => reconcileDemoAccount(account, (path) => this.get(path))));
+        } else if (/^\/accounts\/[^/]+$/.test(normalizedPath)) {
+          data = await reconcileDemoAccount(data, (path) => this.get(path));
+        }
         if (cacheable) {
           this.cache.set(cacheKey, { at: Date.now(), data });
         }
-        return data;
+        return data as T;
       } catch (error) {
         if (error instanceof NessieError) throw error;
         if (attempt === 0) {

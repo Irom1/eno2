@@ -58,7 +58,7 @@ export async function GET({ cookies, params, platform }: RequestEvent): Promise<
       return json({
         account,
         customer,
-        transactions: mergeTransactions(deposits, withdrawals, account.balance),
+        transactions: mergeTransactions(deposits, withdrawals, account.balance, account.type.toLowerCase().includes('credit')),
         bills: itemsOf(requireOk(billsResult)).map(normalizeBill),
         loans: itemsOf(requireOk(loansResult)).map((item) => normalizeLoan(item, accountId))
       });

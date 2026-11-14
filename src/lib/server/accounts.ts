@@ -201,7 +201,8 @@ function compareTransactions(a: WalletTransaction, b: WalletTransaction): number
 export function mergeTransactions(
   deposits: unknown[],
   withdrawals: unknown[],
-  currentBalance: number
+  currentBalance: number,
+  credit = false
 ): WalletTransaction[] {
   const transactions = [
     ...(Array.isArray(deposits) ? deposits : []).map((item) =>
@@ -216,7 +217,7 @@ export function mergeTransactions(
   for (const transaction of transactions) {
     transaction.balanceAfter = running;
     running = toMoney(
-      running - (transaction.kind === 'deposit' ? transaction.amount : -transaction.amount)
+      running - (transaction.kind === 'deposit' ? transaction.amount : -transaction.amount) * (credit ? -1 : 1)
     );
   }
 

@@ -1,11 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mergeTransactions } from '../accounts';
-import { buildDemoTransactions, seedNessieTransactions } from './seedTransactions';
+import { buildDemoTransactions, demoAccountTotals, seedNessieTransactions } from './seedTransactions';
 
 const runtime = { NESSIE_API_KEY: 'secret', NESSIE_BASE_URL: 'https://nessie.test' };
 const now = new Date('2026-11-14T12:00:00Z');
 
 describe('sample transaction history', () => {
+  it('builds a personalized credit card with 100 purchases/payments and the correct balance owed and points', () => {
+    const history = buildDemoTransactions('Credit Card', 'travel-card', now, ['travel']);
+    expect(history).toHaveLength(100);
+    const purchases = history.filter((item) => item.kind === 'withdrawal');
+    const payments = history.filter((item) => item.kind === 'deposit');
+    expect(purchases).toHaveLength(50); expect(payments).toHaveLength(50);
+    expect(purchases.slice(1).every((item) => /DELTA|MARRIOTT|AMTRAK/.test(item.description))).toBe(true);
+    let owed = 0;
+    for (const transaction of history) {
+      owed += transaction.kind === 'withdrawal' ? transaction.amount : -transaction.amount;
+      expect(owed).toBeGreaterThan(0);
+    }
+    const totals = demoAccountTotals(history, 'Credit Card');
+    expect(totals.balance).toBe(owed);
+    expect(totals.rewards).toBe(purchases.reduce((sum, item) => sum + item.amount, 0));
+    const transactions = history.map((item, index) => ({ ...item, _id: String(index).padStart(3, '0') }));
+    const merged = mergeTransactions(transactions.filter((item) => item.kind === 'deposit'), transactions.filter((item) => item.kind === 'withdrawal'), owed, true);
+    expect(merged[0].balanceAfter).toBe(owed);
+    for (let index = 1; index < merged.length; index++) {
+      const prior = merged[index - 1];
+      expect(merged[index].balanceAfter).toBe(prior.balanceAfter! + (prior.kind === 'deposit' ? prior.amount : -prior.amount));
+    }
+  });
   for (const type of ['Checking', 'Savings'] as const) {
     it(`builds 100 readable ${type.toLowerCase()} transactions with a consistent positive balance`, () => {
       const transactions = buildDemoTransactions(type, 'account-123', now);
