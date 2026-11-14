@@ -81,7 +81,7 @@ export class NessieClient {
 
     const cacheKey = url.toString();
     // Customer list is intentionally uncached so health checks reflect reality.
-    const cacheable = normalizedPath !== "/customers";
+    const cacheable = !/^\/customers(?:\/[^/]+)?$/.test(normalizedPath);
 
     if (cacheable) {
       const hit = this.cache.get(cacheKey);
@@ -107,6 +107,23 @@ export class NessieClient {
           continue;
         }
 
+        const customerBills = normalizedPath.match(/^\/customers\/([^/]+)\/bills$/);
+        if (response.status === 400 && customerBills) {
+          // Nessie's aggregate bill endpoint can fail while deserializing an
+          // unrelated/orphaned bill. Read only the customer's owned accounts;
+          // every returned bill still comes from Nessie, never sample UI data.
+          const accounts = await this.get<unknown>(`/customers/${customerBills[1]}/accounts`);
+          if (!Array.isArray(accounts)) throw new NessieError('Nessie account list is unavailable', normalizedPath);
+          const bills = await Promise.all(accounts.map(async (account) => {
+            if (!account || typeof account._id !== 'string') throw new NessieError('Nessie account id is unavailable', normalizedPath);
+            const rows = await this.get<unknown>(`/accounts/${encodeURIComponent(account._id)}/bills`);
+            if (!Array.isArray(rows)) throw new NessieError('Nessie bill list is unavailable', normalizedPath);
+            return rows;
+          }));
+          const data = bills.flat();
+          this.cache.set(cacheKey, { at: Date.now(), data });
+          return data as T;
+        }
         if (!response.ok) {
           throw new NessieError(
             `Nessie request failed with status ${response.status}`,
