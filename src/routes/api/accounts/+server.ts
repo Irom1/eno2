@@ -66,7 +66,7 @@ export async function GET({ cookies, platform }: RequestEvent): Promise<Response
           ]);
           const deposits = itemsOf(requireOk(depositsResult));
           const withdrawals = itemsOf(requireOk(withdrawalsResult));
-          return recentActivity(mergeTransactions(deposits, withdrawals, focus.balance), 5);
+          return recentActivity(mergeTransactions(deposits, withdrawals, focus.balance, focus.type.toLowerCase().includes('credit')), 5);
         })()
       ]);
 

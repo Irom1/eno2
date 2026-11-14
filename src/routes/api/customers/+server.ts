@@ -12,13 +12,19 @@ interface RawCustomer {
   address?: { city?: string; state?: string; zip?: string };
 }
 
-export async function GET({ platform }: RequestEvent): Promise<Response> {
+export async function GET({ platform, url }: RequestEvent): Promise<Response> {
   const runtime = resolveEnv(platform);
   try {
     return await withMcp(runtime, async (mcp) => {
-      const result = await callTool(mcp, 'nessie_list_customers', {});
+      const customerId = url.searchParams.get('customer');
+      const result = customerId
+        ? await callTool(mcp, 'nessie_get_customer', { customerId })
+        : await callTool(mcp, 'nessie_list_customers', {});
+      if (!result.ok) return json({ customers: [] }, { status: 502 });
       const payload = result.data as { items?: RawCustomer[] } | null;
-      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const items: RawCustomer[] = customerId
+        ? [result.data as RawCustomer].filter((customer) => customer?._id === customerId)
+        : Array.isArray(payload?.items) ? payload.items : [];
       const customers = items.map((customer) => ({
         id: String(customer._id ?? ''),
         firstName: customer.firstName ?? '',

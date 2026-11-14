@@ -87,7 +87,12 @@
   }
 
   function signedAmount(transaction: WalletTransaction): string {
-    return `${transaction.kind === 'deposit' ? '+' : '−'}${money(transaction.amount, { decimals: 2 })}`;
+    const positive = credit ? transaction.kind === 'withdrawal' : transaction.kind === 'deposit';
+    return `${positive ? '+' : '−'}${money(transaction.amount, { decimals: 2 })}`;
+  }
+
+  function transactionLabel(kind: 'deposit' | 'withdrawal'): string {
+    return credit ? kind === 'deposit' ? 'Payment' : 'Purchase' : kind === 'deposit' ? 'Deposit' : 'Withdrawal';
   }
 
   function label(value: string | number | undefined | null): string {
@@ -146,7 +151,7 @@
         <h2>{account.nickname || account.type}</h2>
         <p class="hero-ending">•••• {ending}</p>
       </div>
-      {#if credit}
+      {#if credit || account.rewards > 0}
         <p class="hero-rewards">{account.rewards.toLocaleString('en-US')} pts</p>
       {/if}
     </div>
@@ -175,8 +180,8 @@
     <section class="tab-panel" aria-label="Activity">
       <div class="filters" aria-label="Filter transactions">
         <button aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>All</button>
-        <button aria-pressed={filter === 'deposits'} onclick={() => (filter = 'deposits')}>Deposits</button>
-        <button aria-pressed={filter === 'withdrawals'} onclick={() => (filter = 'withdrawals')}>Withdrawals</button>
+        <button aria-pressed={filter === 'deposits'} onclick={() => (filter = 'deposits')}>{credit ? 'Payments' : 'Deposits'}</button>
+        <button aria-pressed={filter === 'withdrawals'} onclick={() => (filter = 'withdrawals')}>{credit ? 'Purchases' : 'Withdrawals'}</button>
       </div>
 
       {#if groupedTransactions.length === 0}
@@ -190,12 +195,12 @@
                 <button class="tx-row" onclick={() => (selectedTransaction = transaction)}>
                   <span class="tx-main">
                     <strong>{transaction.description || 'Transaction'}</strong>
-                    <small>{transaction.kind === 'deposit' ? 'Deposit' : 'Withdrawal'} · {label(transaction.status)}</small>
+                    <small>{transactionLabel(transaction.kind)} · {label(transaction.status)}</small>
                   </span>
                   <span class="tx-amount" class:deposit={transaction.kind === 'deposit'}>
                     {signedAmount(transaction)}
-                    {#if !credit && transaction.balanceAfter !== undefined}
-                      <small>Balance {money(transaction.balanceAfter, { decimals: 2 })}</small>
+                    {#if transaction.balanceAfter !== undefined}
+                      <small>{credit ? 'Balance owed' : 'Balance'} {money(transaction.balanceAfter, { decimals: 2 })}</small>
                     {/if}
                   </span>
                 </button>
@@ -212,7 +217,7 @@
         <div><dt>Nickname</dt><dd>{label(account.nickname)}</dd></div>
         <div><dt>Account number</dt><dd>•••• {ending}</dd></div>
         <div><dt>{accountBalanceLabel(account.type)}</dt><dd>{balanceText}</dd></div>
-        {#if credit}<div><dt>Rewards points</dt><dd>{account.rewards.toLocaleString('en-US')}</dd></div>{/if}
+        {#if credit || account.rewards > 0}<div><dt>Rewards points</dt><dd>{account.rewards.toLocaleString('en-US')}</dd></div>{/if}
         <div><dt>Account holder</dt><dd>{customer ? `${customer.firstName} ${customer.lastName}`.trim() : '—'}</dd></div>
         <div><dt>Address</dt><dd>{customerAddress}</dd></div>
       </dl>
@@ -267,11 +272,11 @@
     <dl class="detail-list">
       <div><dt>Date</dt><dd>{dateLabel(selectedTransaction.date)}</dd></div>
       <div><dt>Description</dt><dd>{label(selectedTransaction.description)}</dd></div>
-      <div><dt>Type</dt><dd>{selectedTransaction.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}</dd></div>
+      <div><dt>Type</dt><dd>{transactionLabel(selectedTransaction.kind)}</dd></div>
       <div><dt>Status</dt><dd>{label(selectedTransaction.status)}</dd></div>
       <div><dt>Amount</dt><dd>{signedAmount(selectedTransaction)}</dd></div>
       <div><dt>Medium</dt><dd>{label(selectedTransaction.medium)}</dd></div>
-      {#if !credit && selectedTransaction.balanceAfter !== undefined}
+      {#if selectedTransaction.balanceAfter !== undefined}
         <div><dt>Balance after</dt><dd>{money(selectedTransaction.balanceAfter, { decimals: 2 })}</dd></div>
       {/if}
       <div><dt>Transaction ID</dt><dd class="mono">{label(selectedTransaction.id)}</dd></div>
