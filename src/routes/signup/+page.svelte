@@ -218,16 +218,16 @@
 
 <div class="signup-chat" data-theme={theme}>
   <header>
-    <a class="brand" href="/" aria-label="Capital One home"><CapitalOneLogo label="Capital One" /><span aria-hidden="true">|</span><strong>Eno 2.0</strong></a>
+    <a class="brand" href="/" aria-label="Capital One home"><CapitalOneLogo label="Capital One" /></a>
     <div class="header-actions">
       <button class="voice-toggle" disabled={!ready || !speechSupported} aria-label={voiceEnabled ? 'Mute Eno voice' : 'Enable Eno voice'} aria-pressed={voiceEnabled} onclick={toggleVoice}>{@render speaker()}<span>{speechSupported ? voiceEnabled ? 'Voice on' : 'Hear Eno speak' : 'Voice unavailable'}</span></button>
+      <button class="theme-toggle" disabled={!ready} aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={isDark} onclick={toggleTheme}>{#if isDark}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5" /></svg>{:else}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" /></svg>{/if}</button>
     <a class="exit" href="/" aria-label="Back to home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg></a>
     </div>
   </header>
   <div class="experience">
   <main>
     <h1 class="sr-only">Sign up with Eno</h1>
-    <div class="chat-heading" role="status"><span class="status-dot" aria-hidden="true"></span> {speaking ? 'Eno is speaking…' : busy ? 'Eno is thinking…' : 'A little hello. A fresh start.'}</div>
     {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
     <div class="transcript" bind:this={scrollArea} role="log" aria-label="Your conversation with Eno" aria-live="polite" aria-relevant="additions">
       <div class="messages">
@@ -268,7 +268,6 @@
         <input bind:this={input} bind:value={reply} aria-label="Message Eno" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen} aria-controls={suggestionsOpen ? 'address-suggestions' : undefined} aria-activedescendant={activeAddressId} onkeydown={(event) => autocomplete?.handleKeydown(event)} placeholder={recovery ? 'Find your profile through Sign in' : 'Message Eno…'} disabled={!ready || submitting || recovery || !!createdCustomerId} maxlength="2000" autocomplete="off" />
         <button class="send" type="submit" aria-label="Send message" disabled={!ready || busy || !reply.trim() || recovery}>{@render arrow()}</button>
       </form>
-      <div class="composer-footer"><span>Just a conversation. We’ll check the details together.</span><span>demo only · <a href="https://github.com/Irom1/eno2">GitHub</a></span><button class="theme-toggle" disabled={!ready} aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={isDark} onclick={toggleTheme}>{#if isDark}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5" /></svg>{:else}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" /></svg>{/if}</button></div>
     </div>
   </main>
   </div>
@@ -291,8 +290,6 @@
   header { width: min(1200px, calc(100% - 72px)); display: flex; align-items: center; justify-content: space-between; margin: 0 auto; padding: 24px 0; flex: none; }
   .brand { display: flex; align-items: center; gap: 16px; color: var(--dark, #fff) var(--light, #013d5b); }
   .brand :global(svg) { width: 110px; height: 40px; }
-  .brand > span { color: var(--muted); font-size: 24px; font-weight: 200; }
-  .brand strong { font-size: 17px; font-weight: 550; letter-spacing: -.04em; }
   .exit { display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; width: 38px; height: 38px; color: var(--muted); }
   .exit:hover { background: var(--surface); }
   .experience { display: flex; flex: 1; min-height: 0; width: min(800px, 100%); margin: 0 auto; }
@@ -305,8 +302,6 @@
   .read-aloud:hover { color: var(--link); }.read-aloud svg { width: 13px; height: 13px; }
   main { display: flex; flex-direction: column; min-height: 0; min-width: 0; width: 100%; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .chat-heading { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 20px 18px; color: var(--muted); font-size: 11px; flex: none; }
-  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #79a84d; }
   .transcript { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
   .messages { display: flex; flex-direction: column; gap: 28px; padding: 30px 22px 36px; }
   .message { display: flex; align-items: flex-start; gap: 12px; max-width: 92%; }
@@ -340,21 +335,17 @@
   .composer input { flex: 1; min-width: 0; padding: 9px 6px 9px 14px; border: 0; background: transparent; outline: 0; font-size: 15px; }
   .composer input::placeholder { color: var(--muted); }
   .send { display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--button); color: var(--button-text); }
-  .composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; color: var(--muted); font-size: 10px; }
-  .composer-footer > span:nth-child(2) { margin-left: auto; white-space: nowrap; }
-  .composer-footer a { text-decoration: underline; text-underline-offset: 3px; }
-  .theme-toggle { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: transparent; }
-  .theme-toggle svg { width: 14px; height: 14px; }
+  .theme-toggle { display: grid; place-items: center; flex: none; width: 38px; height: 38px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: transparent; }
+  .theme-toggle svg { width: 18px; height: 18px; }
   @media (max-width: 600px) {
     .voice-toggle { width: 38px; height: 38px; padding: 0; flex: none; }.voice-toggle span { display: none; }
     .header-actions { gap: 10px; }
-    main { flex: 1; }.chat-heading { padding: 0 16px 10px; font-size: 10px; }
+    main { flex: 1; }
     header { width: calc(100% - 36px); padding: 18px 0; }
-    .brand { gap: 10px; }.brand :global(svg) { width: 94px; height: 34px; }.brand strong { font-size: 15px; }
+    .brand { gap: 10px; }.brand :global(svg) { width: 94px; height: 34px; }
     .messages { padding: 18px 16px 28px; gap: 22px; }.message { max-width: 96%; gap: 8px; }
     .bubble { padding: 14px; font-size: 14px; }.from-you { max-width: 85%; }
     .composer-area { padding-inline: 14px; }.composer input { font-size: 16px; padding-left: 10px; }
-    .composer-footer > span:first-child { display: none; }.composer-footer > span:nth-child(2) { margin-left: 4px; margin-right: auto; }
     .profile-preview > div > span { width: 55px; }.profile-preview strong { min-width: 70px; }
   }
   @media (prefers-reduced-motion: reduce) { .typing-dots i { animation: none; } }
