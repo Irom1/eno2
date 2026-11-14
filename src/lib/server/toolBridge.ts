@@ -132,6 +132,7 @@ export const TOOL_LABELS: Readonly<Record<string, string>> = Object.freeze({
   nessie_get_branch: "Reading a branch",
   insight_financial_overview: "Gathering your overview",
   insight_spending_breakdown: "Reviewing spending",
+  insight_top_transactions: "Comparing your purchases",
   insight_upcoming_bills: "Checking upcoming bills",
   insight_recurring_charges: "Finding subscriptions",
   insight_anomalies: "Looking for odd charges",
@@ -248,6 +249,9 @@ export function summarizeToolResult(name: string, data: unknown): string {
     case "insight_recurring_charges": {
       const count = num(payload.count);
       return `${count} recurring charges`;
+    }
+    case "insight_top_transactions": {
+      return `${num(payload.count)} matching transactions`;
     }
     case "insight_goal_projection": {
       const months = payload.monthsToTarget;

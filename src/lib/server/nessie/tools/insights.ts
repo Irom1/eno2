@@ -96,6 +96,7 @@ const CATEGORY_KEYWORDS: ReadonlyArray<readonly [string, readonly string[]]> = [
       "STAR MARKET",
       "GROCERY",
       "SUPERMARKET",
+      "FARMERS MARKET",
     ],
   ],
   [
@@ -179,6 +180,33 @@ export const SPENDING_CATEGORIES = [
   "shopping",
   "other",
 ] as const;
+
+const CATEGORY_ALIASES: Record<string, string> = {
+  grocery: "groceries",
+  groceries: "groceries",
+  supermarket: "groceries",
+  rent: "housing",
+  mortgage: "housing",
+  restaurant: "dining",
+  restaurants: "dining",
+  food: "dining",
+  transportation: "transport",
+  transit: "transport",
+  gas: "transport",
+  utility: "utilities",
+  subscription: "subscriptions",
+  subscriptions: "subscriptions",
+  shopping: "shopping",
+  fitness: "fitness",
+  gym: "fitness",
+};
+
+export function normalizeSpendingCategory(value: unknown): string {
+  const key = String(value ?? "").trim().toLowerCase();
+  if (!key) return "";
+  if (CATEGORY_ALIASES[key]) return CATEGORY_ALIASES[key];
+  return (SPENDING_CATEGORIES as readonly string[]).includes(key) ? key : key;
+}
 
 export function categorizeDescription(description: unknown): string {
   const normalized = normalizeText(description);
@@ -556,6 +584,62 @@ export function buildSpendingBreakdown(
 }
 
 /* ------------------------------------------------------------------ */
+/* Top filtered transactions                                           */
+/* ------------------------------------------------------------------ */
+
+export interface TopTransactionRow {
+  _id: string;
+  description: string;
+  amount: number;
+  transactionDate: string;
+}
+
+export interface TopTransactionsResult {
+  count: number;
+  total: number;
+  category: string | null;
+  merchant: string | null;
+  months: number;
+  items: TopTransactionRow[];
+}
+
+export function buildTopTransactions(
+  transactions: readonly Transaction[],
+  options: { category?: string; merchant?: string; months: number; limit?: number; asOf: Date },
+): TopTransactionsResult {
+  const months = Math.max(1, Math.floor(options.months));
+  const currentMonth = monthStartUTC(options.asOf);
+  const start = addMonthsUTC(currentMonth, -(months - 1));
+  const end = addMonthsUTC(currentMonth, 1);
+  const category = options.category ? normalizeSpendingCategory(options.category) : "";
+  const merchant = options.merchant ? normalizeText(options.merchant) : "";
+  const matching = transactions
+    .filter(
+      (tx) =>
+        tx.kind === "withdrawal" &&
+        tx.date.getTime() >= start.getTime() &&
+        tx.date.getTime() < end.getTime() &&
+        (!category || categorizeDescription(tx.description) === category) &&
+        (!merchant || normalizeText(tx.description).includes(merchant)),
+    )
+    .sort((a, b) => b.amount - a.amount || b.date.getTime() - a.date.getTime());
+  const limit = Math.max(1, Math.min(50, Math.floor(options.limit ?? 20)));
+  return {
+    count: matching.length,
+    total: toMoney(matching.reduce((sum, tx) => sum + tx.amount, 0)),
+    category: category || null,
+    merchant: options.merchant?.trim() || null,
+    months,
+    items: matching.slice(0, limit).map((tx) => ({
+      _id: tx.id,
+      description: truncateText(tx.description, 160),
+      amount: toMoney(tx.amount),
+      transactionDate: toISODate(tx.date),
+    })),
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Recurring charges                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -840,6 +924,32 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         estimated: true,
         method: "keyword-categorization-v1",
       });
+    },
+  );
+
+  server.registerTool(
+    "insight_top_transactions",
+    {
+      description:
+        "Top withdrawal transactions over the last N calendar months, optionally filtered by spending category and/or merchant description, sorted by amount descending. Returns the exact rows so a transaction list card can render.",
+      annotations: READ_ONLY_ANNOTATIONS,
+      inputSchema: {
+        accountId: idParam,
+        category: z.string().min(1).optional().describe("Spending category, e.g. groceries, dining, housing, transport"),
+        merchant: z.string().min(1).optional().describe("Optional merchant or description substring"),
+        months: z.number().int().min(1).max(12).optional().describe("Number of calendar months to include (default 3)"),
+        limit: z.number().int().min(1).max(50).optional().describe("Maximum rows to return (default 20)"),
+      },
+    },
+    async ({ accountId, category, merchant, months, limit }) => {
+      const transactions = await fetchTransactions(client, accountId);
+      return ok(buildTopTransactions(transactions, {
+        category,
+        merchant,
+        months: months ?? 3,
+        limit,
+        asOf: todayUTC(),
+      }));
     },
   );
 
@@ -1169,6 +1279,7 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
 export const INSIGHT_TOOL_NAMES = [
   "insight_financial_overview",
   "insight_spending_breakdown",
+  "insight_top_transactions",
   "insight_upcoming_bills",
   "insight_recurring_charges",
   "insight_anomalies",

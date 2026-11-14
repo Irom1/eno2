@@ -10,6 +10,7 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
 - [x] `TransactionCard` — one merchant/date/amount per anomaly finding (one inline card each, capped at 8 per turn); no reason chip; deep link when ids exist. The previous 1–2 cap was a layout budget, not a limit on flagged findings.
 - [x] `TransactionListCard` — merged deposit/withdrawal list, cap 8 plus “N more”; every row deep-links; standalone `CardFrame`.
 - [x] `SpendingPieCard` — latest complete month, top 5 plus `Other`, period and legend; no editorial labels.
+- [x] Filtered/ranked transaction lists — `insight_top_transactions` (category and/or merchant filter, largest first) feeds the existing transaction list card, and raw deposit/withdrawal list cards are gated to recent/all-transaction prompts so a ranked question never shows an unrelated feed.
 - [x] `BillCard` — one largest upcoming bill from `insight_upcoming_bills`; payee, due date, amount, factual status chip; optional account link; coverage/total stay in prose.
 - [x] `AccountCard` — exactly one account (single-row payload only); nickname, type, masked number, balance, rewards when positive; whole card deep-links; never an account list.
 - [x] `LoanCard` — one loan: type/description, balance, monthly payment, factual status chip; optional account link; no credit score.

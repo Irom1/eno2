@@ -153,7 +153,13 @@ describe("buildSystemInstruction", () => {
       'Do not repeat card values, names, dates, statuses, or rows.'
     );
     expect(instruction).toContain(
-      'Use a list card only when the tool returns the exact rows you are discussing'
+      'Use a list card only when the tool returns the exact rows you are discussing. For ranked, category, or merchant-filtered purchase questions, call insight_top_transactions; never build a list card from a raw transaction feed that has different rows.'
+    );
+    expect(instruction).toContain(
+      'For a filtered transaction list, you may name the merchants to explain the pattern, but do not restate their amounts or dates.'
+    );
+    expect(instruction).toContain(
+      '- insight_top_transactions for the biggest purchases in a category or at a merchant; returns the exact rows for the transaction list card.'
     );
     expect(instruction).toContain("Capital One's virtual assistant");
     expect(instruction).toContain("Use the category breakdown as returned.");

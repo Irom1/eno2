@@ -82,6 +82,7 @@ const INTENT_NEXT_STEPS: Record<string, string> = {
     "If you want to cover the shortfall, you can move money to checking before the due dates.",
   insight_spending_breakdown:
     "You can open a category in Activity to see the transactions behind it.",
+  insight_top_transactions: "Open any transaction to see its full details.",
   insight_anomalies:
     "If you don’t recognize a charge, you can review and dispute it in the app.",
   insight_recurring_charges:
@@ -123,6 +124,25 @@ function checkingAccountId(session: Session): string {
   return (checking ?? session.accounts[0])?.id ?? "";
 }
 
+/** Spending category named in a prompt, matching the insight tool's buckets. */
+export function detectSpendingCategory(text: string): string | null {
+  const value = String(text ?? "").toLowerCase();
+  if (/\bgrocer(?:y|ies)\b|\bsupermarket\b|\bfarmers market\b/.test(value)) return "groceries";
+  if (/\bhousing\b|\brent\b|\bmortgage\b/.test(value)) return "housing";
+  if (/\bdining\b|\brestaurants?\b|\bfood\b|\bcoffee\b/.test(value)) return "dining";
+  if (/\btransport(?:ation)?\b|\btransit\b|\bgas\b|\bparking\b|\buber\b|\blyft\b/.test(value)) {
+    return "transport";
+  }
+  if (/\butilit(?:y|ies)\b|\belectric(?:ity)?\b|\binternet\b|\bwater bill\b/.test(value)) {
+    return "utilities";
+  }
+  if (/\bsubscriptions?\b/.test(value)) return "subscriptions";
+  if (/\bshopping\b|\bamazon\b|\btarget\b/.test(value)) return "shopping";
+  if (/\binsurance\b/.test(value)) return "insurance";
+  if (/\bfitness\b|\bgym\b/.test(value)) return "fitness";
+  return null;
+}
+
 export function routeIntent(message: string): {
   tool: string;
   args: (session: Session) => Record<string, unknown>;
@@ -145,6 +165,19 @@ export function routeIntent(message: string): {
     return {
       tool: "nessie_list_account_loans",
       args: (session) => ({ accountId: checkingAccountId(session) })
+    };
+  }
+  const ranked = /\b(?:biggest|largest|top|highest|most expensive)\b/.test(text);
+  const category = detectSpendingCategory(text);
+  if (ranked && (category || /\b(?:purchases?|expenses?|transactions?|charges?)\b/.test(text))) {
+    return {
+      tool: "insight_top_transactions",
+      args: (session) => ({
+        accountId: checkingAccountId(session),
+        ...(category ? { category } : {}),
+        months: 3,
+        limit: 20
+      })
     };
   }
   if (/\b(?:weird|anomal\w*|duplicate|suspicious|charg\w*|unusual|strange|odd|double)\b/.test(text)) {
@@ -392,6 +425,27 @@ function branchAnswer(data: unknown, location: string): string {
   }. Branch data covers the DC metro area, so it may not reflect your own location.`;
 }
 
+function recurringAnswer(data: unknown): string {
+  const payload = rec(data);
+  const count = num(payload.count);
+  if (count === 0) return "I don't see any recurring charges on this account.";
+  return `I found ${count} recurring charges on this account. They repeat at a steady amount across months, which is typical of subscriptions and memberships.`;
+}
+
+function topTransactionsAnswer(data: unknown): string {
+  const payload = rec(data);
+  const count = num(payload.count);
+  const months = num(payload.months) || 3;
+  const category = String(payload.category ?? "").trim().toLowerCase();
+  // Groceries reads naturally as "grocery transactions"; other categories use
+  // the category name as-is. No merchant names are repeated from the card.
+  const scope = category ? `${category === "groceries" ? "grocery" : category} ` : "";
+  if (count === 0) {
+    return `I couldn't find any ${scope}transactions in the last ${months} months.`;
+  }
+  return `I found ${count} ${scope}transactions in the last ${months} months, shown largest first.`;
+}
+
 function loansAnswer(data: unknown): string {
   const payload = rec(data);
   const loans = Array.isArray(payload.items) ? payload.items.map(rec) : [];
@@ -444,6 +498,10 @@ export function composeAnswer(name: string, data: unknown, now: Date, message: s
       return billsAnswer(data);
     case "insight_spending_breakdown":
       return spendingAnswer(data, now);
+    case "insight_top_transactions":
+      return topTransactionsAnswer(data);
+    case "insight_recurring_charges":
+      return recurringAnswer(data);
     case "insight_anomalies":
       return anomaliesAnswer(data);
     case "nessie_list_account_loans":
@@ -505,6 +563,10 @@ export function composeIntro(name: string): string {
       return "Here is what's coming up:";
     case "insight_anomalies":
       return "Here is what stood out:";
+    case "insight_top_transactions":
+      return "Here are your biggest matching transactions:";
+    case "insight_recurring_charges":
+      return "Here are the subscriptions I found:";
     case "nessie_list_account_deposits":
     case "nessie_list_account_withdrawals":
     case "nessie_list_account_transactions":

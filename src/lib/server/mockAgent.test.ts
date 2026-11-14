@@ -483,6 +483,91 @@ describe("mockAgent", () => {
     expect(routeIntent("Did I get double charged?").tool).toBe("insight_anomalies");
   });
 
+  it("routes ranked category and merchant purchase questions to top transactions", () => {
+    const session = createSession(customer, accounts);
+    const grocery = routeIntent("What are my biggest grocery expenses");
+    expect(grocery.tool).toBe("insight_top_transactions");
+    expect(grocery.args(session)).toEqual({
+      accountId: "acct-1",
+      category: "groceries",
+      months: 3,
+      limit: 20
+    });
+
+    const housing = routeIntent("What are my highest housing purchases");
+    expect(housing.tool).toBe("insight_top_transactions");
+    expect(housing.args(session)).toEqual({
+      accountId: "acct-1",
+      category: "housing",
+      months: 3,
+      limit: 20
+    });
+
+    const ranked = routeIntent("Show me my biggest purchases");
+    expect(ranked.tool).toBe("insight_top_transactions");
+    expect(ranked.args(session)).toEqual({ accountId: "acct-1", months: 3, limit: 20 });
+
+    expect(routeIntent("Show me my recent transactions").tool).toBe(
+      "nessie_list_account_withdrawals"
+    );
+  });
+
+  it("composes a recurring-charges answer instead of an empty overview", () => {
+    const text = composeFastAnswer(
+      "insight_recurring_charges",
+      {
+        count: 3,
+        recurringCharges: [
+          { description: "NETFLIX.COM", monthsSeen: 3, averageAmount: 15, lastDate: "2026-11-01" }
+        ]
+      },
+      new Date("2026-11-14T12:00:00Z"),
+      "What subscriptions am I paying for?"
+    );
+    expect(text).toContain("I found 3 recurring charges");
+    expect(text).not.toContain("Across 0 accounts");
+    expect(text).toContain("You can review subscriptions you no longer use in the app.");
+  });
+
+  it("composes a top-transactions answer without restating card values", async () => {
+    const payload = {
+      count: 2,
+      total: 180,
+      category: "groceries",
+      merchant: null,
+      months: 3,
+      items: [
+        { _id: "t-1", description: "TRADER JOE'S", amount: 100, transactionDate: "2026-10-05" },
+        { _id: "t-2", description: "LOCAL FARMERS MARKET", amount: 80, transactionDate: "2026-11-01" }
+      ]
+    };
+    const { text } = await run("What are my biggest grocery expenses", async (name) => {
+      expect(name).toBe("insight_top_transactions");
+      return ok(payload);
+    });
+
+    expect(text).toContain("I found 2 grocery transactions in the last 3 months");
+    expect(text).toContain("Open any transaction to see its full details.");
+    expect(text).not.toContain("TRADER JOE");
+    expect(text).not.toContain("100");
+    expect(text).not.toContain("2026-10-05");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
+  });
+
+  it("composes an empty top-transactions answer", () => {
+    const text = composeFastAnswer(
+      "insight_top_transactions",
+      { count: 0, total: 0, category: "housing", merchant: null, months: 3, items: [] },
+      new Date("2026-11-14T12:00:00Z"),
+      "What are my highest housing purchases"
+    );
+    expect(text).toContain(
+      "I couldn't find any housing transactions in the last 3 months."
+    );
+    expect(text).toContain("Open any transaction to see its full details.");
+  });
+
   it("composes a loans answer from live loan rows", async () => {
     const { text } = await run("Show me my loans", async (name) => {
       expect(name).toBe("nessie_list_account_loans");

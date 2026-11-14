@@ -20,7 +20,7 @@
   const rows = $derived(card.payload.rows);
   const more = $derived(card.payload.more);
   const label = $derived(
-    `Transactions, ${rows.length} shown${more > 0 ? `, ${more} more` : ''}`
+    `Transactions, ${rows.length} shown${more > 0 ? `, ${more} more transactions` : ''}`
   );
 
   function hrefFor(row: TransactionRow): string | undefined {
@@ -75,7 +75,7 @@
       {/each}
     </ul>
     {#if more > 0}
-      <TruncationFooter {more} />
+      <TruncationFooter {more} label="more transactions" />
     {/if}
   </div>
 </CardFrame>

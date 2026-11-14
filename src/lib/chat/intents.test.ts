@@ -17,6 +17,14 @@ describe('classifyIntents', () => {
     expect(classifyIntents('Tell me something interesting').size).toBe(0);
   });
 
+  it('classifies grocery expenses as spending', () => {
+    expect(classifyIntents('What are my biggest grocery expenses').has('spending')).toBe(true);
+  });
+
+  it('classifies purchases as transactions', () => {
+    expect(classifyIntents('Show me my purchases').has('transactions')).toBe(true);
+  });
+
   it('returns an empty set for empty or malformed input', () => {
     expect(classifyIntents('').size).toBe(0);
     expect(classifyIntents('   ').size).toBe(0);

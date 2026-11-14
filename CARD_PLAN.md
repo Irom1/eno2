@@ -23,7 +23,7 @@ Eno 2.0 answers from grounded banking tools. Cards are small, reusable data disp
 Shipped:
 
 - Phase 0: legacy broad cards archived; chat is prose-only.
-- Phase 2 first slice: `TransactionCard` for anomaly findings (one card per flagged transaction, capped at 8 per turn for layout/performance), `TransactionListCard` for multi-transaction answers (max 8 rows plus “N more”), and the spending pie chart for `insight_spending_breakdown`.
+- Phase 2 first slice: `TransactionCard` for anomaly findings (one card per flagged transaction, capped at 8 per turn for layout/performance), `TransactionListCard` for multi-transaction answers (max 8 rows plus “N more transactions”), and the spending pie chart for `insight_spending_breakdown`.
 - Phase 2 second slice: `BillCard` (one largest upcoming bill from `insight_upcoming_bills`) and `AccountCard` (exactly one account; never an account list), plus the shared `StatusChip` primitive.
 - Phase 2 third slice: `LoanCard` (one loan), `LocationCard` (one ATM or branch), and `RecurringChargeCard` (one recurring charge), each a single-entity primitive.
 - Phase 3 first slice: `RewardCard` (highest credit-account reward or overview total), `GoalCard` (target/current/months/projected date), `CashflowPointCard` (latest complete month), plus the shared `EntityKeyValue` primitive.
@@ -90,7 +90,7 @@ Buffering details:
 | `src/routes/[view=wallet]/inline-cards/CardFrame.svelte` | `label?: string`, `children` snippet | Shipped | Shared standalone frame: surface, border, radius, contrast shadow. No accent strip. Width capped at the chat bubble max (88% of the assistant content column) and left-aligned. No title slot. |
 | `src/routes/[view=wallet]/inline-cards/OpenIcon.svelte` | none | Shipped | External-link icon for deep-linked rows; decorative. |
 | `src/routes/[view=wallet]/inline-cards/TransactionCard.svelte` | `card: TransactionEntityCard`, `inline?: boolean` | Shipped | Single merchant/date/amount. `inline` mode renders a compact row inside `.bubble.assistant`; no flags or reasons. Deep link. |
-| `src/routes/[view=wallet]/inline-cards/TransactionListCard.svelte` | `card: TransactionListEntityCard` | Shipped | Multiple rows, cap 8 plus “N more”; every row deep-links; standalone `CardFrame`. |
+| `src/routes/[view=wallet]/inline-cards/TransactionListCard.svelte` | `card: TransactionListEntityCard` | Shipped | Multiple rows, cap 8 plus “N more transactions”; every row deep-links; standalone `CardFrame`. |
 | `src/routes/[view=wallet]/inline-cards/PieChartCard.svelte` | `card: SpendingPieEntityCard` | Shipped | Filled SVG pie plus period and category/share/amount legend. Primitive: no editorial labels, rankings, or recommendation text. Top 5 plus `Other`. |
 | `src/routes/[view=wallet]/inline-cards/StatusChip.svelte` | `status: string` | Shipped | Small factual status chip (`pending`, `paid`, `overdue`, …). No reason or interpretation; theme-aware and never colour-only. |
 | `src/routes/[view=wallet]/inline-cards/BillCard.svelte` | `card: BillEntityCard` | Shipped | One bill: payee, due date, amount, status chip. Optional deep link to the owning account. No coverage, total, or recommendation text. |
@@ -128,7 +128,7 @@ Nessie ATM data limitation: the raw Nessie ATM dataset contains 13 ATMs, all in 
 | Card | Kind / entity | Normalized payload | Source / insight or tool | Placement | Status | File / path | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `TransactionCard` | `transaction` | `description`, `amount`, `date`, `flag` (inference only), `duplicateOf?`, `transactionId`, `accountId?`, `customerId?` | `insight_anomalies` findings | Inline inside `.bubble.assistant` | Shipped | `inline-cards/TransactionCard.svelte`; `entityCards.ts` | No reason chip; prose explains why it stands out. Deep-links when ids exist. |
-| `TransactionListCard` | `transaction-list` | `rows[]` (`id`, `description`, `amount`, `date`, `status?`, `accountId?`, `customerId?`), `more` | Deposit/withdrawal transaction tools | Standalone `CardFrame` | Shipped | `inline-cards/TransactionListCard.svelte`; `entityCards.ts` | Deposits and withdrawals in one turn merge into one list. Cap 8, “N more”. |
+| `TransactionListCard` | `transaction-list` | `rows[]` (`id`, `description`, `amount`, `date`, `status?`, `accountId?`, `customerId?`), `more` | Deposit/withdrawal transaction tools (recent/all prompts); `insight_top_transactions` for filtered/ranked lists | Standalone `CardFrame` | Shipped | `inline-cards/TransactionListCard.svelte`; `entityCards.ts` | Deposits and withdrawals in one turn merge into one list. Raw withdrawal/deposit list cards are gated to recent/all-transaction prompts; ranked or filtered questions use `insight_top_transactions` so the rows match. Cap 8, “N more transactions”. |
 | `SpendingPieCard` / pie | `spending-pie` | `period`, `total`, `slices[]` (`label`, `amount`, `share`) | `insight_spending_breakdown` | Standalone `CardFrame` | Shipped in this pass | `inline-cards/PieChartCard.svelte`; `spendingPieCard` | Latest complete month; top 5 plus `Other`; period plus percentage legend; no editorial analysis. |
 | `BillCard` | `bill` | `billId`, `payee`, `amount` (nullable), `dueDate`, `status?`, `accountId?`, `customerId?` | `insight_upcoming_bills`, bill tools | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/BillCard.svelte`; `billCard` | One bill per card: the largest amount, earliest due date on a tie, matching the deterministic prose. Coverage and totals stay in prose. Optional deep link. |
 | `AccountCard` | `account` | `accountId`, `nickname`, `type`, `maskedNumber`, `balance` (nullable), `rewards` (nullable), `customerId?` | Account tools | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/AccountCard.svelte`; `accountCard` | Exactly one account. `asItems` must yield one row; zero or many returns null so prose answers. Whole card deep-links. |
@@ -171,7 +171,7 @@ Reusable display primitives keep cards small and consistent. None of these intro
 | `DeltaBadge` | Month-over-month difference | Shipped (library-only) | Value and direction only, with a textual direction for accessibility. |
 | `Sparkline` | Basic inline series | Shipped (library-only) | One series; `role="img"` with a label; no annotation text. |
 | `InlineAction` | Deep link / “open” affordance | Shipped (library-only) | Anchor styling; adds `target="_blank"` and `rel="noopener noreferrer"` when external. |
-| `TruncationFooter` | “N more” row | Shipped | Extracted from `TransactionListCard` and used there. |
+| `TruncationFooter` | “N more transactions” row | Shipped | Extracted from `TransactionListCard` and used there. |
 | `InlineEmpty` | Honest empty state | Shipped (library-only) | Muted row only; prefer prose-only when there is no data. |
 | `ExpandRow` | Reveal additional rows | Shipped (library-only) | Native `<details>/<summary>`; client-only, no refetch. |
 | `DefinitionHint` | Small field explanation | Shipped (library-only) | `<details>` hint; no advice. |
@@ -221,7 +221,8 @@ Inference:
   - Limitation: category, cashflow, recurring, reward, and goal cards have no stable single entity id exposed by the tools, so they remain client-inferred for now.
 - **Fallback (always available):** deterministic client-side builders from this turn's insights. A `card` event and a builder card dedupe/replace by `entityId`:
   - `insight_anomalies` → transaction cards (`anomalyTransactionCards`), then `anchorEntityCards` re-anchors each after its merchant mention.
-  - Deposit/withdrawal tools → one merged transaction list (`transactionListCard` + `mergeTransactionListCards`).
+  - Deposit/withdrawal tools → one merged transaction list (`transactionListCard` + `mergeTransactionListCards`), but only for recent/all-transaction prompts (`shouldInferTransactionList`); ranked, category, and merchant-filtered prompts skip the raw list so unrelated rows never render.
+  - `insight_top_transactions` → one transaction list (`transactionListCard` + `mergeTransactionListCards`); its rows are already the exact ranked/filtered set.
   - `insight_spending_breakdown` → one pie (`spendingPieCard`), choosing the latest complete month, top 5 categories, and an `Other` rollup.
   - `insight_upcoming_bills` → one bill (`billCard`), choosing the largest amount and earliest due date on a tie, then anchoring after the payee mention.
   - Single-account payloads → one account card (`accountCard`), anchored after the nickname (or type). An account list returns null; prose answers.
@@ -249,7 +250,7 @@ Phase 2 slice refinements already shipped:
 - Cards carry no reason/flag tags. The prose explains every card and names each flagged merchant, explaining the pattern without restating card values.
 - Merchant-mention inference re-anchors each transaction card after the mention, including a trailing colon/comma.
 - A compact loading line remains visible for the whole pending turn.
-- Deposit and withdrawal results merge into one list card, capped at 8 visible rows with “N more”.
+- Deposit and withdrawal results merge into one list card, capped at 8 visible rows with “N more transactions”.
 - The spending pie is a standalone primitive: latest complete month, top 5 plus `Other`, period plus percentage legend, no analysis inside the card.
 - Bill and account cards are single-entity primitives: one largest bill, one account only. `insight_upcoming_bills` never renders a bills list; an all-accounts payload renders no card. Totals, coverage, and comparisons stay in the prose.
 - Loan, location, and recurring cards are single-entity primitives: one loan (largest balance), the first location result, and one recurring charge (largest average). Cadence, next date, distance, and ATM street addresses are absent from the source data and therefore absent from the cards.

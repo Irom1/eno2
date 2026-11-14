@@ -36,6 +36,7 @@
     type ThinkingState
   } from '$lib/chat/thinking.js';
   import { classifyIntents } from '$lib/chat/intents.js';
+  import { shouldInferTransactionList } from '$lib/chat/transactionListIntent.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
   import { groupInlineCards } from '$lib/chat/cardGroups.js';
@@ -486,11 +487,37 @@
               if (incoming) replaceInlineCard(message, incoming);
             }
             if (
-              data.kind === 'nessie_list_account_deposits' ||
-              data.kind === 'nessie_list_account_withdrawals' ||
-              data.kind === 'nessie_list_account_transactions'
+              (data.kind === 'nessie_list_account_deposits' ||
+                data.kind === 'nessie_list_account_withdrawals' ||
+                data.kind === 'nessie_list_account_transactions') &&
+              shouldInferTransactionList(message.prompt ?? '', intents)
             ) {
               // Deposits and withdrawals in one turn share a single merged list.
+              // Raw feeds are only rendered for recent/all-transaction prompts;
+              // ranked or filtered questions use insight_top_transactions.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = transactionListCard(payload, anchor, cardSeq + 1, {
+                accountId,
+                customerId
+              });
+              if (incoming) {
+                const existing = message.inlineCards?.find(
+                  (card): card is TransactionListEntityCard =>
+                    card.kind === 'transaction-list'
+                );
+                const merged = mergeTransactionListCards(existing, incoming);
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'transaction-list' ? merged : card
+                    )
+                  : [...(message.inlineCards ?? []), merged];
+                cardSeq = Math.max(cardSeq, merged.id);
+              }
+            }
+            if (data.kind === 'insight_top_transactions') {
+              // Its rows are already the exact ranked/filtered set, so a list
+              // card is always accurate here.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const incoming = transactionListCard(payload, anchor, cardSeq + 1, {

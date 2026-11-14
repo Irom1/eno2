@@ -2,7 +2,7 @@
  * Client-safe inline entity-card models and normalizers.
  * Pure functions only: no server or DOM imports.
  */
-import { asItems } from './payloads.js';
+import { asItems, isRecord } from './payloads.js';
 
 export interface TransactionCardPayload {
   description: string;
@@ -36,7 +36,7 @@ export interface TransactionRow {
 
 export interface TransactionListPayload {
   rows: TransactionRow[];
-  more: number; // rows not shown beyond the cap
+  more: number; // transactions not shown beyond the cap; uses payload.count when provided
 }
 
 export interface TransactionListEntityCard {
@@ -288,9 +288,6 @@ export function accountHref(
   return `/dashboard?customer=${encodeURIComponent(customer)}&account=${encodeURIComponent(account)}`;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
 function normalizeCap(cap: number): number {
   if (typeof cap !== 'number' || !Number.isFinite(cap)) return 2;
   return Math.max(0, Math.floor(cap));
@@ -521,11 +518,17 @@ export function transactionListCard(
     const visible = rows.slice(0, normalizeListCap(cap));
     if (visible.length === 0) return null;
 
+    const declared =
+      isRecord(payload) && typeof payload.count === 'number' && Number.isFinite(payload.count)
+        ? Math.floor(payload.count)
+        : null;
+    const total = declared !== null ? Math.max(declared, rows.length) : rows.length;
+
     const card: TransactionListEntityCard = {
       id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
       entityId: TRANSACTION_LIST_ENTITY_ID,
       kind: 'transaction-list',
-      payload: { rows: visible, more: rows.length - visible.length }
+      payload: { rows: visible, more: Math.max(0, total - visible.length) }
     };
     if (typeof afterText === 'number' && Number.isFinite(afterText)) {
       card.afterText = afterText;
@@ -1485,6 +1488,21 @@ export function mergeTransactionListCards(
   ]);
   const visible = rows.slice(0, normalizeListCap(cap));
 
+  // Each card's declared total is its visible rows plus the rows it already
+  // reported as hidden. Subtracting rows that deduped away keeps the merged
+  // "more" count honest when both feeds overlap.
+  const existingTotal = existing
+    ? existing.payload.rows.length + existing.payload.more
+    : 0;
+  const incomingTotal = incoming
+    ? incoming.payload.rows.length + incoming.payload.more
+    : 0;
+  const duplicateCount =
+    (existing?.payload.rows.length ?? 0) +
+    (incoming?.payload.rows.length ?? 0) -
+    rows.length;
+  const total = Math.max(rows.length, existingTotal + incomingTotal - duplicateCount);
+
   const anchors = [existing?.afterText, incoming?.afterText].filter(
     (value): value is number => typeof value === 'number' && Number.isFinite(value)
   );
@@ -1493,7 +1511,7 @@ export function mergeTransactionListCards(
     id: existing?.id ?? incoming?.id ?? 1,
     entityId: TRANSACTION_LIST_ENTITY_ID,
     kind: 'transaction-list',
-    payload: { rows: visible, more: rows.length - visible.length }
+    payload: { rows: visible, more: Math.max(0, total - visible.length) }
   };
   if (anchors.length > 0) card.afterText = Math.min(...anchors);
   return card;

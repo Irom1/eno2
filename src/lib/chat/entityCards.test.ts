@@ -522,6 +522,27 @@ describe('transactionListCard', () => {
     expect(card?.payload.rows[0]).not.toHaveProperty('type');
   });
 
+  it('uses the declared count for the more count', () => {
+    const items = Array.from({ length: 20 }, (_, index) => ({ _id: `t-${index}` }));
+    const card = transactionListCard({ count: 25, items }, 0, 1);
+    expect(card?.payload.rows).toHaveLength(8);
+    expect(card?.payload.more).toBe(17);
+  });
+
+  it('reports the hidden rows from a 41-row recent-activity feed', () => {
+    const items = Array.from({ length: 41 }, (_, index) => ({ _id: `tx-${index}` }));
+    const card = transactionListCard({ count: 41, items }, 0, 1);
+    expect(card?.payload.rows).toHaveLength(8);
+    expect(card?.payload.more).toBe(33);
+  });
+
+  it('never reports negative more when the count is below the rows', () => {
+    const items = Array.from({ length: 10 }, (_, index) => ({ _id: `t-${index}` }));
+    const card = transactionListCard({ count: 5, items }, 0, 1);
+    expect(card?.payload.rows).toHaveLength(8);
+    expect(card?.payload.more).toBe(2);
+  });
+
   it('returns null for empty or malformed payloads', () => {
     expect(transactionListCard(null, 0, 1)).toBeNull();
     expect(transactionListCard(undefined, 0, 1)).toBeNull();
@@ -578,6 +599,24 @@ describe('mergeTransactionListCards', () => {
     const capped = mergeTransactionListCards(existing, incoming, 2);
     expect(capped.payload.rows).toHaveLength(2);
     expect(capped.payload.more).toBe(2);
+  });
+
+  it('preserves declared hidden totals while merging', () => {
+    const existing = transactionListCard(
+      { count: 41, items: Array.from({ length: 41 }, (_, index) => ({ _id: `w-${index}` })) },
+      0,
+      1
+    );
+    const incoming = transactionListCard(
+      { count: 6, items: Array.from({ length: 6 }, (_, index) => ({ _id: `d-${index}` })) },
+      0,
+      2
+    );
+    if (!existing || !incoming) throw new Error('expected list cards');
+
+    const merged = mergeTransactionListCards(existing, incoming);
+    expect(merged.payload.rows).toHaveLength(8);
+    expect(merged.payload.more).toBe(39);
   });
 
   it('preserves each row id and account/customer context while merging', () => {

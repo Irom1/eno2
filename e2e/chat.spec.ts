@@ -1471,6 +1471,52 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('"Show me my recent transactions" caps rows and shows how many more', async ({ page }) => {
+    const errors = collectErrors(page);
+    const items = Array.from({ length: 10 }, (_, index) => ({
+      _id: `wd-more-${index}`,
+      description: `Merchant ${index}`,
+      amount: 10 + index,
+      transactionDate: '2026-11-03',
+      status: 'posted'
+    }));
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here are the latest entries: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_list_account_withdrawals',
+        accountId: 'acct-checking',
+        payload: { count: 10, items }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Most recent first.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my recent transactions');
+
+    const list = page.locator('.transaction-list-card').first();
+    await expect(list).toBeVisible({ timeout: 20_000 });
+    await expect(list.locator('.transaction-row')).toHaveCount(8);
+    await expect(list.locator('.truncation-footer')).toHaveText(/\d+ more transactions/);
+    await expect(list.locator('.truncation-footer')).toContainText('2 more transactions');
+
+    expectNoErrors(errors);
+  });
+
   test('"Show me my credit card rewards" shows rewards without repeating values', async ({
     page
   }) => {
