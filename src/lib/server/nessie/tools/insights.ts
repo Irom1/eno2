@@ -5,6 +5,7 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { geocodePlace, haversineMiles } from "../../geo";
 import { maskAccountNumber, type NessieClient } from "../client";
 import {
   daysBetween,
@@ -19,6 +20,7 @@ import { READ_ONLY_ANNOTATIONS } from "./raw";
 type AnyRecord = Record<string, unknown>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const LOCATION_RADIUS_MILES = 25;
 const idParam = z.string().min(1).describe("Opaque id; do not assume format");
 const ok = (summary: unknown) => ({
   content: [{ type: "text" as const, text: safeJson(summary) }],
@@ -31,6 +33,11 @@ const num = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+const finiteNumber = (value: unknown): number | null => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const round1 = (value: number): number => Math.round(value * 10) / 10;
 
 export const todayUTC = (now: Date = new Date()): Date =>
   new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -983,33 +990,20 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         const needle = location.trim().toLowerCase();
         const rows = list(await client.get(path));
 
-        const matched = rows
-          .filter((row) => {
-            if (kind === "atm") {
-              // ATMs have no address in the Nessie API; match on name only.
-              return String(row.name ?? "").toLowerCase().includes(needle);
-            }
-            const address = rec(row.address);
-            const street = [address.street_number, address.street_name]
-              .filter(Boolean)
-              .join(" ");
-            const haystack = [
-              row.name,
-              address.city,
-              address.state,
-              address.zip,
-              street,
-            ]
-              .filter(Boolean)
-              .join(" ")
-              .toLowerCase();
-            return haystack.includes(needle);
-          })
-          .slice(0, 20)
-          .map((row) => {
-            const geocode = rec(row.geocode);
-            if (kind === "atm") {
-              return {
+        interface NormalizedLocation {
+          result: AnyRecord;
+          searchText: string;
+          lat: number | null;
+          lng: number | null;
+        }
+
+        const normalized: NormalizedLocation[] = rows.map((row) => {
+          const geocode = rec(row.geocode);
+          const lat = finiteNumber(geocode.lat);
+          const lng = finiteNumber(geocode.lng);
+          if (kind === "atm") {
+            return {
+              result: {
                 _id: row._id,
                 name: truncateText(row.name, 160),
                 hours: row.hours,
@@ -1018,29 +1012,95 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
                 language_list: row.language_list,
                 lat: geocode.lat,
                 lng: geocode.lng,
-                note: "ATM records have no street address; matched by name only",
-              };
-            }
-            const address = rec(row.address);
-            return {
+              },
+              searchText: String(row.name ?? "").toLowerCase(),
+              lat,
+              lng,
+            };
+          }
+          const address = rec(row.address);
+          const street = [address.street_number, address.street_name]
+            .filter(Boolean)
+            .join(" ");
+          const searchText = [
+            row.name,
+            address.city,
+            address.state,
+            address.zip,
+            street,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return {
+            result: {
               _id: row._id,
               name: truncateText(row.name, 160),
               phone_number: row.phone_number,
               hours: row.hours,
               notes: row.notes,
               address: {
-                street: [address.street_number, address.street_name]
-                  .filter(Boolean)
-                  .join(" ")
-                  .trim(),
+                street,
                 city: address.city,
                 state: address.state,
                 zip: address.zip,
               },
               lat: geocode.lat,
               lng: geocode.lng,
-            };
-          });
+            },
+            searchText,
+            lat,
+            lng,
+          };
+        });
+
+        const geoRows = normalized.filter(
+          (entry): entry is NormalizedLocation & { lat: number; lng: number } =>
+            entry.lat !== null && entry.lng !== null,
+        );
+        const origin = geoRows.length > 0 ? await geocodePlace(location) : null;
+
+        let matched: AnyRecord[];
+        if (origin) {
+          // Primary path: straight-line distance from the geocoded place. Keep
+          // a 25-mile radius when anything is that close; otherwise return the
+          // nearest rows so a remote search still yields a useful answer.
+          const scored = geoRows.map((entry) => ({
+            ...entry.result,
+            distanceMiles: round1(
+              haversineMiles(origin, { lat: entry.lat, lng: entry.lng }),
+            ),
+          }));
+          const withinRadius = scored.filter(
+            (row) => num(row.distanceMiles) <= LOCATION_RADIUS_MILES,
+          );
+          const pool = withinRadius.length > 0 ? withinRadius : scored;
+          matched = pool
+            .sort((a, b) => num(a.distanceMiles) - num(b.distanceMiles))
+            .slice(0, 20)
+            .map((row) =>
+              kind === "atm"
+                ? {
+                    ...row,
+                    note: "ATM records have no street address; distances are straight-line from the geocoded search location",
+                  }
+                : row,
+            );
+        } else {
+          // Fallback: name/address substring matching when geocoding is
+          // unavailable or the rows carry no coordinates.
+          matched = normalized
+            .filter((entry) => entry.searchText.includes(needle))
+            .slice(0, 20)
+            .map((entry) =>
+              kind === "atm"
+                ? {
+                    ...entry.result,
+                    note: "ATM records have no street address; matched by name only",
+                  }
+                : entry.result,
+            );
+        }
 
         if (matched.length === 0) {
           return ok({ count: 0, message: `No ${label} found matching "${location}".` });

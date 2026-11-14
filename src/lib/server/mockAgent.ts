@@ -88,8 +88,8 @@ const INTENT_TIPS: Record<string, string> = {
   nessie_list_account_transactions: "Tip: open any transaction to see its full details.",
   nessie_list_customer_accounts: "Tip: switch accounts to compare balances.",
   nessie_get_account: "Tip: switch accounts to compare balances.",
-  find_nearby_atms: "Tip: open the location in Maps for directions.",
-  find_nearby_branches: "Tip: open the location in Maps for directions.",
+  find_nearby_atms: "Tip: open the map on OpenStreetMap for directions.",
+  find_nearby_branches: "Tip: open the map on OpenStreetMap for directions.",
   insight_financial_overview:
     "Tip: review bills and spending together when you plan the month."
 };
@@ -299,17 +299,12 @@ function overviewAnswer(data: unknown): string {
 
 function atmAnswer(data: unknown, location: string): string {
   const payload = rec(data);
-  const results = Array.isArray(payload.results) ? payload.results.map(rec) : [];
   if (num(payload.count) === 0) {
-    return `I couldn't find any ATMs matching "${location}".`;
+    return `I couldn't find any ATMs near "${location}".`;
   }
-  const names = results
-    .slice(0, 3)
-    .map((row) => String(row.name ?? "ATM"))
-    .join(", ");
   return `I found ${num(
     payload.count
-  )} ATMs matching "${location}"${names ? `, including ${names}` : ""}. ATM records have no street address, so matching is by name only — try a nearby city or institution name if you need a specific location.`;
+  )} ATMs near "${location}". The nearest options are shown here, with straight-line distances from the search location.`;
 }
 
 function branchAnswer(data: unknown, location: string): string {
