@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+.svelte-kit/
+dist/
+build/
+*.tsbuildinfo
+
+# Cloudflare local state and credentials
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Local logs and OS metadata
+*.log
+.DS_Store
+Thumbs.db
