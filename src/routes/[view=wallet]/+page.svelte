@@ -297,6 +297,8 @@
   let gradientAnimation: Animation | undefined;
   let previousComposerBounds: DOMRect | undefined;
   let composerAnimation: Animation | undefined;
+  let chatResults: HTMLElement;
+  let chatRevealAnimation: Animation | undefined;
 
   beforeNavigate(({ from, to }) => {
     previousComposerBounds = undefined;
@@ -315,6 +317,7 @@
       coveringDashboard = to?.params?.view === 'chat';
       composerAnimation?.cancel();
       gradientAnimation?.cancel();
+      chatRevealAnimation?.cancel();
     }
   });
 
@@ -330,6 +333,13 @@
       [{ transform: `translate(${x}px, ${y}px)` }, { transform: 'translate(0, 0)' }],
       slideTiming
     );
+    if (inChat) {
+      // Keep the history's reveal edge just above the moving composer.
+      chatRevealAnimation = chatResults.animate(
+        [{ clipPath: `inset(0 0 ${Math.max(0, -y)}px 0)` }, { clipPath: 'inset(0)' }],
+        slideTiming
+      );
+    }
     const gradientBounds = gradient.getBoundingClientRect();
     const glowOffset = gradientBounds.bottom - top - height / 2;
     gradientAnimation = gradient.animate(
@@ -496,7 +506,7 @@
           </a>
 
         {/if}
-        <main class="chat-results" aria-label="Wallet chat" hidden={!inChat}>
+        <main class="chat-results" aria-label="Wallet chat" hidden={!inChat} bind:this={chatResults}>
           <ChatPanel
             bind:this={chatPanel}
             open={inChat}
