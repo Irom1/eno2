@@ -1,7 +1,6 @@
 <script lang="ts">
   import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
-  import { customerName } from '$lib/customerDeletion';
-  import { changeCustomerRemoval, lastRemovedCustomer, rememberRemovedCustomer, forgetRemovedCustomer, type RemovedCustomer } from '$lib/customerRemoval';
+  import { changeCustomerRemoval, lastRemovedCustomer, forgetRemovedCustomer, type RemovedCustomer } from '$lib/customerRemoval';
   import { onMount, tick } from 'svelte';
   import Eno from '$lib/components/Eno.svelte';
   import CapitalOneLogo from './[view=wallet]/CapitalOneLogo.svelte';
@@ -76,17 +75,6 @@
     } finally {
       customersLoading = false;
     }
-  }
-
-  async function deleteCustomer(customer: Customer) {
-    if (deletingId) return;
-    deletingId = customer.id; removalError = '';
-    try {
-      await changeCustomerRemoval(customer.id, true);
-      customers = customers.filter((item) => item.id !== customer.id);
-      removedCustomer = rememberRemovedCustomer({ id: customer.id, name: customerName(customer) });
-    } catch (cause) { removalError = cause instanceof Error ? cause.message : 'Couldn’t delete this account.'; }
-    finally { deletingId = ''; }
   }
 
   async function undoRemoval() {
@@ -207,7 +195,7 @@
           </button>
           <CustomerDropdown id="account-list" {customers} dark={isDark} open={accountsOpen}
             loading={customersLoading} error={customersError} {deletingId} removed={removedCustomer}
-            {removalError} bind:element={accountList} ondelete={deleteCustomer} onundo={undoRemoval} onretry={loadCustomers} />
+            {removalError} bind:element={accountList} onundo={undoRemoval} onretry={loadCustomers} />
         </div>
         <button type="button" class="theme-toggle" disabled={!ready} aria-label={themeLabel} aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">

@@ -24,6 +24,8 @@ test('sign-in and switcher share the same styling and pin Maya then Demo', async
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const signIn = page.locator('.customer-dropdown');
   await expect(signIn.locator('.account-name strong')).toHaveText(['Maya Chen', 'Demo Tester', 'Future Person']);
+  await expect(signIn.getByRole('button', { name: /^Delete / })).toHaveCount(0);
+  await expect(signIn.locator('.delete-customer')).toHaveCount(0);
   const appearance = (element: Element) => {
     const style = getComputedStyle(element);
     return { width: style.width, padding: style.padding, borderRadius: style.borderRadius, font: style.font, background: style.backgroundColor };

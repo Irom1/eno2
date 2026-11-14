@@ -1,5 +1,4 @@
 <script lang="ts">
-  import DeleteCustomerButton from './DeleteCustomerButton.svelte';
   import CustomerRemovalNotice from './CustomerRemovalNotice.svelte';
   import { orderCustomers } from '$lib/customerSelection';
   import type { RemovedCustomer } from '$lib/customerRemoval';
@@ -8,11 +7,11 @@
   let {
     customers, id, dark = false, open = true, loading = false, error = false,
     activeId = '', deletingId = '', removed = null, removalError = '',
-    element = $bindable(), onselect, ondelete, onundo, onretry
+    element = $bindable(), onselect, onundo, onretry
   }: {
     customers: Customer[]; id: string; dark?: boolean; open?: boolean; loading?: boolean; error?: boolean;
     activeId?: string; deletingId?: string; removed?: RemovedCustomer | null; removalError?: string;
-    element?: HTMLDivElement; onselect?: (id: string) => void; ondelete?: (customer: Customer) => void;
+    element?: HTMLDivElement; onselect?: (id: string) => void;
     onundo?: () => void; onretry?: () => void;
   } = $props();
   let orderedCustomers = $derived(orderCustomers(customers));
@@ -50,7 +49,6 @@
               {@render identity(customer)}{@render arrow()}
             </a>
           {/if}
-          {#if ondelete}<DeleteCustomerButton {customer} disabled={!!deletingId} ondelete={() => ondelete?.(customer)} />{/if}
         </div>
       {/each}
     </nav>
