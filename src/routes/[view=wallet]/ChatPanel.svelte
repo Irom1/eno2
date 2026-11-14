@@ -783,7 +783,11 @@
     align-items: flex-start;
     gap: 10px;
   }
-  .assistant-turn > :global(.eno-thinking) { margin-top: 2px; }
+  .assistant-turn > :global(.eno-thinking) {
+    align-self: flex-end;
+    margin-top: 0;
+    margin-bottom: 2px;
+  }
   .assistant-content {
     flex: 1;
     min-width: 0;

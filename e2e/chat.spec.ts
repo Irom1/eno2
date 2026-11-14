@@ -567,7 +567,7 @@ test.describe('chat prompts', () => {
     await expectFollowupsMatchBubble(page);
     await expectFollowupBorders(page);
 
-    // The mascot sits to the left of the intro bubble, aligned near its top.
+    // The mascot sits to the left of the intro bubble, aligned to its bottom.
     const introAvatar = page.locator('.assistant-turn.intro .eno-thinking');
     const introBubble = page.locator('.assistant-turn.intro .bubble.assistant');
     await expect(introAvatar).toBeVisible();
@@ -581,9 +581,19 @@ test.describe('chat prompts', () => {
       'intro mascot should sit left of the bubble'
     ).toBeLessThanOrEqual(introBubbleBox!.x + 1);
     expect(
-      Math.abs(introAvatarBox!.y - introBubbleBox!.y),
-      'intro mascot should align with the top of the bubble'
+      Math.abs(
+        introAvatarBox!.y +
+          introAvatarBox!.height -
+          (introBubbleBox!.y + introBubbleBox!.height)
+      ),
+      'intro mascot should align with the bottom of the bubble'
     ).toBeLessThan(20);
+    if (introBubbleBox!.height > introAvatarBox!.height + 20) {
+      expect(
+        introAvatarBox!.y,
+        'intro mascot should sit below the top of the bubble'
+      ).toBeGreaterThan(introBubbleBox!.y);
+    }
 
     await askChat(page, 'Show me my loans');
 
@@ -625,9 +635,19 @@ test.describe('chat prompts', () => {
       'responder mascot should sit left of its content'
     ).toBeLessThanOrEqual(responderContentBox!.x + 1);
     expect(
-      Math.abs(responderAvatarBox!.y - responderContentBox!.y),
-      'responder mascot should align with the top of its content'
+      Math.abs(
+        responderAvatarBox!.y +
+          responderAvatarBox!.height -
+          (responderContentBox!.y + responderContentBox!.height)
+      ),
+      'responder mascot should align with the bottom of its content'
     ).toBeLessThan(20);
+    if (responderContentBox!.height > responderAvatarBox!.height + 20) {
+      expect(
+        responderAvatarBox!.y,
+        'responder mascot should sit below the top of its content'
+      ).toBeGreaterThan(responderContentBox!.y);
+    }
 
     // Switching customers resets to exactly one fresh intro.
     await page.locator('.profile').click();
