@@ -215,11 +215,18 @@ describe("mockAgent", () => {
     expect(events[events.length - 1]?.type).toBe("done");
   });
 
-  it("describes distant ATM results honestly instead of claiming they are near", async () => {
-    const { text } = await run("Find an ATM near Cambridge, MA", async (name) => {
+  it("explains Arlington-only demo ATM coverage for other cities", async () => {
+    const { text } = await run("Find an ATM in Cambridge, Massachusetts", async (name) => {
       expect(name).toBe("find_nearby_atms");
       return ok({
         count: 13,
+        resolvedLocation: {
+          lat: 42.3656347,
+          lng: -71.1040018,
+          label: "Cambridge, Middlesex County, Massachusetts, United States"
+        },
+        coverage: "Arlington, VA",
+        demoCoverage: true,
         results: [
           {
             name: "Arlington ATM",
@@ -231,13 +238,66 @@ describe("mockAgent", () => {
       });
     });
 
-    expect(text).not.toContain("ATMs near");
+    expect(text).toContain("demo ATM data only includes Arlington, VA");
+    expect(text).toContain("Arlington ATM");
+    expect(text).toContain('"Cambridge, Massachusetts"');
     expect(text).not.toContain('near "Cambridge');
-    expect(text).toContain("within 25 miles");
-    expect(text).toContain("396");
-    expect(text).toContain("straight-line");
+    expect(text).not.toContain("near Cambridge");
+    expect(text).not.toContain("closest option is");
     expect(text).toContain("Tip:");
     expect(text).toContain("Here are the closest ATMs I found:");
+  });
+
+  it("uses the resolved Arlington label to keep the covered wording", async () => {
+    const { text } = await run("Find an ATM near Arlington, VA", async (name) => {
+      expect(name).toBe("find_nearby_atms");
+      return ok({
+        count: 2,
+        resolvedLocation: {
+          lat: 38.8809358,
+          lng: -77.1079246,
+          label: "Arlington, Arlington County, Virginia, United States"
+        },
+        coverage: "Arlington, VA",
+        demoCoverage: true,
+        results: [
+          { name: "Clarendon ATM", distanceMiles: 0.1, lat: 38.88, lng: -77.1 }
+        ]
+      });
+    });
+
+    expect(text).toContain('I found 2 ATMs near "Arlington, VA"');
+    expect(text).not.toContain("demo ATM data only includes Arlington");
+    expect(text).toContain("Tip:");
+  });
+
+  it("mentions Arlington-only coverage when no ATMs are returned", async () => {
+    const { text } = await run("Find an ATM in Cambridge, MA", async (name) => {
+      expect(name).toBe("find_nearby_atms");
+      return ok({
+        count: 0,
+        message: 'No ATMs found matching "Cambridge, MA".',
+        coverage: "Arlington, VA",
+        demoCoverage: true
+      });
+    });
+
+    expect(text).toContain("couldn't find any ATMs");
+    expect(text).toContain("demo ATM data only includes Arlington, VA");
+    expect(text).toContain("Tip:");
+  });
+
+  it("treats a distant nearest result as outside demo coverage when unresolved", async () => {
+    const { text } = await run("Find an ATM in Cambridge, MA", async (name) => {
+      expect(name).toBe("find_nearby_atms");
+      return ok({
+        count: 13,
+        results: [{ name: "Arlington ATM", distanceMiles: 396, lat: 38.88, lng: -77.1 }]
+      });
+    });
+
+    expect(text).toContain("demo ATM data only includes Arlington, VA");
+    expect(text).not.toContain('near "Cambridge');
   });
 
   it("keeps the near wording when the nearest ATM is inside the radius", async () => {
@@ -256,6 +316,46 @@ describe("mockAgent", () => {
     expect(text).not.toContain("couldn't find any ATMs");
     expect(text).not.toContain("within 25 miles of");
     expect(text).toContain("Tip:");
+  });
+
+  it("passes in/around/at locations through to the ATM and branch tools", () => {
+    const session = createSession(customer, accounts);
+    const atmCases: Array<[string, string]> = [
+      ["Find ATMs in Cambridge, Massachusetts", "Cambridge, Massachusetts"],
+      ["ATMs around Cambridge", "Cambridge"],
+      ["Find an ATM near Arlington", "Arlington"],
+      ["Find an ATM at Ballston Common Mall", "Ballston Common Mall"],
+      ["Find an ATM within Boston", "Boston"],
+      ["Find an ATM close to Dupont Circle.", "Dupont Circle"]
+    ];
+    for (const [message, location] of atmCases) {
+      const route = routeIntent(message);
+      expect(route.tool, message).toBe("find_nearby_atms");
+      expect(route.args(session), message).toEqual({ location });
+    }
+
+    expect(routeIntent("Find an ATM").args(session)).toEqual({ location: "Arlington" });
+    expect(routeIntent("Find a branch in Arlington").args(session)).toEqual({
+      location: "Arlington"
+    });
+    expect(routeIntent("Find a branch near Ballston").args(session)).toEqual({
+      location: "Ballston"
+    });
+  });
+
+  it("reports the requested 'in Cambridge' location instead of silently using the default", async () => {
+    const { text } = await run("Find ATMs in Cambridge, Massachusetts", async (name) => {
+      expect(name).toBe("find_nearby_atms");
+      return ok({
+        count: 13,
+        results: [{ name: "Arlington ATM", distanceMiles: 396, lat: 38.88, lng: -77.1 }]
+      });
+    });
+
+    expect(text).toContain('"Cambridge, Massachusetts"');
+    expect(text).not.toContain('near "Cambridge');
+    expect(text).toContain("demo ATM data only includes Arlington, VA");
+    expect(text).not.toContain("within 25 miles");
   });
 
   it("composes friendly intros that avoid card tokens", () => {

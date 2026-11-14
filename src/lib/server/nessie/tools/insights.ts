@@ -995,10 +995,14 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
     label: "ATMs" | "branches",
     kind: "atm" | "branch",
   ): void => {
+    const coverageNote =
+      kind === "atm"
+        ? " Demo ATM data only covers Arlington, VA; the tool returns nearest available ATMs for other locations."
+        : "";
     server.registerTool(
       name,
       {
-        description: `Find ${label} matching a city, zip, or name (case-insensitive). Returns up to 20 results.`,
+        description: `Find ${label} matching a city, zip, or name (case-insensitive). Returns up to 20 results.${coverageNote}`,
         annotations: READ_ONLY_ANNOTATIONS,
         inputSchema: {
           location: z
@@ -1079,10 +1083,24 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
           (entry): entry is NormalizedLocation & { lat: number; lng: number } =>
             entry.lat !== null && entry.lng !== null,
         );
-        const origin = geoRows.length > 0 ? await geocodePlace(location) : null;
+        const origin =
+          geoRows.length > 0
+            ? await geocodePlace(location, {
+                near: geoRows.map((entry) => ({ lat: entry.lat, lng: entry.lng })),
+              })
+            : null;
 
         let matched: AnyRecord[];
+        let resolvedLocation: { lat: number; lng: number; label: string | null } | null = null;
+        let nearestMiles: number | null = null;
         if (origin) {
+          // The search place resolved to real coordinates; expose the normalized
+          // point so callers (and diagnostics) can see what was actually searched.
+          resolvedLocation = {
+            lat: origin.lat,
+            lng: origin.lng,
+            label: origin.label ?? null,
+          };
           // Primary path: straight-line distance from the geocoded place. Keep
           // a 25-mile radius when anything is that close; otherwise return the
           // nearest rows so a remote search still yields a useful answer.
@@ -1107,6 +1125,7 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
                   }
                 : row,
             );
+          nearestMiles = matched.length > 0 ? num(matched[0]?.distanceMiles) : null;
         } else {
           // Fallback: name/address substring matching when geocoding is
           // unavailable or the rows carry no coordinates.
@@ -1124,9 +1143,21 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         }
 
         if (matched.length === 0) {
-          return ok({ count: 0, message: `No ${label} found matching "${location}".` });
+          return ok({
+            count: 0,
+            message: `No ${label} found matching "${location}".`,
+            radiusMiles: LOCATION_RADIUS_MILES,
+            ...(kind === "atm" ? { coverage: "Arlington, VA", demoCoverage: true } : {}),
+          });
         }
-        return ok({ count: matched.length, results: matched });
+        return ok({
+          count: matched.length,
+          results: matched,
+          radiusMiles: LOCATION_RADIUS_MILES,
+          nearestMiles,
+          ...(resolvedLocation ? { resolvedLocation } : {}),
+          ...(kind === "atm" ? { coverage: "Arlington, VA", demoCoverage: true } : {}),
+        });
       },
     );
   };

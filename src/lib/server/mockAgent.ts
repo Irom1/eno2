@@ -7,6 +7,9 @@ import { GUEST_CUSTOMER_ID } from "../chat/guest";
 import type { AgentEvent, Emit } from "./events";
 import { trimContents, type Session } from "./session";
 import { summarizeToolResult, toolLabel } from "./toolBridge";
+import { extractLocation } from "./locationQuery";
+
+export { extractLocation } from "./locationQuery";
 
 export interface MockAgentDeps {
   callTool: (name: string, args: Record<string, unknown>) => Promise<ToolCallResult>;
@@ -115,13 +118,6 @@ function monthLabel(key: string): string {
 function checkingAccountId(session: Session): string {
   const checking = session.accounts.find((account) => account.type.toLowerCase() === "checking");
   return (checking ?? session.accounts[0])?.id ?? "";
-}
-
-function extractLocation(message: string, fallback: string): string {
-  const match = /\bnear\s+(.+)$/i.exec(message);
-  if (!match?.[1]) return fallback;
-  const cleaned = match[1].replace(/[?.!,;:]+$/g, "").trim();
-  return cleaned.length > 0 ? cleaned : fallback;
 }
 
 export function routeIntent(message: string): {
@@ -302,22 +298,39 @@ const ATM_NEARBY_RADIUS_MILES = 25;
 
 function atmAnswer(data: unknown, location: string): string {
   const payload = rec(data);
-  if (num(payload.count) === 0) {
-    return `I couldn't find any ATMs near "${location}".`;
+  const count = num(payload.count);
+  if (count === 0) {
+    return `I couldn't find any ATMs matching "${location}". Nessie's demo ATM data only includes Arlington, VA.`;
   }
+
   const results = Array.isArray(payload.results) ? payload.results.map(rec) : [];
   const rawNearest = results[0]?.distanceMiles;
   const nearest =
     typeof rawNearest === "number" ? rawNearest : Number(rawNearest);
-  const count = num(payload.count);
-  // The dataset may only contain ATMs hundreds of miles away. Never imply
-  // proximity in that case: state the radius gap and the honest nearest
-  // straight-line distance instead.
-  if (Number.isFinite(nearest) && nearest > ATM_NEARBY_RADIUS_MILES) {
-    const distance = Math.round(nearest).toLocaleString("en-US");
-    return `I couldn't find any ATMs within ${ATM_NEARBY_RADIUS_MILES} miles of "${location}" in the available data. The closest option is ${distance} miles away; distances are straight-line.`;
+
+  // Coverage is decided primarily by the place the tool actually geocoded.
+  // Falling back to the requested text keeps "Arlington" prompts covered even
+  // when geocoding is unavailable, and the distance check covers the remaining
+  // case where the nearest row is clearly outside the demo footprint.
+  const resolvedLabel = rec(payload.resolvedLocation).label;
+  let covered: boolean;
+  if (typeof resolvedLabel === "string" && resolvedLabel.trim()) {
+    covered = /arlington/i.test(resolvedLabel);
+  } else if (/arlington/i.test(location)) {
+    covered = true;
+  } else {
+    covered = Number.isFinite(nearest) && nearest <= ATM_NEARBY_RADIUS_MILES;
   }
-  return `I found ${count} ATMs near "${location}". The nearest options are shown here, with straight-line distances from the search location.`;
+
+  if (!covered) {
+    return `Nessie's demo ATM data only includes Arlington, VA, so I can't show ATMs in "${location}". Here's an Arlington ATM instead.`;
+  }
+
+  const displayLocation =
+    /arlington/i.test(location) && /\b(?:va|virginia)\b/i.test(location)
+      ? location
+      : "Arlington, VA";
+  return `I found ${count} ATMs near "${displayLocation}". The nearest options are shown here, with straight-line distances from the search location.`;
 }
 
 function branchAnswer(data: unknown, location: string): string {

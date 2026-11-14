@@ -1856,11 +1856,16 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Find an ATM near Arlington" renders one primitive location card', async ({
+  test('"Find an ATM near Arlington, VA" renders one primitive location card', async ({
     page
   }) => {
     const errors = collectErrors(page);
-    await runPrompt(page, 'Find an ATM near Arlington');
+    await runPrompt(page, 'Find an ATM near Arlington, VA');
+
+    const prose = await assistantText(page);
+    expect(prose).toContain('I found');
+    expect(prose).toContain('ATMs near "Arlington, VA"');
+    expect(prose).not.toContain('demo ATM data only includes Arlington');
 
     const card = page.locator('.atm-locator-card');
     await expect(card).toHaveCount(1);
@@ -2021,25 +2026,26 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Find an ATM near Cambridge, MA" is honest about distant results', async ({
+  test('"Find an ATM in Cambridge, MA" explains Arlington-only demo coverage', async ({
     page
   }) => {
     const errors = collectErrors(page);
-    await runPrompt(page, 'Find an ATM near Cambridge, MA');
+    await runPrompt(page, 'Find an ATM in Cambridge, MA');
 
     const prose = await assistantText(page);
-    expect(prose).toContain("couldn't find any ATMs within 25 miles");
-    expect(prose).toMatch(/closest option is [\d,]+ miles away/);
-    expect(prose).toMatch(/straight-line/i);
+    expect(prose).toContain("demo ATM data only includes Arlington, VA");
+    expect(prose).toContain("Arlington ATM");
     expect(prose).not.toMatch(/ATMs near/i);
-    expect(prose).not.toMatch(/near "Cambridge/i);
+    expect(prose).not.toMatch(/near "?Cambridge/i);
+    expect(prose).not.toContain("couldn't find any ATMs within 25 miles");
 
-    // The nearest ATM still renders its map card, even though it is far away.
+    // The one Arlington ATM still renders its map card.
     const card = page.locator('.atm-locator-card');
     await expect(card).toHaveCount(1);
+    await expect(card.locator('.name')).toContainText('Arlington');
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the distant ATM map is standalone, not inside the prose bubble'
+      'the ATM map is standalone, not inside the prose bubble'
     ).toBe(false);
     const map = card.locator('img.atm-map');
     await expect(map).toHaveCount(1);

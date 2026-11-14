@@ -39,6 +39,12 @@ describe("buildSystemInstruction", () => {
     expect(instruction).toContain(
       'For a credit-card question, show only credit-card accounts; do not include checking or savings unless the customer also asks for accounts.'
     );
+    expect(instruction).toContain(
+      'ATM coverage: The Nessie demo ATM dataset only contains ATMs in Arlington, VA.'
+    );
+    expect(instruction).toContain(
+      'Never claim or imply that ATMs exist in the requested city.'
+    );
     expect(instruction).toContain("Avoid markdown headings (#)");
     expect(instruction).toContain(
       'Cards already show account names, balances, amounts, dates, statuses, and rows. Do NOT restate any value, name, date, or row visible in a card.'
