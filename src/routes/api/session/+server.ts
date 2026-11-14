@@ -47,13 +47,14 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
   const runtime = resolveEnv(platform);
   try {
     return await withMcp(runtime, async (mcp) => {
-      const customersResult = await callTool(mcp, 'nessie_list_customers', {});
-      const customerPayload = customersResult.data as { items?: RawCustomer[] } | null;
-      const customers = Array.isArray(customerPayload?.items) ? customerPayload.items : [];
-      const match = customers.find((customer) => String(customer._id ?? '') === customerId);
-      if (!match) return json({ error: 'Unknown customerId' }, { status: 404 });
+      const customerResult = await callTool(mcp, 'nessie_get_customer', { customerId });
+      const match = customerResult.data as RawCustomer | null;
+      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId) {
+        return json({ error: 'Unknown customerId' }, { status: 404 });
+      }
 
       const accountsResult = await callTool(mcp, 'nessie_list_customer_accounts', { customerId });
+      if (!accountsResult.ok) return json({ error: 'Could not load customer accounts' }, { status: 502 });
       const accountsPayload = accountsResult.data as { items?: RawAccount[] } | null;
       const rawAccounts = Array.isArray(accountsPayload?.items) ? accountsPayload.items : [];
 
@@ -77,7 +78,7 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
         sameSite: 'lax',
         path: '/',
         maxAge: 1800,
-        secure: false
+        secure: new URL(request.url).protocol === 'https:'
       });
 
       return json(publicSession(session));

@@ -234,3 +234,25 @@ export async function generateGemini(
     usage: payload.usageMetadata
   };
 }
+
+/** Structured conversation replies without exposing any financial tools. */
+export async function generateStructuredGemini(runtime: RuntimeEnv, params: {
+  systemInstruction: string;
+  contents: Content[];
+  schema: Record<string, unknown>;
+  signal?: AbortSignal;
+}): Promise<unknown> {
+  const response = await fetch(endpoint(runtime, 'generateContent'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    signal: params.signal ?? AbortSignal.timeout(30_000),
+    body: JSON.stringify({
+      systemInstruction: { role: 'user', parts: [{ text: params.systemInstruction }] },
+      contents: params.contents,
+      generationConfig: { temperature: 0.65, maxOutputTokens: 2048, responseMimeType: 'application/json', responseJsonSchema: params.schema }
+    })
+  });
+  if (!response.ok) await throwProviderError(response, runtime.GEMINI_MODEL);
+  const payload = await response.json() as GeminiChunk;
+  return JSON.parse(partText(collectParts(payload)));
+}

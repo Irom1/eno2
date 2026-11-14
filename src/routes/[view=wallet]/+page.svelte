@@ -183,12 +183,30 @@
 
   async function loadCustomers() {
     try {
-      const response = await fetch('/api/customers');
+      const [response, sessionResponse] = await Promise.all([
+        fetch('/api/customers'),
+        fetch('/api/session').catch(() => null)
+      ]);
       if (!response.ok) throw new Error('Could not load customers.');
       const payload = (await response.json()) as { customers?: Customer[] };
       const list = Array.isArray(payload.customers) ? payload.customers : [];
+      const currentSession = sessionResponse?.ok
+        ? await sessionResponse.json() as { customer?: Customer }
+        : null;
+      const requestedCustomerId = page.url.searchParams.get('customer') || currentSession?.customer?.id;
+      if (requestedCustomerId && !list.some((customer) => customer.id === requestedCustomerId)) {
+        const selectedResponse = await fetch(`/api/customers?customer=${encodeURIComponent(requestedCustomerId)}`);
+        if (!selectedResponse.ok) throw new Error('Could not load selected customer.');
+        const selectedPayload = await selectedResponse.json() as { customers?: Customer[] };
+        const selected = selectedPayload.customers?.find((customer) => customer.id === requestedCustomerId);
+        if (!selected) throw new Error('Selected customer was not found.');
+        list.push(selected);
+      }
       customers = list;
-      const preferred = list.find((customer) => customer.lastName === 'Chen') ?? list[0];
+      const preferred =
+        list.find((customer) => customer.id === requestedCustomerId) ??
+        list.find((customer) => customer.lastName === 'Chen') ??
+        list[0];
       if (preferred) {
         activeCustomerId = preferred.id;
         void loadSnapshot(preferred.id);
@@ -529,7 +547,13 @@
                 <div class="skeleton-card" aria-hidden="true"></div>
               {/each}
             {:else if displayAccounts.length === 0 && !snapshotError}
-              <p class="muted empty-note">No accounts to show.</p>
+              <article class="panel welcome-empty">
+                <div class="empty-eno"><img src="/images/eno-character.png" alt="Eno" width="1254" height="1254" /></div>
+                <p class="empty-greeting">A LITTLE ROOM FOR YOUR NEXT CHAPTER</p>
+                <h2>Welcome to your fresh start, {activeFirstName}.</h2>
+                <p class="muted">No accounts or cards yet. When you add them, they’ll feel right at home here.</p>
+                <button class="primary" onclick={openChat}>Say hello to Eno {@render arrowIcon()}</button>
+              </article>
             {:else}
               {#each displayAccounts as account (account.id)}
                 {@const [dollars, cents] = account.balance.split('.')}
@@ -588,6 +612,8 @@
           <section class="stack tools" aria-labelledby="tools-title">
             <h2 id="tools-title" class="section-title">Your tools</h2>
 
+            {#if liveAccounts.length > 0}
+
             {#if upcoming.length}
               <article class="panel bills-panel">
                 <div class="panel-heading">
@@ -632,6 +658,13 @@
               </div>
               <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
             </article>
+            {:else if !snapshotLoading && !snapshotError}
+              <article class="panel utility getting-started">
+                <h2>Make yourself at home.</h2>
+                <p class="muted">Questions about banking? Wondering where to start? You don’t need an account to say hello.</p>
+                <button class="link" onclick={() => send('I’m new here. What can I do with Eno?')}>Let’s get acquainted {@render arrowIcon()}</button>
+              </article>
+            {/if}
           </section>
 
           <footer>
@@ -915,6 +948,13 @@
   }
   .retry-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 18px; }
   .empty-note { padding: 16px 0; }
+  .welcome-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; padding: 36px; }
+  .welcome-empty h2 { max-width: 400px; font-size: clamp(24px, 3vw, 34px); line-height: 1.2; letter-spacing: -.04em; }
+  .welcome-empty > .muted { max-width: 390px; }
+  .empty-greeting { color: var(--link); font-size: 10px; font-weight: 600; letter-spacing: .12em; }
+  .empty-eno { position: relative; width: 68px; height: 76px; }
+  .empty-eno img { position: absolute; top: 45%; left: 52%; width: 118px; height: 118px; transform: translate(-50%, -50%); }
+  .getting-started { gap: 16px; padding: 24px; }
   .panel-heading {
     display: flex;
     align-items: center;
