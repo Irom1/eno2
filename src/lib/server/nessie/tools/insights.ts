@@ -250,6 +250,13 @@ export function summarizeAnomalyPatterns(duplicateCount: number, outlierCount: n
   return `There are ${parts[0]} and ${parts[1]}.`;
 }
 
+/** Shared by detection and demo seeding so smaller examples remain detectable. */
+export function merchantOutlierBaseline(amounts: readonly number[]) {
+  const median = computeMedian(amounts);
+  const mad = computeMedian(amounts.map((amount) => Math.abs(amount - median)));
+  return { median, mad, threshold: Math.max(median * 4, median + 6 * mad, median + 100) };
+}
+
 export interface DuplicateFinding {
   type: "duplicate";
   _id: string;
@@ -373,10 +380,8 @@ export function detectOutliers(
   }
   for (const group of merchants.values()) {
     if (group.length < 3) continue;
-    const median = computeMedian(group.map((tx) => tx.amount));
-    const mad = computeMedian(group.map((tx) => Math.abs(tx.amount - median)));
     // Require a substantial spike; ordinary variation and steady bills stay clear.
-    const threshold = Math.max(median * 4, median + 6 * mad, median + 100);
+    const { median, mad, threshold } = merchantOutlierBaseline(group.map((tx) => tx.amount));
     for (const tx of group) {
       if (tx.amount > threshold) addFinding(tx, median, mad, threshold, "much larger than this merchant's usual purchases");
     }

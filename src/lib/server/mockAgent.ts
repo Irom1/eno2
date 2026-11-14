@@ -338,9 +338,6 @@ function anomaliesAnswer(data: unknown): string {
   if (findings.length === 0) {
     return "Nothing unusual stood out across your accounts.";
   }
-
-  // Match the client's anomaly-card cap so every merchant named in prose has a
-  // card backing it.
   const visible = findings.slice(0, 8);
   const duplicates = visible.filter((finding) => finding.type === "duplicate");
   const outliers = visible.filter((finding) => finding.type === "outlier");

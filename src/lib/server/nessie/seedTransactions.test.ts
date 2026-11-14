@@ -8,6 +8,20 @@ const runtime = { NESSIE_API_KEY: 'secret', NESSIE_BASE_URL: 'https://nessie.tes
 const now = new Date('2026-11-14T12:00:00Z');
 
 describe('sample transaction history', () => {
+  it('puts an oversized gas-station charge in about 30% of new histories', () => {
+    for (const type of ['Checking', 'Savings', 'Credit Card'] as const) {
+      let withGas = 0;
+      for (let index = 0; index < 1000; index++) {
+        const history = buildDemoTransactions(type, `gas-distribution-${index}`, now);
+        const gas = history.filter((item) => item.description === 'SHELL GAS STATION' && item.amount > 100);
+        expect(gas.length).toBeLessThanOrEqual(1);
+        if (gas.length) withGas++;
+        expect(gas.every((item) => item.amount <= 350)).toBe(true);
+      }
+      expect(withGas).toBeGreaterThanOrEqual(250);
+      expect(withGas).toBeLessThanOrEqual(350);
+    }
+  });
   for (const type of ['Checking', 'Savings', 'Credit Card'] as const) {
     it(`includes pending, environmental, unusual, and a small number of duplicate examples for ${type}`, () => {
       const history = buildDemoTransactions(type, 'scenario-account', now, ['dining']);
@@ -20,8 +34,8 @@ describe('sample transaction history', () => {
       expect(duplicates.length).toBeGreaterThanOrEqual(2);
       expect(duplicates.length).toBeLessThanOrEqual(4);
       expect(duplicates.map((item) => item.description)).toEqual(expect.arrayContaining(['NETFLIX', 'LOCAL BOOKSTORE']));
-      const suspicious = detectOutliers(posted, now).filter((finding) => finding.amount >= 1200 &&
-        posted.some((item) => item.description === finding.description && item.amount < 100));
+      const suspicious = detectOutliers(posted, now).filter((finding) =>
+        posted.some((item) => item.id !== finding._id && item.description === finding.description && item.amount < 100 && item.amount * 4 < finding.amount));
       expect(suspicious).toHaveLength(2);
       const totals = demoAccountTotals(history, type);
       expect(totals.balance).toBeGreaterThan(0);
@@ -37,12 +51,17 @@ describe('sample transaction history', () => {
       for (let index = 0; index < 100; index++) {
         const history = buildDemoTransactions(type, `varied-account-${index}`, now, [categories[index % categories.length]]);
         const posted = history.filter((item) => item.kind === 'withdrawal').map((item, index) => toTransaction({ ...item, _id: String(index) }, 'withdrawal')).filter((item) => item !== null);
-        const suspicious = detectOutliers(posted, now).filter((finding) => finding.amount >= 1200 &&
-          posted.some((item) => item.description === finding.description && item.amount < 100));
+        const suspicious = detectOutliers(posted, now).filter((finding) =>
+          posted.some((item) => item.id !== finding._id && item.description === finding.description && item.amount < 100 && item.amount * 4 < finding.amount));
         expect(suspicious, `${type} account ${index}`).toHaveLength(2);
         merchantPairs.add(suspicious.map((item) => item.description).sort().join('|'));
         suspicious.forEach((item) => amounts.add(item.amount));
         expect(demoAccountTotals(history, type).balance).toBeGreaterThan(0);
+        let postedBalance = 0;
+        for (const item of history) {
+          if (item.status === 'completed') postedBalance += (item.kind === 'withdrawal' ? -1 : 1) * item.amount * (type === 'Credit Card' ? -1 : 1);
+          expect(postedBalance, `${type} account ${index} running balance`).toBeGreaterThanOrEqual(0);
+        }
         expect(detectDuplicateCharges(posted).length).toBeGreaterThanOrEqual(2);
       }
     }

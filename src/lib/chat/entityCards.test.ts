@@ -5,6 +5,7 @@ import {
   anchorEntityCards,
   anchorTransactionCards,
   anomalyExplanation,
+  completeAnomalyContext,
   anomalyTransactionCards,
   billCard,
   cashflowCard,
@@ -435,22 +436,35 @@ describe('anomalyExplanation', () => {
       transactionCard(2, 'APPLE STORE')
     ]);
 
-    expect(sentence).toBe(
-      'You have a suspiciously large transaction at APPLE STORE and a possible duplicate transaction at NETFLIX.COM. Review both charges and report anything you don’t recognize.'
-    );
-    expect(sentence).toContain('Review both charges and report anything you don’t recognize.');
+    expect(sentence).toContain('APPLE STORE is an unusually large purchase compared with your recent purchases on this account.');
+    expect(sentence).toContain('NETFLIX.COM is a possible duplicate because the same merchant charged the same amount again within three days.');
+    expect(sentence).toContain('You can review these charges');
     expect(sentence).not.toContain('$');
     expect(sentence).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     expect(sentence.toLowerCase()).not.toContain('outlier');
   });
 
   it('handles a single unusual or duplicate card', () => {
-    expect(anomalyExplanation([transactionCard(1, 'APPLE STORE')])).toBe(
-      'You have a suspiciously large transaction at APPLE STORE. Review the charge and report anything you don’t recognize.'
-    );
-    expect(anomalyExplanation([transactionCard(1, 'NETFLIX.COM', 'duplicate')])).toBe(
-      'You have a possible duplicate transaction at NETFLIX.COM. Review the charge and report anything you don’t recognize.'
-    );
+    expect(anomalyExplanation([transactionCard(1, 'APPLE STORE')])).toContain('compared with your recent purchases');
+    expect(anomalyExplanation([transactionCard(1, 'NETFLIX.COM', 'duplicate')])).toContain('same merchant charged the same amount again');
+  });
+
+  it('fills missing reasons for every flagged charge, preserves useful prose, and is idempotent', () => {
+    const cards = [transactionCard(1, 'APPLE STORE'), transactionCard(2, 'NETFLIX.COM', 'duplicate'), transactionCard(3, 'LOCAL BOOKSTORE', 'duplicate')];
+    const text = completeAnomalyContext('These charges are worth reviewing: APPLE, Netflix and LOCAL BOOKSTORE.', cards);
+    for (const name of ['APPLE STORE', 'NETFLIX.COM', 'LOCAL BOOKSTORE']) expect(text).toContain(name);
+    expect(text.match(/same merchant charged the same amount again/g)).toHaveLength(2);
+    expect(completeAnomalyContext(text, cards)).toBe(text);
+    const explained = 'APPLE is much larger than your recent purchases on this account.';
+    expect(completeAnomalyContext(explained, [cards[0]])).toBe(explained);
+    expect(text).not.toMatch(/confirmed fraud|definitely fraud|median|MAD|threshold/i);
+  });
+
+  it('uses a merchant comparison only when the finding supplies that baseline', () => {
+    const cards = anomalyTransactionCards({ findings: [{ type: 'outlier', description: 'CAFE', amount: 1800, reason: "much larger than this merchant's usual purchases" }] }, 0, 1);
+    expect(anomalyExplanation(cards)).toContain('your usual purchases at this merchant');
+    const ordinary = { ...transactionCard(8, 'ORDINARY'), payload: { ...transactionCard(8, 'ORDINARY').payload, flag: undefined } };
+    expect(completeAnomalyContext('An ordinary purchase.', [ordinary])).toBe('An ordinary purchase.');
   });
 
   it('returns an empty string without transaction cards', () => {
@@ -2038,10 +2052,21 @@ describe('anchorEntityCards', () => {
     };
   }
 
-  it('anchors a bill after its payee mention', () => {
+  it('anchors a bill after the complete explanation rather than splitting its sentence', () => {
     const text = 'The largest bill is City Power: it is due soon.';
     const [anchored] = anchorEntityCards(text, [bill(1, 'City Power')]);
-    expect(anchored?.afterText).toBe(text.indexOf(':') + 1);
+    expect(anchored?.afterText).toBe(text.length);
+  });
+
+  it('keeps each bill at the end of its own context and buffers incomplete streamed paragraphs', () => {
+    const first = 'City Power is next. Your checking balance covers this payment.';
+    const second = 'Rent is later. You can check your lease before scheduling it.';
+    const text = `${first}\n\n${second}\n\nYou can review both payments.`;
+    const cards = [bill(1, 'City Power'), bill(2, 'Rent')];
+    expect(anchorEntityCards(text, cards).map((card) => card.afterText)).toEqual([first.length, first.length + 2 + second.length]);
+    expect(anchorEntityCards('City Power is', cards.slice(0, 1), { pending: true })[0].afterText).toBe(Number.MAX_SAFE_INTEGER);
+    expect(anchorEntityCards(first + '\n\nNext', cards.slice(0, 1), { pending: true })[0].afterText).toBe(first.length);
+    expect(anchorEntityCards('Your next bill is covered.', cards.slice(0, 1), { pending: true })[0].afterText).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('anchors an account after its nickname, falling back to type', () => {

@@ -7,6 +7,7 @@
     anchorEntityCards,
     anomalyExplanation,
     anomalyTransactionCards,
+    completeAnomalyContext,
     billCard,
     cashflowCard,
     goalCard,
@@ -233,9 +234,17 @@
     return typeof total === 'number' && Number.isFinite(total) && total > 0;
   }
 
-  /** Fill empty assistant prose with a deterministic explanation for its cards. */
+  /** Fill missing explanations, including charges omitted from otherwise nonempty prose. */
   function ensureExplanation(message: ChatMessage): void {
     const cards = message.inlineCards ?? [];
+    if (cards.some((card) => card.kind === 'transaction' && card.payload.flag)) {
+      const original = message.text.trim();
+      message.text = original ? completeAnomalyContext(original, cards) : anomalyExplanation(cards);
+      if (original && message.text !== original && !/\b(?:you can|review|check|report|recognize|dispute|contact)\b/i.test(original)) {
+        message.text += '\n\nYou can review these charges and report anything you don’t recognize.';
+      }
+      return;
+    }
     if (message.text.trim() || cards.length === 0) return;
     if (cards.some((card) => card.kind === 'transaction-list')) {
       message.text = 'Here are your recent transactions, with the most recent first.';
@@ -692,7 +701,7 @@
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [])}
+        {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [], { pending: !!message.pending })}
         {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
         {@const blocks = inlineBlocks(message.text, readyCards)}
         {@const groups = groupInlineCards(blocks)}
