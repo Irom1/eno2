@@ -5,6 +5,7 @@
  * helpers accept both so the APIs can consume either without surprise.
  */
 import { toMoney } from './nessie/format';
+import { demoTransactionImpact } from '../transactionImpact';
 
 export interface WalletCustomer {
   id: string;
@@ -62,6 +63,7 @@ export interface WalletTransaction {
   status: string;
   medium?: string;
   balanceAfter?: number;
+  demoImpact?: 'green' | 'non-green';
 }
 
 type AnyRecord = Record<string, unknown>;
@@ -184,6 +186,7 @@ export function normalizeTransaction(
     description: str(transaction.description),
     date: str(pick(transaction, 'transactionDate', 'transaction_date')),
     status: str(transaction.status),
+    ...(demoTransactionImpact(str(transaction.description)) ? { demoImpact: demoTransactionImpact(str(transaction.description)) } : {}),
     ...(medium ? { medium } : {})
   };
 }
@@ -215,6 +218,7 @@ export function mergeTransactions(
 
   let running = toMoney(num(currentBalance));
   for (const transaction of transactions) {
+    if (['pending', 'cancelled', 'canceled', 'failed'].includes(transaction.status.toLowerCase())) continue;
     transaction.balanceAfter = running;
     running = toMoney(
       running - (transaction.kind === 'deposit' ? transaction.amount : -transaction.amount) * (credit ? -1 : 1)

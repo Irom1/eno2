@@ -69,6 +69,7 @@ const RULES: [RegExp, CategoryId, Rating, string, number][] = [
 	[/\b(MBTA|SUBWAY|TRANSIT|AMTRAK|METRO|BUS|BLUEBIKES|BIKE)\b/i, 'transport', 'green', 'Public transit & bikes', 0.2],
 	// Air transportation (NAICS 481) is the most carbon-intensive spend per dollar after fuel
 	[/\b(DELTA|JETBLUE|SOUTHWEST|AIR ?LINES?|AIRWAYS|AIRFARE)\b/i, 'transport', 'heavy', 'Flights', 1.0],
+	[/\b(AIR FREIGHT)\b/i, 'transport', 'heavy', 'Air freight', 1.0],
 	[/\b(EVERSOURCE|NATIONAL GRID|ENERGY|ELECTRIC|UTILIT|POWER)\b/i, 'energy', 'mixed', 'Utilities', 0.85],
 	[/\b(WHOLE FOODS|SAFEWAY|TRADER JOE'?S?|KROGER|STOP ?& ?SHOP|MARKET BASKET|GROCER|MKT|ALDI|COSTCO|FARMERS)\b/i, 'food', 'green', 'Groceries', 0.55],
 	[/\b(DOORDASH|GRUBHUB|UBER ?EATS|POSTMATES|INSTACART)\b/i, 'food', 'heavy', 'Delivery', 0.3],
@@ -79,7 +80,8 @@ const RULES: [RegExp, CategoryId, Rating, string, number][] = [
 	[/\b(THRIFT|GOODWILL|REFURB|BACK ?MARKET)\b/i, 'shopping', 'green', 'Secondhand', 0.1],
 	[/\b(MARRIOTT|HILTON|HYATT|HOTELS?|MOTEL|AIRBNB)\b/i, 'shopping', 'mixed', 'Hotels', 0.2],
 	[/\b(AMAZON|MKTPLACE|MARKETPLACE|TEMU|SHEIN)\b/i, 'shopping', 'mixed', 'Online orders', 0.25],
-	[/\b(TARGET|WALMART|IKEA|STORE|SHOP|BOOKSTORE|BOOKS)\b/i, 'shopping', 'mixed', 'Retail', 0.2],
+	[/\b(FAST FASHION)\b/i, 'shopping', 'heavy', 'Fast fashion', 0.25],
+	[/\b(TARGET|WALMART|IKEA|STORE|SHOP|BOOKSTORE|BOOKS|CVS|PHARMACY|WALGREENS)\b/i, 'shopping', 'mixed', 'Retail', 0.2],
 	[/\b(NETFLIX|SPOTIFY|HULU|DISNEY)\b/i, 'shopping', 'green', 'Streaming', 0.08],
 	[/\b(AMC|THEATRES?|THEATERS?|CINEMA|CONCERT|LIVE NATION|TICKETMASTER)\b/i, 'shopping', 'green', 'Entertainment', 0.15],
 	[/\b(COMCAST|VERIZON|AT&T|T-MOBILE|MOBILE PHONE|PHONE BILL|WIRELESS)\b/i, 'shopping', 'green', 'Phone & internet', 0.1],

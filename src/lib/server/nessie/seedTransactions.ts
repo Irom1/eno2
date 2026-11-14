@@ -1,6 +1,7 @@
 import type { RuntimeEnv } from '../env';
 import type { FetchLike } from './client';
 import type { SpendingCategory } from '../../spending';
+import { GREEN_DEMO_MERCHANTS, NON_GREEN_DEMO_MERCHANTS } from '../../transactionImpact';
 
 export type DemoAccountType = 'Checking' | 'Savings' | 'Credit Card';
 
@@ -8,15 +9,15 @@ export interface DemoTransaction {
   kind: 'deposit' | 'withdrawal';
   medium: 'balance';
   transaction_date: string;
-  status: 'completed';
+  status: 'completed' | 'pending';
   amount: number;
   description: string;
 }
 
 /** Demo points: one point per whole dollar of completed spending. */
 export function demoAccountTotals(transactions: readonly DemoTransaction[], type: DemoAccountType = 'Checking') {
-  const deposits = transactions.filter((item) => item.kind === 'deposit').reduce((sum, item) => sum + item.amount, 0);
-  const spending = transactions.filter((item) => item.kind === 'withdrawal').reduce((sum, item) => sum + item.amount, 0);
+  const deposits = transactions.filter((item) => item.kind === 'deposit' && item.status === 'completed').reduce((sum, item) => sum + item.amount, 0);
+  const spending = transactions.filter((item) => item.kind === 'withdrawal' && item.status === 'completed').reduce((sum, item) => sum + item.amount, 0);
   return { balance: Math.round((type === 'Credit Card' ? spending - deposits : deposits - spending) * 100) / 100, rewards: Math.floor(spending) };
 }
 
@@ -46,7 +47,7 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
       const merchants = cardMerchants[category];
       // Purchases exceed payments throughout the history, yielding a positive
       // balance owed. Card payments are Nessie deposits; purchases withdrawals.
-      result.push({ kind: 'withdrawal', medium: 'balance', transaction_date: date, status: 'completed', amount: index === 0 ? 500 : random(110, 280), description: index === 0 ? 'DEMO OPENING PURCHASE' : merchants[index % merchants.length] });
+      result.push({ kind: 'withdrawal', medium: 'balance', transaction_date: date, status: 'completed', amount: index === 0 ? 1000 : random(110, 280), description: index === 0 ? 'DEMO OPENING PURCHASE' : merchants[index % merchants.length] });
       result.push({ kind: 'deposit', medium: 'balance', transaction_date: date, status: 'completed', amount: random(35, 100), description: 'DEMO CREDIT CARD PAYMENT' });
       continue;
     }
@@ -62,6 +63,38 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
       description: saving ? index % 8 === 0 ? 'SAVINGS GOAL WITHDRAWAL' : 'TRANSFER TO EVERYDAY SPENDING' : index % 15 === 0 ? 'BOSTON PROPERTIES RENT' : merchant[0]
     });
   }
+  const withdrawals = result.filter((item) => item.kind === 'withdrawal');
+  const credits = result.filter((item) => item.kind === 'deposit');
+  // Keep the initial funding/purchase markers intact. Most history remains
+  // ordinary and personalized; these examples exercise existing insight tools.
+  for (let index = 0; index < GREEN_DEMO_MERCHANTS.length; index++) {
+    Object.assign(withdrawals[8 + index], { description: GREEN_DEMO_MERCHANTS[index], amount: 20 + index * 7 });
+    Object.assign(withdrawals[16 + index], { description: NON_GREEN_DEMO_MERCHANTS[index], amount: 65 + index * 17 });
+  }
+  // Pick different familiar, usually low-cost merchants per account. Their
+  // normal purchases make the oversized charges reviewable against real history.
+  const unusualMerchants = [
+    ['SHELL GAS STATION', 30, 65], ['NEIGHBORHOOD RESTAURANT', 18, 85],
+    ['LOCAL COFFEE', 4, 12], ['AMC THEATRES', 12, 35],
+    ['LOCAL BOOKSTORE', 15, 55], ['CVS PHARMACY', 9, 65],
+    ['MBTA TRANSIT', 10, 35], ['WHOLE FOODS MARKET', 35, 95]
+  ] as const;
+  const candidates = [...unusualMerchants];
+  for (let index = 0; index < 2; index++) {
+    const [description, min, max] = candidates.splice(random(0, candidates.length - 1), 1)[0];
+    Object.assign(withdrawals[1 + index * 2], { description, amount: random(min, Math.floor((min + max) / 2)) });
+    Object.assign(withdrawals[2 + index * 2], { description, amount: random(Math.floor((min + max) / 2) + 1, max) });
+    Object.assign(withdrawals[random(30 + index * 5, 33 + index * 5)], { description, amount: random(1200, 2200) });
+  }
+  const dateAgo = (days: number) => new Date(today - days * 86_400_000).toISOString().slice(0, 10);
+  // Only two deliberate duplicate pairs among 100 total records.
+  Object.assign(withdrawals[39], { description: 'NETFLIX', amount: 19, transaction_date: dateAgo(18) });
+  Object.assign(withdrawals[40], { description: 'NETFLIX', amount: 19, transaction_date: dateAgo(17) });
+  Object.assign(withdrawals[43], { description: 'LOCAL BOOKSTORE', amount: 47, transaction_date: dateAgo(10) });
+  Object.assign(withdrawals[44], { description: 'LOCAL BOOKSTORE', amount: 47, transaction_date: dateAgo(9) });
+  // Six recent unsettled records stay visible but do not affect posted totals.
+  for (let index = 46; index < 50; index++) Object.assign(withdrawals[index], { status: 'pending', transaction_date: dateAgo(index % 2) });
+  for (let index = 48; index < 50; index++) Object.assign(credits[index], { status: 'pending', transaction_date: dateAgo(index % 2) });
   return result;
 }
 

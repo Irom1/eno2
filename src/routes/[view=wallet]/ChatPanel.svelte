@@ -402,7 +402,10 @@
               // and a later location insight replaces the earlier card.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
-              const incoming = locationCard(payload, anchor, cardSeq + 1, { customerId });
+              const incoming = locationCard(payload, anchor, cardSeq + 1, {
+                customerId,
+                type: data.kind === 'find_nearby_atms' ? 'atm' : 'branch'
+              });
               if (incoming) {
                 const existing = (message.inlineCards ?? []).some(
                   (card) => card.kind === 'location'

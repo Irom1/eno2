@@ -1,7 +1,16 @@
 import { expect, it, vi } from 'vitest';
 import { createNessieAccounts } from './createAccounts';
 import { recommendDemoCard } from '../../spending';
+import { detectDuplicateCharges, detectOutliers, toTransaction } from './tools/insights';
 const runtime = { NESSIE_API_KEY: 'secret', NESSIE_BASE_URL: 'https://nessie.test' };
+
+function expectReviewableCharges(bodies: unknown[]) {
+  const posted = bodies.map((body, index) => toTransaction({ ...body as object, _id: String(index) }, 'withdrawal')).filter((item) => item !== null);
+  const suspicious = detectOutliers(posted, new Date()).filter((finding) => finding.amount >= 1200 &&
+    posted.some((item) => item.description === finding.description && item.amount < 100));
+  expect(suspicious).toHaveLength(2);
+  expect(detectDuplicateCharges(posted).length).toBeGreaterThanOrEqual(2);
+}
 
 it('persists the matching credit card and its exact transaction-derived balance and points', async () => {
   const card = recommendDemoCard({ status: 'personalize', categories: ['dining', 'groceries'] })!;
@@ -11,14 +20,17 @@ it('persists the matching credit card and its exact transaction-derived balance 
     const body = JSON.parse(String(init?.body));
     const path = new URL(String(url)).pathname;
     if (path.endsWith('/accounts')) { account = body; return Response.json({ objectCreated: { _id: 'savor-id' } }, { status: 201 }); }
-    if (path.endsWith('/withdrawals')) purchases += body.amount;
-    else payments += body.amount;
+    if (body.status === 'completed') {
+      if (path.endsWith('/withdrawals')) purchases += body.amount;
+      else if (path.endsWith('/deposits')) payments += body.amount;
+    }
     return Response.json({}, { status: 201 });
   });
   expect(await createNessieAccounts('customer-id', ['Credit Card'], runtime, transport, { card, categories: ['dining', 'groceries'] })).toEqual({});
-  expect(transport).toHaveBeenCalledTimes(101);
+  expect(transport).toHaveBeenCalledTimes(105);
   expect(account).toEqual({ type: 'Credit Card', nickname: 'Savor · Eno demo', balance: purchases - payments, rewards: purchases });
   expect(Number(account.balance)).toBeGreaterThan(0);
+  expectReviewableCharges(transport.mock.calls.filter(([url]) => new URL(String(url)).pathname.endsWith('/withdrawals')).map(([, init]) => JSON.parse(String(init?.body))));
 });
 
 it('opens only the chosen accounts and saves 100 Nessie transactions for each', async () => {
@@ -30,24 +42,27 @@ it('opens only the chosen accounts and saves 100 Nessie transactions for each', 
     return Response.json({ code: 201 }, { status: 201 });
   });
   await createNessieAccounts('customer-id', ['Checking', 'Savings'], runtime, transport);
-  expect(transport).toHaveBeenCalledTimes(202);
+  expect(transport).toHaveBeenCalledTimes(210);
   const accountCalls = transport.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/customers/customer-id/accounts');
   expect(accountCalls).toHaveLength(2);
   for (const [, init] of accountCalls) {
     const account = JSON.parse(String(init?.body));
-    const calls = transport.mock.calls.filter(([url]) => new URL(String(url)).pathname.startsWith(`/accounts/${account.type.toLowerCase()}-id/`));
+    const calls = transport.mock.calls.filter(([url]) => new URL(String(url)).pathname.startsWith(`/accounts/${account.type.toLowerCase()}-id/`) && /\/(?:deposits|withdrawals)$/.test(new URL(String(url)).pathname));
     let balance = 0; let spending = 0;
     for (const [url, transactionInit] of calls) {
-      const amount = JSON.parse(String(transactionInit?.body)).amount;
+      const transaction = JSON.parse(String(transactionInit?.body));
+      if (transaction.status !== 'completed') continue;
+      const amount = transaction.amount;
       if (new URL(String(url)).pathname.endsWith('/deposits')) balance += amount;
       else { balance -= amount; spending += amount; }
     }
     expect(account.balance).toBeGreaterThan(0);
     expect(account.balance).toBe(balance);
     expect(account.rewards).toBe(Math.floor(spending));
+    expectReviewableCharges(calls.filter(([url]) => new URL(String(url)).pathname.endsWith('/withdrawals')).map(([, init]) => JSON.parse(String(init?.body))));
   }
   for (const id of ['checking-id', 'savings-id']) {
-    expect(transport.mock.calls.filter(([url]) => new URL(String(url)).pathname.startsWith(`/accounts/${id}/`))).toHaveLength(100);
+    expect(transport.mock.calls.filter(([url]) => new URL(String(url)).pathname.startsWith(`/accounts/${id}/`) && /\/(?:deposits|withdrawals)$/.test(new URL(String(url)).pathname))).toHaveLength(100);
   }
 });
 it('makes no write requests when no accounts are selected', async () => {
@@ -70,5 +85,5 @@ it('resolves text-only creation acknowledgements before writing demo history', a
     return Response.json({ code: 201 }, { status: 201 });
   });
   await expect(createNessieAccounts('customer-id', ['Checking'], runtime, transport)).resolves.toEqual({});
-  expect(transport.mock.calls.filter(([url, init]) => init?.method === 'POST' && new URL(String(url)).pathname.startsWith('/accounts/new-checking/'))).toHaveLength(100);
+  expect(transport.mock.calls.filter(([url, init]) => init?.method === 'POST' && new URL(String(url)).pathname.startsWith('/accounts/new-checking/') && /\/(?:deposits|withdrawals)$/.test(new URL(String(url)).pathname))).toHaveLength(100);
 });

@@ -203,6 +203,28 @@ describe("duplicate detection", () => {
 });
 
 describe("outlier detection", () => {
+  it("flags large gas and restaurant purchases even when those merchants recur across months", () => {
+    const transactions = [
+      tx('SHELL GAS STATION', 38, '2026-09-01'), tx('SHELL GAS STATION', 52, '2026-10-01'),
+      tx('NEIGHBORHOOD RESTAURANT', 32, '2026-09-02'), tx('NEIGHBORHOOD RESTAURANT', 48, '2026-10-02'),
+      tx('RENT', 1450, '2026-09-03'), tx('RENT', 1450, '2026-10-03'), tx('RENT', 1450, '2026-11-03'),
+      tx('SHELL GAS STATION', 1800, '2026-11-04'), tx('NEIGHBORHOOD RESTAURANT', 1250, '2026-11-05')
+    ];
+    const findings = detectOutliers(transactions, new Date('2026-11-14T00:00:00Z'));
+    expect(findings.map(({ description, amount }) => ({ description, amount }))).toEqual([
+      { description: 'SHELL GAS STATION', amount: 1800 }, { description: 'NEIGHBORHOOD RESTAURANT', amount: 1250 }
+    ]);
+    expect(findings.every((finding) => finding.reason.includes('usual purchases'))).toBe(true);
+    expect(findings.map((finding) => finding._id)).toEqual(transactions.slice(-2).map((item) => item.id));
+  });
+
+  it("detects merchant spikes when ordinary charges have no amount variation", () => {
+    const transactions = Array.from({ length: 8 }, (_, index) => tx('GAS', 40, `2026-10-${String(index + 1).padStart(2, '0')}`));
+    transactions.push(tx('GAS', 1800, '2026-10-20'));
+    expect(detectOutliers(transactions, new Date('2026-11-14T00:00:00Z'))).toEqual([
+      expect.objectContaining({ description: 'GAS', amount: 1800 })
+    ]);
+  });
   it("requires at least eight transactions", () => {
     const asOf = new Date(Date.UTC(2026, 10, 14));
     expect(

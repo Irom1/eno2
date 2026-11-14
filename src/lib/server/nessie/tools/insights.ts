@@ -5,6 +5,7 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { geocodePlace, haversineMiles } from "../../geo";
 import { maskAccountNumber, type NessieClient } from "../client";
 import {
   daysBetween,
@@ -19,6 +20,7 @@ import { READ_ONLY_ANNOTATIONS } from "./raw";
 type AnyRecord = Record<string, unknown>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const LOCATION_RADIUS_MILES = 25;
 const idParam = z.string().min(1).describe("Opaque id; do not assume format");
 const ok = (summary: unknown) => ({
   content: [{ type: "text" as const, text: safeJson(summary) }],
@@ -31,6 +33,11 @@ const num = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+const finiteNumber = (value: unknown): number | null => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const round1 = (value: number): number => Math.round(value * 10) / 10;
 
 export const todayUTC = (now: Date = new Date()): Date =>
   new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -57,6 +64,7 @@ export interface Transaction {
 /** Convert a raw Nessie deposit/withdrawal into a normalized transaction. */
 export function toTransaction(value: unknown, kind: "deposit" | "withdrawal"): Transaction | null {
   const raw = rec(value);
+  if (['pending', 'cancelled', 'canceled', 'failed'].includes(String(raw.status ?? '').toLowerCase())) return null;
   const date = parseDateUTC(raw.transaction_date);
   if (Number.isNaN(date.getTime())) return null;
   return {
@@ -259,15 +267,14 @@ export interface OutlierFinding {
   threshold: number;
 }
 
-/** Flags amounts above median + 3*MAD over the trailing 90 days (needs >= 8 txs). */
+/** Flags overall outliers and oversized purchases at familiar merchants (needs >= 8 txs). */
 export function detectOutliers(
   transactions: readonly Transaction[],
   asOf: Date,
   windowDays = 90,
 ): OutlierFinding[] {
-  // Recurring obligations (rent, utilities, subscriptions, groceries, etc.)
-  // are normal, not statistical anomalies. Exclude any description seen in
-  // two or more distinct calendar months from both the baseline and candidates.
+  // Recurring descriptions skip the overall baseline. They still receive a
+  // merchant-specific check, so a familiar merchant cannot hide a large spike.
   const monthsByDescription = new Map<string, Set<string>>();
   for (const tx of transactions) {
     const key = normalizeText(tx.description);
@@ -290,27 +297,48 @@ export function detectOutliers(
   const recent = recentWindow.filter(
     (tx) => !recurringDescriptions.has(normalizeText(tx.description)),
   );
-  if (recent.length === 0) return [];
-
-  const amounts = recent.map((tx) => tx.amount);
-  const median = computeMedian(amounts);
-  const mad = computeMedian(amounts.map((amount) => Math.abs(amount - median)));
-  if (mad <= 0) return [];
-
-  const threshold = median + 3 * mad;
-  return recent
-    .filter((tx) => tx.amount > threshold)
-    .map((tx) => ({
-      type: "outlier" as const,
+  const findings = new Map<Transaction, OutlierFinding>();
+  function addFinding(tx: Transaction, median: number, mad: number, threshold: number, reason: string) {
+    if (findings.has(tx)) return;
+    findings.set(tx, {
+      type: "outlier",
       _id: tx.id,
       description: truncateText(tx.description, 160),
       amount: toMoney(tx.amount),
       date: toISODate(tx.date),
-      reason: "amount exceeds median + 3x MAD",
+      reason,
       median: toMoney(median),
       mad: toMoney(mad),
       threshold: toMoney(threshold),
-    }));
+    });
+  }
+  if (recent.length) {
+    const amounts = recent.map((tx) => tx.amount);
+    const median = computeMedian(amounts);
+    const mad = computeMedian(amounts.map((amount) => Math.abs(amount - median)));
+    const threshold = median + 3 * mad;
+    if (mad > 0) for (const tx of recent) {
+      if (tx.amount > threshold) addFinding(tx, median, mad, threshold, "amount exceeds median + 3x MAD");
+    }
+  }
+  const merchants = new Map<string, Transaction[]>();
+  for (const tx of recentWindow) {
+    const key = normalizeText(tx.description);
+    const group = merchants.get(key) ?? [];
+    group.push(tx);
+    merchants.set(key, group);
+  }
+  for (const group of merchants.values()) {
+    if (group.length < 3) continue;
+    const median = computeMedian(group.map((tx) => tx.amount));
+    const mad = computeMedian(group.map((tx) => Math.abs(tx.amount - median)));
+    // Require a substantial spike; ordinary variation and steady bills stay clear.
+    const threshold = Math.max(median * 4, median + 6 * mad, median + 100);
+    for (const tx of group) {
+      if (tx.amount > threshold) addFinding(tx, median, mad, threshold, "much larger than this merchant's usual purchases");
+    }
+  }
+  return recentWindow.flatMap((tx) => findings.has(tx) ? [findings.get(tx)!] : []);
 }
 
 export interface UpcomingBill {
@@ -983,33 +1011,20 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         const needle = location.trim().toLowerCase();
         const rows = list(await client.get(path));
 
-        const matched = rows
-          .filter((row) => {
-            if (kind === "atm") {
-              // ATMs have no address in the Nessie API; match on name only.
-              return String(row.name ?? "").toLowerCase().includes(needle);
-            }
-            const address = rec(row.address);
-            const street = [address.street_number, address.street_name]
-              .filter(Boolean)
-              .join(" ");
-            const haystack = [
-              row.name,
-              address.city,
-              address.state,
-              address.zip,
-              street,
-            ]
-              .filter(Boolean)
-              .join(" ")
-              .toLowerCase();
-            return haystack.includes(needle);
-          })
-          .slice(0, 20)
-          .map((row) => {
-            const geocode = rec(row.geocode);
-            if (kind === "atm") {
-              return {
+        interface NormalizedLocation {
+          result: AnyRecord;
+          searchText: string;
+          lat: number | null;
+          lng: number | null;
+        }
+
+        const normalized: NormalizedLocation[] = rows.map((row) => {
+          const geocode = rec(row.geocode);
+          const lat = finiteNumber(geocode.lat);
+          const lng = finiteNumber(geocode.lng);
+          if (kind === "atm") {
+            return {
+              result: {
                 _id: row._id,
                 name: truncateText(row.name, 160),
                 hours: row.hours,
@@ -1018,29 +1033,95 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
                 language_list: row.language_list,
                 lat: geocode.lat,
                 lng: geocode.lng,
-                note: "ATM records have no street address; matched by name only",
-              };
-            }
-            const address = rec(row.address);
-            return {
+              },
+              searchText: String(row.name ?? "").toLowerCase(),
+              lat,
+              lng,
+            };
+          }
+          const address = rec(row.address);
+          const street = [address.street_number, address.street_name]
+            .filter(Boolean)
+            .join(" ");
+          const searchText = [
+            row.name,
+            address.city,
+            address.state,
+            address.zip,
+            street,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return {
+            result: {
               _id: row._id,
               name: truncateText(row.name, 160),
               phone_number: row.phone_number,
               hours: row.hours,
               notes: row.notes,
               address: {
-                street: [address.street_number, address.street_name]
-                  .filter(Boolean)
-                  .join(" ")
-                  .trim(),
+                street,
                 city: address.city,
                 state: address.state,
                 zip: address.zip,
               },
               lat: geocode.lat,
               lng: geocode.lng,
-            };
-          });
+            },
+            searchText,
+            lat,
+            lng,
+          };
+        });
+
+        const geoRows = normalized.filter(
+          (entry): entry is NormalizedLocation & { lat: number; lng: number } =>
+            entry.lat !== null && entry.lng !== null,
+        );
+        const origin = geoRows.length > 0 ? await geocodePlace(location) : null;
+
+        let matched: AnyRecord[];
+        if (origin) {
+          // Primary path: straight-line distance from the geocoded place. Keep
+          // a 25-mile radius when anything is that close; otherwise return the
+          // nearest rows so a remote search still yields a useful answer.
+          const scored = geoRows.map((entry) => ({
+            ...entry.result,
+            distanceMiles: round1(
+              haversineMiles(origin, { lat: entry.lat, lng: entry.lng }),
+            ),
+          }));
+          const withinRadius = scored.filter(
+            (row) => num(row.distanceMiles) <= LOCATION_RADIUS_MILES,
+          );
+          const pool = withinRadius.length > 0 ? withinRadius : scored;
+          matched = pool
+            .sort((a, b) => num(a.distanceMiles) - num(b.distanceMiles))
+            .slice(0, 20)
+            .map((row) =>
+              kind === "atm"
+                ? {
+                    ...row,
+                    note: "ATM records have no street address; distances are straight-line from the geocoded search location",
+                  }
+                : row,
+            );
+        } else {
+          // Fallback: name/address substring matching when geocoding is
+          // unavailable or the rows carry no coordinates.
+          matched = normalized
+            .filter((entry) => entry.searchText.includes(needle))
+            .slice(0, 20)
+            .map((entry) =>
+              kind === "atm"
+                ? {
+                    ...entry.result,
+                    note: "ATM records have no street address; matched by name only",
+                  }
+                : entry.result,
+            );
+        }
 
         if (matched.length === 0) {
           return ok({ count: 0, message: `No ${label} found matching "${location}".` });

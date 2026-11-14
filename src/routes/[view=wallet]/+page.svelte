@@ -1,4 +1,9 @@
 <script lang="ts">
+  import DeleteCustomerButton from '$lib/components/DeleteCustomerButton.svelte';
+  import CustomerRemovalNotice from '$lib/components/CustomerRemovalNotice.svelte';
+  import { customerName } from '$lib/customerDeletion';
+  import { demoCreditScore, creditScoreRating } from '$lib/creditWise';
+  import { changeCustomerRemoval, lastRemovedCustomer, rememberRemovedCustomer, forgetRemovedCustomer, type RemovedCustomer } from '$lib/customerRemoval';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
@@ -63,6 +68,9 @@
   let accountMenuEl = $state<HTMLDivElement>();
   let customers = $state<Customer[]>([]);
   let activeCustomerId = $state('');
+  let deletingId = $state('');
+  let removalError = $state('');
+  let removedCustomer = $state<RemovedCustomer | null>(null);
   let customersLoading = $state(true);
   let activeCustomer = $derived(
     customers.find((customer) => customer.id === activeCustomerId) ?? null
@@ -72,6 +80,9 @@
   );
   let activeInitial = $derived(activeCustomer?.firstName?.[0]?.toUpperCase() ?? 'A');
   let activeFirstName = $derived(activeCustomer?.firstName || 'Account');
+  let creditScore = $derived(demoCreditScore(activeCustomerId));
+  let creditRating = $derived(creditScoreRating(creditScore));
+  let creditGaugeProgress = $derived(Math.max(2, (creditScore - 300) / 550 * 75));
 
   let liveCustomer = $state<WalletCustomer | null>(null);
   let liveAccounts = $state<WalletAccount[]>([]);
@@ -190,6 +201,40 @@
     await tick();
     accountButton?.focus();
     void loadSnapshot(id);
+  }
+
+  async function deleteCustomer(customer: Customer) {
+    if (deletingId) return;
+    deletingId = customer.id; removalError = '';
+    try {
+      await changeCustomerRemoval(customer.id, true);
+      customers = customers.filter((item) => item.id !== customer.id);
+      removedCustomer = rememberRemovedCustomer({ id: customer.id, name: customerName(customer) });
+      if (activeCustomerId === customer.id) {
+        const fallback = customers.find((item) => `${item.firstName} ${item.lastName}`.toLowerCase() === 'maya chen') ?? customers[0];
+        if (!fallback) { await goto('/'); return; }
+        await selectCustomer(fallback.id);
+        const next = new URL(page.url); next.searchParams.set('customer', fallback.id);
+        await goto(next.pathname + next.search + next.hash, { replaceState: true, keepFocus: true, noScroll: true });
+        accountOpen = true;
+      } else if (page.url.searchParams.get('customer') === customer.id) {
+        const next = new URL(page.url); next.searchParams.set('customer', activeCustomerId);
+        await goto(next.pathname + next.search + next.hash, { replaceState: true, keepFocus: true, noScroll: true });
+      }
+      await tick(); focusActiveOption();
+    } catch (cause) { removalError = cause instanceof Error ? cause.message : 'Couldn’t delete this account.'; }
+    finally { deletingId = ''; }
+  }
+
+  async function undoRemoval() {
+    if (!removedCustomer || deletingId) return;
+    const id = removedCustomer.id; deletingId = id; removalError = '';
+    try {
+      await changeCustomerRemoval(id, false);
+      removedCustomer = forgetRemovedCustomer(id);
+      await loadCustomers();
+    } catch (cause) { removalError = cause instanceof Error ? cause.message : 'Couldn’t restore this account.'; }
+    finally { deletingId = ''; }
   }
 
   async function loadCustomers() {
@@ -479,6 +524,7 @@
   });
 
   onMount(() => {
+    removedCustomer = lastRemovedCustomer();
     // ClimateWise "Make a plan with Eno" links arrive as /dashboard?ask=<prompt>.
     const ask = page.url.searchParams.get('ask')?.trim();
     if (ask) {
@@ -543,46 +589,50 @@
               <span class="profile-name">Guest</span>
             </div>
           {:else}
-            <div class="account-menu" role="presentation" bind:this={accountMenuEl} onkeydown={handleMenuKeydown}>
-              <button
-                class="profile"
-                bind:this={accountButton}
-                aria-label={`Switch account${activeName ? `: ${activeName}` : ''}`}
-                aria-haspopup="menu"
-                aria-expanded={accountOpen}
-                aria-controls="account-dropdown"
-                onclick={toggleAccountMenu}
-              >
-                <span class="avatar" aria-hidden="true">{activeInitial}</span>
-                <span class="profile-name">{activeFirstName}</span>
-                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              {#if accountOpen}
-                <div class="account-dropdown" id="account-dropdown" role="menu" aria-label="Switch account">
-                  <p class="account-dropdown-title">Switch account</p>
-                  {#each customers as customer (customer.id)}
-                    <button
-                      class="account-option"
-                      role="menuitemradio"
-                      aria-checked={customer.id === activeCustomerId}
-                      onclick={() => selectCustomer(customer.id)}
-                    >
-                      <span class="avatar" aria-hidden="true">{customer.firstName[0] ?? '?'}</span>
-                      <span class="account-meta">
-                        <strong>{customer.firstName} {customer.lastName}</strong>
-                        {#if customer.city}<small>{customer.city}, {customer.state}</small>{/if}
-                      </span>
-                      {#if customer.id === activeCustomerId}
-                        <svg class="account-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                      {/if}
-                    </button>
-                  {/each}
-                  {#if customers.length === 0}
-                    <p class="muted">{customersLoading ? 'Loading accounts…' : 'No accounts available.'}</p>
-                  {/if}
-                </div>
-              {/if}
-            </div>
+          <div class="account-menu" role="presentation" bind:this={accountMenuEl} onkeydown={handleMenuKeydown}>
+            <button
+              class="profile"
+              bind:this={accountButton}
+              aria-label={`Switch account${activeName ? `: ${activeName}` : ''}`}
+              aria-haspopup="menu"
+              aria-expanded={accountOpen}
+              aria-controls="account-dropdown"
+              onclick={toggleAccountMenu}
+            >
+              <span class="avatar" aria-hidden="true">{activeInitial}</span>
+              <span class="profile-name">{activeFirstName}</span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            {#if accountOpen}
+              <div class="account-dropdown" id="account-dropdown" role="menu" aria-label="Switch account">
+                <p class="account-dropdown-title">Switch account</p>
+                <CustomerRemovalNotice removed={removedCustomer} error={removalError} busy={!!deletingId} onundo={undoRemoval} />
+                {#each customers as customer (customer.id)}
+                  <div class="customer-row" role="none">
+                  <button
+                    class="account-option"
+                    role="menuitemradio"
+                    aria-checked={customer.id === activeCustomerId}
+                    onclick={() => selectCustomer(customer.id)}
+                  >
+                    <span class="avatar" aria-hidden="true">{customer.firstName[0] ?? '?'}</span>
+                    <span class="account-meta">
+                      <strong>{customer.firstName} {customer.lastName}</strong>
+                      {#if customer.city}<small>{customer.city}, {customer.state}</small>{/if}
+                    </span>
+                    {#if customer.id === activeCustomerId}
+                      <svg class="account-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    {/if}
+                  </button>
+                  <DeleteCustomerButton {customer} menuItem disabled={!!deletingId} ondelete={() => deleteCustomer(customer)} />
+                  </div>
+                {/each}
+                {#if customers.length === 0}
+                  <p class="muted">{customersLoading ? 'Loading accounts…' : 'No accounts available.'}</p>
+                {/if}
+              </div>
+            {/if}
+          </div>
           {/if}
           <button
             class="theme-toggle"
@@ -693,7 +743,7 @@
                     <button class="activity-row" onclick={() => openAccountView(primaryCheckingId, 'activity')}>
                       <span class="activity-main">
                         <strong>{transaction.description || 'Transaction'}</strong>
-                        <small>{dateLabel(transaction.date)} · {transaction.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}</small>
+                        <small>{dateLabel(transaction.date)} · {transaction.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}{#if transaction.status.toLowerCase() === 'pending'} · Pending{/if}</small>
                       </span>
                       <span class="activity-amount" class:deposit={transaction.kind === 'deposit'}>
                         {transaction.kind === 'deposit' ? '+' : '−'}{money(transaction.amount, { decimals: 2 })}
@@ -749,8 +799,8 @@
             <article class="panel utility">
               <h2>CreditWise</h2>
               <div class="credit">
-                <div class="gauge"><div><strong>762</strong><small>Very good</small></div></div>
-                <div><p>Review your credit report for signs of error, theft or fraud.</p><small class="muted">Updated Nov 13, 2026</small></div>
+                <div class="gauge" role="img" aria-label={`Demo credit score: ${creditScore} out of 850, ${creditRating.label}`} style={`--score-color: ${creditRating.color}; --score-progress: ${creditGaugeProgress}%`}><div><strong>{creditScore}</strong><small>{creditRating.label}</small></div></div>
+                <div><p>Review your credit report for signs of error, theft or fraud.</p><small class="muted">Demo score</small></div>
               </div>
               <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
             </article>
@@ -931,6 +981,8 @@
   .profile .chevron { width: 13px; height: 13px; color: var(--muted); }
   .account-menu { position: relative; }
   .account-dropdown {
+    max-height: min(500px, calc(100dvh - 110px));
+    overflow-y: auto;
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
@@ -950,7 +1002,10 @@
     text-transform: uppercase;
     color: var(--muted);
   }
+  .customer-row { display: flex; align-items: center; border-radius: 12px; }.customer-row:hover { background: var(--page); }
   .account-option {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -965,7 +1020,7 @@
   .account-option:hover, .account-option:focus-visible { background: var(--page); }
   .account-option[aria-checked='true'] { background: var(--banner); }
   .account-meta { display: grid; gap: 1px; min-width: 0; }
-  .account-meta strong { font-size: 13px; font-weight: 650; }
+  .account-meta strong { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
   .account-meta small { font-size: 11px; color: var(--muted); }
   .account-option .avatar { width: 28px; height: 28px; font-size: 12px; }
   .account-check { width: 16px; height: 16px; margin-left: auto; color: var(--link); flex: none; }
@@ -1171,7 +1226,7 @@
   .credit p { font-size: 14px; color: var(--muted); }
   .utility > .link { margin-top: auto; font-size: 13px; }
   .credit { display: flex; align-items: center; gap: 12px; }
-  .gauge { flex: none; width: 78px; height: 78px; padding: 4px; border-radius: 50%; background: conic-gradient(from 225deg, #568825 0 71%, var(--border) 71% 75%, transparent 75%); }
+  .gauge { flex: none; width: 78px; height: 78px; padding: 4px; border-radius: 50%; background: conic-gradient(from 225deg, var(--score-color) 0 var(--score-progress), var(--border) var(--score-progress) 75%, transparent 75%); }
   .gauge div { display: grid; width: 100%; height: 100%; place-content: center; text-align: center; border-radius: 50%; background: var(--surface); }
   .gauge strong { font-size: 24px; line-height: 1; }
   .gauge small { font-size: 10px; color: var(--muted); }

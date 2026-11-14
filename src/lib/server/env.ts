@@ -49,5 +49,12 @@ export function resolveEnv(platform?: App.Platform): RuntimeEnv {
   const CARDS_MODE: RuntimeEnv['CARDS_MODE'] =
     read(sources, 'CARDS_MODE').toLowerCase() === 'off' ? 'off' : 'v2';
 
-  return { NESSIE_API_KEY, NESSIE_BASE_URL, GEMINI_API_KEY, GEMINI_MODEL, LLM, CARDS_MODE };
+  return {
+    NESSIE_API_KEY,
+    NESSIE_BASE_URL,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    LLM,
+    CARDS_MODE
+  };
 }

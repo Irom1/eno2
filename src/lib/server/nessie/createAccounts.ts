@@ -2,6 +2,7 @@ import type { RuntimeEnv } from '../env';
 import { NessieClient, type FetchLike } from './client';
 import { buildDemoTransactions, demoAccountTotals, seedNessieTransactions, type DemoAccountType } from './seedTransactions';
 import type { DemoCard, SpendingCategory } from '../../spending';
+import { seedNessieObligations } from './seedObligations';
 
 /** Open only the selected demo accounts and populate each with sample history. */
 export async function createNessieAccounts(
@@ -40,6 +41,8 @@ export async function createNessieAccounts(
       if (!accountId) { errors.push(`The ${type.toLowerCase()} account was created, but I couldn’t find it to add its demo activity.`); continue; }
       const seeded = await seedNessieTransactions(accountId, type, runtime, fetchImpl, transactions);
       if (!seeded.complete) errors.push(`Your ${type.toLowerCase()} account is ready, but I could only confirm ${seeded.created} of its 100 demo transactions.`);
+      const obligations = await seedNessieObligations(accountId, type, totals.balance, runtime, fetchImpl);
+      if (!obligations.complete) errors.push(`I could confirm ${obligations.bills} sample bills and ${obligations.loans} sample loans for your ${type.toLowerCase()} account. Some of that sample data may still be missing.`);
     } catch {
       // A write can succeed before a connection fails. Never retry it blindly.
       return { accountError: `Your profile is ready, but I couldn’t confirm the ${type.toLowerCase()} account. Let’s check your dashboard before trying to open another one.` };

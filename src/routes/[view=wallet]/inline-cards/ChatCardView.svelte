@@ -7,6 +7,7 @@
   import AccountCard from './AccountCard.svelte';
   import LoanCard from './LoanCard.svelte';
   import LocationCard from './LocationCard.svelte';
+  import AtmLocatorCard from './AtmLocatorCard.svelte';
   import RecurringChargeCard from './RecurringChargeCard.svelte';
   import RewardCard from './RewardCard.svelte';
   import GoalCard from './GoalCard.svelte';
@@ -36,7 +37,11 @@
 {:else if card.kind === 'loan'}
   <LoanCard {card} />
 {:else if card.kind === 'location'}
-  <LocationCard {card} />
+  {#if card.payload.type === 'atm'}
+    <AtmLocatorCard {card} />
+  {:else}
+    <LocationCard {card} />
+  {/if}
 {:else if card.kind === 'recurring'}
   <RecurringChargeCard {card} />
 {:else if card.kind === 'reward'}

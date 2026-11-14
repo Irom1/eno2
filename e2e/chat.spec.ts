@@ -1790,24 +1790,64 @@ test.describe('chat prompts', () => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Find an ATM near Arlington');
 
-    const card = page.locator('.location-card');
+    const card = page.locator('.atm-locator-card');
     await expect(card).toHaveCount(1);
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute('data-kind', 'location');
 
+    await expect(card.locator('.name')).toContainText('Arlington');
+    await expect(card.locator('.hours')).not.toBeEmpty();
+
     const text = await card.innerText();
     expect(text).toContain('Arlington');
-    // Primitive: no distance, recommendation, or directions copy.
-    expect(text.toLowerCase()).not.toMatch(/miles|distance|recommend|tip:|directions/);
+    // Primitive: no recommendation or directions copy.
+    expect(text.toLowerCase()).not.toMatch(/recommend|tip:|directions/);
+
+    // The map is a keyless OpenStreetMap embed, never a Mapbox image proxy.
+    const map = card.locator('iframe.atm-map');
+    await expect(map).toHaveCount(1);
+    const src = await map.getAttribute('src');
+    expect(src).toMatch(/^https:\/\/www\.openstreetmap\.org\/export\/embed\.html\?/);
+    expect(src).toContain('marker=');
+    expect(src?.toLowerCase()).not.toContain('mapbox');
+    expect(src?.toLowerCase()).not.toContain('access_token');
+    expect(await card.innerHTML()).not.toContain('access_token');
+    expect(await card.innerHTML()).not.toContain('mapbox');
+    await expect(page.locator('.location-card')).toHaveCount(0);
 
     await expect(page.locator('.chat-card')).toHaveCount(0);
-    await expect(page.locator('.entity-card .location-card')).toHaveCount(1);
+    await expect(page.locator('.entity-card .atm-locator-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the location card renders inline inside the prose bubble'
+      'the ATM locator card renders inline inside the prose bubble'
     ).toBe(true);
 
     await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('"Find an ATM near Cambridge, MA" is honest about distant results', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await runPrompt(page, 'Find an ATM near Cambridge, MA');
+
+    const prose = await assistantText(page);
+    expect(prose).toContain("couldn't find any ATMs within 25 miles");
+    expect(prose).toMatch(/closest option is [\d,]+ miles away/);
+    expect(prose).toMatch(/straight-line/i);
+    expect(prose).not.toMatch(/ATMs near/i);
+    expect(prose).not.toMatch(/near "Cambridge/i);
+
+    // The nearest ATM still renders its map card, even though it is far away.
+    const card = page.locator('.atm-locator-card');
+    await expect(card).toHaveCount(1);
+    const map = card.locator('iframe.atm-map');
+    await expect(map).toHaveCount(1);
+    const src = await map.getAttribute('src');
+    expect(src).toMatch(/^https:\/\/www\.openstreetmap\.org\/export\/embed\.html\?/);
+    await expect(card.locator('.distance')).toContainText('mi away');
+
     expectNoErrors(errors);
   });
 

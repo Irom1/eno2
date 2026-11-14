@@ -58,6 +58,7 @@ export interface WalletTransaction {
   status: string;
   medium?: string;
   balanceAfter?: number;
+  demoImpact?: 'green' | 'non-green';
 }
 
 export type AccountTint = 'aqua' | 'slate' | 'peach' | 'rose';

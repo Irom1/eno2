@@ -314,11 +314,30 @@ describe('resolvePresentCard', () => {
     expect(Object.keys(merchant?.payload ?? {})).not.toContain('zip');
 
     const locations = collect('find_nearby_atms', {}, {
-      results: [{ _id: 'atm-1', name: 'ATM One' }]
+      results: [
+        { _id: 'atm-1', name: 'ATM One', lat: 38.88, lng: -77.1 }
+      ]
     });
     expect(resolvePresentCard(locations, 'location', 'atm-1', session)).toMatchObject({
       kind: 'location',
-      entityId: 'location:atm-1'
+      entityId: 'location:atm-1',
+      payload: { type: 'atm', lat: 38.88, lng: -77.1 }
+    });
+
+    const branches = collect('find_nearby_branches', {}, {
+      results: [
+        {
+          _id: 'branch-1',
+          name: 'Branch One',
+          address: { street: '1 Main', city: 'Arlington', state: 'VA', zip: '22201' },
+          lat: 38.9,
+          lng: -77.2
+        }
+      ]
+    });
+    expect(resolvePresentCard(branches, 'location', 'branch-1', session)).toMatchObject({
+      kind: 'location',
+      payload: { type: 'branch', address: '1 Main, Arlington, VA 22201' }
     });
   });
 

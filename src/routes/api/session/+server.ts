@@ -3,6 +3,8 @@ import type { RequestEvent } from './$types';
 import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
 import { resolveEnv } from '$lib/server/env';
 import { callTool, withMcp } from '$lib/server/mcp';
+import { isDeletedDemoCustomer } from '$lib/server/deletedDemoCustomers';
+import { isRemovedCustomer } from '$lib/customerDeletion';
 import { isClosedProfile } from '$lib/server/nessie/closeProfile';
 import {
   createSession,
@@ -58,6 +60,7 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
 
   const customerId = typeof body.customerId === 'string' ? body.customerId.trim() : '';
   if (!customerId) return json({ error: 'customerId is required' }, { status: 400 });
+  if (isDeletedDemoCustomer(customerId)) return json({ error: 'Unknown customerId' }, { status: 404 });
 
   if (customerId === GUEST_CUSTOMER_ID) {
     return respondWithSession(cookies, request, createSession({
@@ -72,7 +75,7 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
     return await withMcp(runtime, async (mcp) => {
       const customerResult = await callTool(mcp, 'nessie_get_customer', { customerId });
       const match = customerResult.data as RawCustomer | null;
-      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId || isClosedProfile(match)) {
+      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId || isRemovedCustomer(match) || isClosedProfile(match)) {
         return json({ error: 'Unknown customerId' }, { status: 404 });
       }
 
