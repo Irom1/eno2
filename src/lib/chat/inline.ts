@@ -28,6 +28,92 @@ function clampOffset(value: unknown, length: number): number {
   return Math.min(Math.max(value, 0), length);
 }
 
+/** Markdown spans that must never be split across a card boundary. */
+const CODE_SPAN = /`[^`\n]+`/g;
+const BOLD_SPAN = /\*\*[^*\n]+\*\*/g;
+const ITALIC_SPAN = /\*[^*\n]+\*/g;
+
+type SpanRange = [start: number, end: number];
+
+function findSpans(source: string, pattern: RegExp): SpanRange[] {
+  const ranges: SpanRange[] = [];
+  pattern.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source)) !== null) {
+    ranges.push([match.index, match.index + match[0].length]);
+    if (match[0].length === 0) pattern.lastIndex += 1;
+  }
+  return ranges;
+}
+
+/** Replace span characters so later scans cannot pair markers across a span. */
+function maskSpans(source: string, ranges: readonly SpanRange[]): string {
+  const chars = source.split('');
+  for (const [start, end] of ranges) {
+    for (let index = start; index < end; index += 1) chars[index] = '\n';
+  }
+  return chars.join('');
+}
+
+/** Collect code, bold, then italic spans without overlapping matches. */
+function markdownSpans(source: string): SpanRange[] {
+  const code = findSpans(source, CODE_SPAN);
+  const withoutCode = maskSpans(source, code);
+  const bold = findSpans(withoutCode, BOLD_SPAN);
+  const withoutCodeOrBold = maskSpans(withoutCode, bold);
+  const italic = findSpans(withoutCodeOrBold, ITALIC_SPAN);
+  return [...code, ...bold, ...italic];
+}
+
+/**
+ * Move a card offset out of a markdown span so the splitter never leaves one
+ * text block with an opening `**`/`*`/`` ` `` and the next with its closer.
+ * Offsets at or outside a span boundary are returned unchanged.
+ */
+function safeMarkdownOffset(source: string, offset: number): number {
+  const spans = markdownSpans(source);
+  let safe = offset;
+  let moved = true;
+  while (moved) {
+    moved = false;
+    for (const [start, end] of spans) {
+      if (safe > start && safe < end) {
+        safe = end;
+        moved = true;
+      }
+    }
+  }
+  return safe;
+}
+
+/**
+ * Buffer inline cards until the streamed prose reaches their anchor. While a
+ * turn is pending, only cards with a real offset at or before the current text
+ * length are shown, so a card never renders before the text that introduces it.
+ * Once the turn completes every card is returned; `inlineBlocks` then clamps
+ * cards without a real anchor to the end of the text.
+ */
+export function revealInlineCards<T extends { afterText?: number }>(
+  cards: T[],
+  textLength: number,
+  pending: boolean
+): T[] {
+  const list = Array.isArray(cards)
+    ? cards.filter((card): card is T => Boolean(card) && typeof card === 'object')
+    : [];
+
+  // At `done`, reveal everything; unanchored cards render after the text.
+  if (!pending) return list;
+
+  const length =
+    typeof textLength === 'number' && Number.isFinite(textLength) ? Math.max(0, textLength) : 0;
+
+  return list.filter((card) => {
+    const after = card.afterText;
+    return typeof after === 'number' && Number.isFinite(after) && after <= length;
+  });
+}
+
 /**
  * Split assistant text at each card's `afterText` offset. Cards without a
  * finite offset go at the end. Cards at the same offset are grouped in order.
@@ -54,7 +140,7 @@ export function inlineBlocks<T extends { afterText?: number }>(
     const placed: PlacedCard<T>[] = list
       .map((card, index) => ({
         card,
-        offset: clampOffset(card.afterText, source.length),
+        offset: safeMarkdownOffset(source, clampOffset(card.afterText, source.length)),
         index
       }))
       .sort((a, b) => a.offset - b.offset || a.index - b.index);

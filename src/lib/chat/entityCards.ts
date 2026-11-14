@@ -46,9 +46,125 @@ export interface TransactionListEntityCard {
   afterText?: number;
 }
 
-export type EntityCard = TransactionEntityCard | TransactionListEntityCard;
+export interface PieSlice {
+  label: string;
+  amount: number;
+  share: number; // 0..1
+}
+
+export interface SpendingPiePayload {
+  period: string; // e.g. "October 2026"
+  total: number;
+  slices: PieSlice[];
+}
+
+export interface SpendingPieEntityCard {
+  id: number;
+  entityId: string; // 'spending-pie'
+  kind: 'spending-pie';
+  payload: SpendingPiePayload;
+  afterText?: number;
+}
+
+export interface BillCardPayload {
+  billId: string;
+  payee: string;
+  amount: number | null;
+  dueDate: string;
+  status?: string;
+  accountId?: string;
+  customerId?: string;
+}
+
+export interface BillEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'bill';
+  payload: BillCardPayload;
+  afterText?: number;
+}
+
+export interface AccountCardPayload {
+  accountId: string;
+  nickname: string;
+  type: string;
+  maskedNumber: string;
+  balance: number | null;
+  rewards: number | null;
+  customerId?: string;
+}
+
+export interface AccountEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'account';
+  payload: AccountCardPayload;
+  afterText?: number;
+}
+
+export interface LoanCardPayload {
+  loanId: string;
+  type: string;
+  balance: number | null;
+  monthlyPayment: number | null;
+  status?: string;
+  accountId?: string;
+  customerId?: string;
+}
+
+export interface LoanEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'loan';
+  payload: LoanCardPayload;
+  afterText?: number;
+}
+
+export interface LocationCardPayload {
+  locationId: string;
+  name: string;
+  address: string;
+  hours?: string;
+  customerId?: string;
+}
+
+export interface LocationEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'location';
+  payload: LocationCardPayload;
+  afterText?: number;
+}
+
+export interface RecurringChargeCardPayload {
+  chargeId: string;
+  description: string;
+  averageAmount: number | null;
+  monthsSeen: number;
+  lastDate: string;
+  customerId?: string;
+}
+
+export interface RecurringChargeEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'recurring';
+  payload: RecurringChargeCardPayload;
+  afterText?: number;
+}
+
+export type EntityCard =
+  | TransactionEntityCard
+  | TransactionListEntityCard
+  | SpendingPieEntityCard
+  | BillEntityCard
+  | AccountEntityCard
+  | LoanEntityCard
+  | LocationEntityCard
+  | RecurringChargeEntityCard;
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
+export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
 
 /**
  * Deep link into the dashboard account activity view for one transaction.
@@ -65,6 +181,20 @@ export function transactionHref(
   const transaction = typeof transactionId === 'string' ? transactionId.trim() : '';
   if (!customer || !account || !transaction) return undefined;
   return `/dashboard?customer=${encodeURIComponent(customer)}&account=${encodeURIComponent(account)}&txn=${encodeURIComponent(transaction)}`;
+}
+
+/**
+ * Deep link into the dashboard account view. Returns undefined unless both ids
+ * are present so the card renders without a broken link.
+ */
+export function accountHref(
+  customerId: string | undefined,
+  accountId: string | undefined
+): string | undefined {
+  const customer = typeof customerId === 'string' ? customerId.trim() : '';
+  const account = typeof accountId === 'string' ? accountId.trim() : '';
+  if (!customer || !account) return undefined;
+  return `/dashboard?customer=${encodeURIComponent(customer)}&account=${encodeURIComponent(account)}`;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -265,6 +395,569 @@ export function transactionListCard(
   }
 }
 
+const MONTH_KEY = /^\d{4}-\d{2}$/;
+
+function utcMonthKey(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** `"2026-10"` -> `"October 2026"`; malformed keys are returned unchanged. */
+export function spendingPiePeriod(month: string): string {
+  if (!MONTH_KEY.test(month)) return month;
+  const [year, monthIndex] = month.split('-').map(Number);
+  const date = new Date(Date.UTC(year, monthIndex - 1, 1));
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(date);
+  } catch {
+    return month;
+  }
+}
+
+interface CategoryTotal {
+  label: string;
+  amount: number;
+}
+
+/** Whitelist `{category, total}` entries, dropping non-positive totals. */
+function categoryTotals(value: unknown): CategoryTotal[] {
+  if (!Array.isArray(value)) return [];
+  const totals: CategoryTotal[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const label = typeof entry.category === 'string' ? entry.category.trim() : '';
+    const amount =
+      typeof entry.total === 'number' && Number.isFinite(entry.total) ? entry.total : 0;
+    if (!label || amount <= 0) continue;
+    totals.push({ label, amount });
+  }
+  return totals;
+}
+
+/**
+ * Normalize the insight_spending_breakdown payload into a primitive pie card:
+ * one period and category shares. The latest complete month wins; if none is
+ * complete, the latest positive month is used, then the window-wide categories.
+ * The top five categories stay distinct and the rest merge into `Other`.
+ */
+export function spendingPieCard(
+  payload: unknown,
+  afterText: number,
+  startId: number
+): SpendingPieEntityCard | null {
+  try {
+    if (!isRecord(payload)) return null;
+
+    const currentKey = utcMonthKey(new Date());
+    const breakdowns: Array<{
+      month: string;
+      total: number;
+      categories: CategoryTotal[];
+    }> = [];
+    if (Array.isArray(payload.monthlyBreakdown)) {
+      for (const entry of payload.monthlyBreakdown) {
+        if (!isRecord(entry)) continue;
+        const month = typeof entry.month === 'string' ? entry.month : '';
+        if (!MONTH_KEY.test(month)) continue;
+        const total =
+          typeof entry.total === 'number' && Number.isFinite(entry.total) ? entry.total : 0;
+        breakdowns.push({ month, total, categories: categoryTotals(entry.categories) });
+      }
+    }
+
+    const complete = breakdowns.filter(
+      (entry) => entry.month < currentKey && entry.total > 0 && entry.categories.length > 0
+    );
+    const pool = complete.length > 0
+      ? complete
+      : breakdowns.filter((entry) => entry.total > 0 && entry.categories.length > 0);
+    const latest = pool.reduce<(typeof pool)[number] | undefined>(
+      (best, entry) => (!best || entry.month > best.month ? entry : best),
+      undefined
+    );
+
+    let categories: CategoryTotal[];
+    let total: number;
+    let period: string;
+    if (latest) {
+      categories = latest.categories;
+      total = latest.total;
+      period = spendingPiePeriod(latest.month);
+    } else {
+      categories = categoryTotals(payload.categories);
+      total =
+        typeof payload.totalSpend === 'number' && Number.isFinite(payload.totalSpend)
+          ? payload.totalSpend
+          : 0;
+      period = 'Last 3 months';
+    }
+    if (categories.length === 0) return null;
+
+    const sorted = [...categories].sort((a, b) => b.amount - a.amount);
+    const top = sorted.slice(0, 5);
+    const remainder = sorted.slice(5);
+    const slices: Array<{ label: string; amount: number }> = top.map((entry) => ({
+      label: entry.label,
+      amount: entry.amount
+    }));
+    if (remainder.length > 0) {
+      slices.push({
+        label: 'Other',
+        amount: remainder.reduce((sum, entry) => sum + entry.amount, 0)
+      });
+    }
+
+    const sliceTotal = slices.reduce((sum, slice) => sum + slice.amount, 0);
+    if (sliceTotal <= 0) return null;
+    const denominator = total > 0 ? total : sliceTotal;
+    const rawShares = slices.map((slice) => slice.amount / denominator);
+    const shareSum = rawShares.reduce((sum, share) => sum + share, 0);
+    if (shareSum <= 0) return null;
+
+    const normalized: PieSlice[] = slices.map((slice, index) => ({
+      label: slice.label,
+      amount: slice.amount,
+      share: rawShares[index] / shareSum
+    }));
+
+    const card: SpendingPieEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: SPENDING_PIE_ENTITY_ID,
+      kind: 'spending-pie',
+      payload: { period, total: denominator, slices: normalized }
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+function trimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function optionalTrimmed(value: unknown): string | undefined {
+  const text = trimmedString(value);
+  return text.length > 0 ? text : undefined;
+}
+
+/** Keep only the last four digits, preserving an existing bullet/star mask. */
+export function normalizeMaskedAccountNumber(value: unknown): string {
+  const raw = trimmedString(value);
+  if (!raw) return '';
+  const digits = raw.replace(/\D+/g, '');
+  if (digits.length >= 4) return `\u2022\u2022\u2022\u2022 ${digits.slice(-4)}`;
+  if (/[•*]/.test(raw)) return raw.replace(/\s+/g, ' ').trim();
+  return raw;
+}
+
+/**
+ * Normalize insight_upcoming_bills into one primitive bill card. The card shows
+ * the largest bill (earliest due date breaks ties), matching the deterministic
+ * prose that names the largest amount. Malformed or empty bills are skipped.
+ */
+export function billCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): BillEntityCard | null {
+  try {
+    if (!isRecord(payload) || !Array.isArray(payload.bills)) return null;
+
+    interface Candidate {
+      index: number;
+      billId: string;
+      payee: string;
+      amount: number | null;
+      dueDate: string;
+      status?: string;
+      accountId?: string;
+    }
+
+    const candidates: Candidate[] = [];
+    for (let index = 0; index < payload.bills.length; index += 1) {
+      const entry = payload.bills[index];
+      if (!isRecord(entry)) continue;
+
+      const payee = trimmedString(entry.payee);
+      if (!payee) continue;
+
+      const amount = finiteNumberOrNull(entry.amount);
+      // Negative amounts are malformed for a bill; zero stays visible.
+      if (amount !== null && amount < 0) continue;
+
+      const dueDate = trimmedString(entry.dueDate);
+      if (!dueDate) continue;
+
+      const rawId = entry.billId ?? entry._id;
+      const billId =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+
+      candidates.push({
+        index,
+        billId,
+        payee,
+        amount,
+        dueDate,
+        ...(optionalTrimmed(entry.status) ? { status: optionalTrimmed(entry.status) } : {}),
+        ...(optionalTrimmed(entry.accountId)
+          ? { accountId: optionalTrimmed(entry.accountId) }
+          : {})
+      });
+    }
+
+    if (candidates.length === 0) return null;
+
+    const selected = candidates.reduce((best, entry) => {
+      const bestAmount = best.amount === null ? Number.NEGATIVE_INFINITY : best.amount;
+      const entryAmount = entry.amount === null ? Number.NEGATIVE_INFINITY : entry.amount;
+      if (entryAmount !== bestAmount) return entryAmount > bestAmount ? entry : best;
+      if (entry.dueDate !== best.dueDate) return entry.dueDate < best.dueDate ? entry : best;
+      return entry.index < best.index ? entry : best;
+    });
+
+    const customerId = optionalTrimmed(context?.customerId);
+    const payloadOut: BillCardPayload = {
+      billId: selected.billId,
+      payee: selected.payee,
+      amount: selected.amount,
+      dueDate: selected.dueDate,
+      ...(selected.status ? { status: selected.status } : {}),
+      ...(selected.accountId ? { accountId: selected.accountId } : {}),
+      ...(customerId ? { customerId } : {})
+    };
+
+    const entityId =
+      payloadOut.billId ||
+      `bill|${payloadOut.payee}|${payloadOut.dueDate}|${
+        payloadOut.amount === null ? 'null' : String(payloadOut.amount)
+      }`;
+
+    const card: BillEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId,
+      kind: 'bill',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build a single-account card. Account lists (zero or more than one row) return
+ * null so the prose answers instead of rendering an all-accounts dump.
+ */
+export function accountCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): AccountEntityCard | null {
+  try {
+    const items = asItems(payload);
+    if (items.length !== 1) return null;
+
+    const item = items[0];
+    const rawId = item._id ?? item.id;
+    const accountId =
+      (typeof rawId === 'string' || typeof rawId === 'number') &&
+      String(rawId).trim().length > 0
+        ? String(rawId).trim()
+        : '';
+    const type = trimmedString(item.type);
+    if (!accountId || !type) return null;
+
+    const nickname = trimmedString(item.nickname) || type;
+    const maskedNumber = normalizeMaskedAccountNumber(
+      item.accountNumber ?? item.account_number
+    );
+    const customerId =
+      optionalTrimmed(item.customerId ?? item.customer_id) ??
+      optionalTrimmed(context?.customerId);
+
+    const payloadOut: AccountCardPayload = {
+      accountId,
+      nickname,
+      type,
+      maskedNumber,
+      balance: finiteNumberOrNull(item.balance),
+      rewards: finiteNumberOrNull(item.rewards),
+      ...(customerId ? { customerId } : {})
+    };
+
+    const card: AccountEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: `account:${accountId}`,
+      kind: 'account',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build one primitive loan card from a loans tool payload. When several loans
+ * are returned, the largest balance wins (type/description breaks ties);
+ * malformed rows and rows without an id or type/description are skipped.
+ */
+export function loanCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): LoanEntityCard | null {
+  try {
+    const items = asItems(payload);
+    if (items.length === 0) return null;
+
+    interface Candidate {
+      index: number;
+      loanId: string;
+      type: string;
+      balance: number | null;
+      monthlyPayment: number | null;
+      status?: string;
+      accountId?: string;
+    }
+
+    const candidates: Candidate[] = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const rawId = item._id ?? item.id;
+      const loanId =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+      const label = trimmedString(item.type) || trimmedString(item.description);
+      if (!loanId || !label) continue;
+
+      candidates.push({
+        index,
+        loanId,
+        type: label,
+        balance: finiteNumberOrNull(item.amount),
+        monthlyPayment: finiteNumberOrNull(item.monthlyPayment),
+        ...(optionalTrimmed(item.status) ? { status: optionalTrimmed(item.status) } : {}),
+        ...(optionalTrimmed(item.accountId) ? { accountId: optionalTrimmed(item.accountId) } : {})
+      });
+    }
+
+    if (candidates.length === 0) return null;
+
+    const selected = candidates.reduce((best, entry) => {
+      const bestBalance = best.balance === null ? Number.NEGATIVE_INFINITY : best.balance;
+      const entryBalance = entry.balance === null ? Number.NEGATIVE_INFINITY : entry.balance;
+      if (entryBalance !== bestBalance) return entryBalance > bestBalance ? entry : best;
+      if (entry.type !== best.type) return entry.type < best.type ? entry : best;
+      return entry.index < best.index ? entry : best;
+    });
+
+    const customerId = optionalTrimmed(context?.customerId);
+
+    const payloadOut: LoanCardPayload = {
+      loanId: selected.loanId,
+      type: selected.type,
+      balance: selected.balance,
+      monthlyPayment: selected.monthlyPayment,
+      ...(selected.status ? { status: selected.status } : {}),
+      ...(selected.accountId ? { accountId: selected.accountId } : {}),
+      ...(customerId ? { customerId } : {})
+    };
+
+    const card: LoanEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: `loan:${selected.loanId}`,
+      kind: 'loan',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+function locationAddress(value: unknown): string {
+  if (!isRecord(value)) return '';
+  const street = trimmedString(value.street);
+  const city = trimmedString(value.city);
+  const state = trimmedString(value.state);
+  const zip = trimmedString(value.zip);
+  const cityStateZip = [city, [state, zip].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ');
+  return [street, cityStateZip].filter(Boolean).join(', ');
+}
+
+function locationHours(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text.length > 0 ? text : undefined;
+  }
+  if (!Array.isArray(value)) return undefined;
+  const parts = value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+/**
+ * Build one primitive location card from an ATM/branch payload. The first
+ * whitelisted result is shown; ATMs carry no street address, so `address`
+ * stays empty rather than inventing one.
+ */
+export function locationCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): LocationEntityCard | null {
+  try {
+    const items = asItems(payload);
+    for (const item of items) {
+      const rawId = item._id ?? item.id;
+      const locationId =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+      const name = trimmedString(item.name);
+      if (!locationId || !name) continue;
+
+      const hours = locationHours(item.hours);
+      const customerId = optionalTrimmed(context?.customerId);
+      const payloadOut: LocationCardPayload = {
+        locationId,
+        name,
+        address: locationAddress(item.address),
+        ...(hours ? { hours } : {}),
+        ...(customerId ? { customerId } : {})
+      };
+
+      const card: LocationEntityCard = {
+        id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+        entityId: `location:${locationId}`,
+        kind: 'location',
+        payload: payloadOut
+      };
+      if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+        card.afterText = afterText;
+      }
+      return card;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build one primitive recurring-charge card. The largest average amount wins;
+ * the source has no cadence or next date, so none is invented.
+ */
+export function recurringCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): RecurringChargeEntityCard | null {
+  try {
+    if (!isRecord(payload) || !Array.isArray(payload.recurringCharges)) return null;
+
+    interface Candidate {
+      index: number;
+      description: string;
+      averageAmount: number | null;
+      monthsSeen: number;
+      lastDate: string;
+    }
+
+    const candidates: Candidate[] = [];
+    for (let index = 0; index < payload.recurringCharges.length; index += 1) {
+      const entry = payload.recurringCharges[index];
+      if (!isRecord(entry)) continue;
+      const description = trimmedString(entry.description);
+      if (!description) continue;
+      const monthsSeen =
+        typeof entry.monthsSeen === 'number' && Number.isFinite(entry.monthsSeen)
+          ? Math.max(0, Math.floor(entry.monthsSeen))
+          : 0;
+      candidates.push({
+        index,
+        description,
+        averageAmount: finiteNumberOrNull(entry.averageAmount),
+        monthsSeen,
+        lastDate: trimmedString(entry.lastDate)
+      });
+    }
+
+    if (candidates.length === 0) return null;
+
+    const selected = candidates.reduce((best, entry) => {
+      const bestAmount =
+        best.averageAmount === null ? Number.NEGATIVE_INFINITY : best.averageAmount;
+      const entryAmount =
+        entry.averageAmount === null ? Number.NEGATIVE_INFINITY : entry.averageAmount;
+      if (entryAmount !== bestAmount) return entryAmount > bestAmount ? entry : best;
+      return entry.index < best.index ? entry : best;
+    });
+
+    const amountKey =
+      selected.averageAmount === null ? 'null' : String(selected.averageAmount);
+    const chargeId = `${selected.description}|${amountKey}`;
+    const customerId = optionalTrimmed(context?.customerId);
+    const payloadOut: RecurringChargeCardPayload = {
+      chargeId,
+      description: selected.description,
+      averageAmount: selected.averageAmount,
+      monthsSeen: selected.monthsSeen,
+      lastDate: selected.lastDate,
+      ...(customerId ? { customerId } : {})
+    };
+
+    const card: RecurringChargeEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: chargeId,
+      kind: 'recurring',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Merge rows into a single list card, dedupe by transaction id, cap the rows,
  * and keep the earliest anchor (a real anchor beats end-of-text).
@@ -378,11 +1071,94 @@ function anchorEnd(source: string, tokenEnd: number): number {
   return offset;
 }
 
+/** Candidate token runs used to anchor a card after the entity it names. */
+function anchorCandidates(card: EntityCard): string[][] {
+  if (card.kind === 'transaction') {
+    const description =
+      typeof card.payload?.description === 'string' ? card.payload.description : '';
+    const keys = descriptionTokens(description);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  if (card.kind === 'bill') {
+    const payee = typeof card.payload?.payee === 'string' ? card.payload.payee : '';
+    const keys = tokenize(payee).map((token) => token.norm);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  if (card.kind === 'account') {
+    const nickname =
+      typeof card.payload?.nickname === 'string' ? card.payload.nickname : '';
+    const nicknameKeys = tokenize(nickname).map((token) => token.norm);
+    const typeKeys = tokenize(
+      typeof card.payload?.type === 'string' ? card.payload.type : ''
+    ).map((token) => token.norm);
+
+    const candidates: string[][] = [];
+    if (nicknameKeys.length > 0) candidates.push(nicknameKeys);
+    if (nicknameKeys.length > 1) {
+      const token = firstMeaningfulToken(nicknameKeys);
+      if (token) candidates.push([token]);
+    }
+    if (typeKeys.length > 0) candidates.push(typeKeys);
+    return candidates;
+  }
+
+  if (card.kind === 'loan') {
+    const label = typeof card.payload?.type === 'string' ? card.payload.type : '';
+    const keys = tokenize(label).map((token) => token.norm);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  if (card.kind === 'location') {
+    const name = typeof card.payload?.name === 'string' ? card.payload.name : '';
+    const keys = tokenize(name).map((token) => token.norm);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  if (card.kind === 'recurring') {
+    const description =
+      typeof card.payload?.description === 'string' ? card.payload.description : '';
+    const keys = descriptionTokens(description);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  return [];
+}
+
 /**
- * Reposition transaction cards after the merchant mention in the assistant
- * text. Returns copies; cards with no mention keep their existing `afterText`.
+ * Reposition entity cards after the mention they introduce: transactions and
+ * recurring charges after their description, bills after their payee, accounts
+ * after their nickname (falling back to type), loans after their type, and
+ * locations after their name. Returns copies; cards with no mention keep their
+ * existing `afterText`. Non-anchored kinds (lists, pies) are left unchanged.
  */
-export function anchorTransactionCards(text: string, cards: EntityCard[]): EntityCard[] {
+export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard[] {
   const source = typeof text === 'string' ? text : '';
   const list = Array.isArray(cards) ? cards : [];
 
@@ -394,19 +1170,23 @@ export function anchorTransactionCards(text: string, cards: EntityCard[]): Entit
     for (const card of list) {
       if (!card || typeof card !== 'object' || Array.isArray(card)) continue;
 
-      if (card.kind !== 'transaction') {
+      if (
+        card.kind !== 'transaction' &&
+        card.kind !== 'bill' &&
+        card.kind !== 'account' &&
+        card.kind !== 'loan' &&
+        card.kind !== 'location' &&
+        card.kind !== 'recurring'
+      ) {
         anchored.push({ ...card });
         continue;
       }
 
-      const description =
-        typeof card.payload?.description === 'string' ? card.payload.description : '';
-      const keys = descriptionTokens(description);
-
-      let match = findTokenMatch(textTokens, keys, cursor);
-      if (!match && keys.length > 1) {
-        const token = firstMeaningfulToken(keys);
-        if (token) match = findTokenMatch(textTokens, [token], cursor);
+      const candidates = anchorCandidates(card);
+      let match: TokenMatch | null = null;
+      for (const keys of candidates) {
+        match = findTokenMatch(textTokens, keys, cursor);
+        if (match) break;
       }
 
       if (!match) {
@@ -426,6 +1206,14 @@ export function anchorTransactionCards(text: string, cards: EntityCard[]): Entit
       (card) => Boolean(card) && typeof card === 'object' && !Array.isArray(card)
     ).map((card) => ({ ...card }));
   }
+}
+
+/**
+ * Reposition transaction cards after the merchant mention in the assistant
+ * text. Thin wrapper over `anchorEntityCards` for existing callers.
+ */
+export function anchorTransactionCards(text: string, cards: EntityCard[]): EntityCard[] {
+  return anchorEntityCards(text, cards);
 }
 
 function anomalyPhrase(card: TransactionEntityCard): string {
@@ -462,9 +1250,13 @@ export function anomalyExplanation(cards: EntityCard[]): string {
       ...transactions.filter((card) => card.payload?.flag === 'duplicate')
     ];
     const phrases = ordered.map(anomalyPhrase);
+    const tip =
+      transactions.length > 1
+        ? 'Review both charges and report anything you don’t recognize.'
+        : 'Review the charge and report anything you don’t recognize.';
 
-    if (phrases.length === 1) return `You have ${phrases[0]}.`;
-    return `You have ${phrases[0]} and ${phrases[1]}.`;
+    if (phrases.length === 1) return `You have ${phrases[0]}. ${tip}`;
+    return `You have ${phrases[0]} and ${phrases[1]}. ${tip}`;
   } catch {
     return '';
   }

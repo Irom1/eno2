@@ -6,9 +6,11 @@
 
   interface Props {
     card: TransactionEntityCard;
+    /** Render as a compact row inside an assistant bubble, without CardFrame. */
+    inline?: boolean;
   }
 
-  let { card }: Props = $props();
+  let { card, inline = false }: Props = $props();
 
   const payload = $derived(card.payload);
   const dateText = $derived(payload.date ? dateLabel(payload.date) : '');
@@ -40,25 +42,44 @@
   </span>
 {/snippet}
 
-<CardFrame {label}>
-  <div class="transaction-card" data-kind="transaction">
-    {#if href}
-      <a
-        class="transaction-link"
-        {href}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`Open ${payload.description} in your account`}
-      >
-        {@render content(true)}
-      </a>
-    {:else}
-      <div class="transaction-link">
-        {@render content(false)}
-      </div>
-    {/if}
-  </div>
-</CardFrame>
+{#if inline}
+  {#if href}
+    <a
+      class="transaction-card inline transaction-link"
+      data-kind="transaction"
+      {href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open ${payload.description} in your account`}
+    >
+      {@render content(true)}
+    </a>
+  {:else}
+    <div class="transaction-card inline transaction-link" data-kind="transaction">
+      {@render content(false)}
+    </div>
+  {/if}
+{:else}
+  <CardFrame {label}>
+    <div class="transaction-card" data-kind="transaction">
+      {#if href}
+        <a
+          class="transaction-link"
+          {href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Open ${payload.description} in your account`}
+        >
+          {@render content(true)}
+        </a>
+      {:else}
+        <div class="transaction-link">
+          {@render content(false)}
+        </div>
+      {/if}
+    </div>
+  </CardFrame>
+{/if}
 
 <style>
   .transaction-card {
@@ -72,6 +93,24 @@
     min-width: 0;
     color: inherit;
     text-decoration: none;
+  }
+  .transaction-card.inline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px 0;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    box-shadow: none;
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+  }
+  .transaction-card.inline .description {
+    font-size: 13px;
   }
   .details {
     display: grid;

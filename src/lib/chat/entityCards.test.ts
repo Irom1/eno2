@@ -1,13 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  accountCard,
+  accountHref,
+  anchorEntityCards,
   anchorTransactionCards,
   anomalyExplanation,
   anomalyTransactionCards,
+  billCard,
+  loanCard,
+  locationCard,
   mergeEntityCards,
   mergeTransactionListCards,
+  normalizeMaskedAccountNumber,
+  recurringCard,
+  spendingPieCard,
+  spendingPiePeriod,
   transactionHref,
   transactionListCard,
+  type AccountEntityCard,
+  type BillEntityCard,
   type EntityCard,
+  type LoanEntityCard,
+  type LocationEntityCard,
+  type RecurringChargeEntityCard,
+  type SpendingPieEntityCard,
   type TransactionEntityCard,
   type TransactionListEntityCard
 } from './entityCards.js';
@@ -329,8 +345,9 @@ describe('anomalyExplanation', () => {
     ]);
 
     expect(sentence).toBe(
-      'You have a suspiciously large transaction at APPLE STORE and a possible duplicate transaction at NETFLIX.COM.'
+      'You have a suspiciously large transaction at APPLE STORE and a possible duplicate transaction at NETFLIX.COM. Review both charges and report anything you don’t recognize.'
     );
+    expect(sentence).toContain('Review both charges and report anything you don’t recognize.');
     expect(sentence).not.toContain('$');
     expect(sentence).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     expect(sentence.toLowerCase()).not.toContain('outlier');
@@ -338,10 +355,10 @@ describe('anomalyExplanation', () => {
 
   it('handles a single unusual or duplicate card', () => {
     expect(anomalyExplanation([transactionCard(1, 'APPLE STORE')])).toBe(
-      'You have a suspiciously large transaction at APPLE STORE.'
+      'You have a suspiciously large transaction at APPLE STORE. Review the charge and report anything you don’t recognize.'
     );
     expect(anomalyExplanation([transactionCard(1, 'NETFLIX.COM', 'duplicate')])).toBe(
-      'You have a possible duplicate transaction at NETFLIX.COM.'
+      'You have a possible duplicate transaction at NETFLIX.COM. Review the charge and report anything you don’t recognize.'
     );
   });
 
@@ -625,5 +642,837 @@ describe('mergeEntityCards', () => {
         [{ id: 2 } as unknown as EntityCard]
       ).map((entry) => entry.entityId)
     ).toEqual(['a']);
+  });
+});
+
+describe('spendingPieCard', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function breakdown(month: string, total: number, categories: unknown[]): unknown {
+    return { month, total, transactionCount: 10, categories };
+  }
+
+  function category(name: string, total: number, share = 0): unknown {
+    return { category: name, total, share };
+  }
+
+  it('chooses the latest complete month and formats the period', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T12:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-09', 100, [category('housing', 100, 1)]),
+          breakdown('2026-10', 240, [
+            category('shopping', 180, 0.75),
+            category('groceries', 60, 0.25)
+          ]),
+          // Current/partial month: ignored even though it has data.
+          breakdown('2026-11', 50, [category('dining', 50, 1)])
+        ]
+      },
+      42,
+      7
+    );
+
+    expect(card).not.toBeNull();
+    expect(card).toMatchObject({
+      id: 7,
+      entityId: 'spending-pie',
+      kind: 'spending-pie',
+      afterText: 42
+    });
+    expect(card?.payload.period).toBe('October 2026');
+    expect(card?.payload.total).toBe(240);
+    expect(card?.payload.slices).toEqual([
+      { label: 'shopping', amount: 180, share: 0.75 },
+      { label: 'groceries', amount: 60, share: 0.25 }
+    ]);
+    expect(card?.payload.slices[0]).not.toHaveProperty('category');
+    expect(card?.payload.slices[0]).not.toHaveProperty('total');
+  });
+
+  it('falls back to the latest positive breakdown when no month is complete', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-05T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-02', 80, [category('travel', 80, 1)]),
+          breakdown('2026-03', 120, [category('dining', 120, 1)])
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(card?.payload.period).toBe('March 2026');
+    expect(card?.payload.slices.map((slice) => slice.label)).toEqual(['dining']);
+  });
+
+  it('falls back to top-level categories and totalSpend', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        categories: [category('shopping', 300, 0.6), category('groceries', 200, 0.4)],
+        totalSpend: 500
+      },
+      5,
+      2
+    );
+
+    expect(card?.payload).toMatchObject({ period: 'Last 3 months', total: 500 });
+    expect(card?.payload.slices).toEqual([
+      { label: 'shopping', amount: 300, share: 0.6 },
+      { label: 'groceries', amount: 200, share: 0.4 }
+    ]);
+    expect(card?.afterText).toBe(5);
+  });
+
+  it('keeps the top five categories and aggregates the rest into Other', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-10', 490, [
+            category('one', 100),
+            category('two', 90),
+            category('three', 80),
+            category('four', 70),
+            category('five', 60),
+            category('six', 50),
+            category('seven', 40)
+          ])
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(card?.payload.slices.map((slice) => slice.label)).toEqual([
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'Other'
+    ]);
+    expect(card?.payload.slices[5]).toMatchObject({ label: 'Other', amount: 90 });
+    expect(card?.payload.slices[5]?.share).toBeCloseTo(90 / 490, 10);
+    expect(card?.payload.slices.reduce((sum, slice) => sum + slice.amount, 0)).toBe(490);
+  });
+
+  it('computes shares from amounts and normalizes them to one', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-10', 200, [
+            // Rounded incoming shares disagree with the amounts and must be ignored.
+            category('a', 50, 0.9),
+            category('b', 30, 0.05),
+            category('c', 20, 0.05)
+          ])
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(card?.payload.slices.map((slice) => slice.share)).toEqual([0.5, 0.3, 0.2]);
+    const sum = card?.payload.slices.reduce((total, slice) => total + slice.share, 0) ?? 0;
+    expect(sum).toBeCloseTo(1, 10);
+  });
+
+  it('drops non-positive categories and returns null when nothing remains', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const card = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-10', 100, [
+            category('rent', 100),
+            category('refund', -20),
+            category('empty', 0)
+          ])
+        ]
+      },
+      0,
+      1
+    );
+    expect(card?.payload.slices).toEqual([{ label: 'rent', amount: 100, share: 1 }]);
+
+    expect(
+      spendingPieCard(
+        { monthlyBreakdown: [breakdown('2026-10', 0, [category('rent', 0)])] },
+        0,
+        1
+      )
+    ).toBeNull();
+    expect(spendingPieCard({ categories: [category('refund', -5)], totalSpend: 0 }, 0, 1)).toBeNull();
+  });
+
+  it('never throws and returns null for malformed or empty payloads', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    expect(spendingPieCard(null, 0, 1)).toBeNull();
+    expect(spendingPieCard(undefined, 0, 1)).toBeNull();
+    expect(spendingPieCard('spending', 0, 1)).toBeNull();
+    expect(spendingPieCard([], 0, 1)).toBeNull();
+    expect(spendingPieCard({ monthlyBreakdown: 'nope' }, 0, 1)).toBeNull();
+    expect(spendingPieCard({ monthlyBreakdown: [null, 7, 'x'] }, 0, 1)).toBeNull();
+    expect(spendingPieCard({ categories: [] }, 0, 1)).toBeNull();
+    expect(spendingPieCard({}, 0, 1)).toBeNull();
+  });
+
+  it('formats month keys and tolerates malformed ones', () => {
+    expect(spendingPiePeriod('2026-01')).toBe('January 2026');
+    expect(spendingPiePeriod('2026-10')).toBe('October 2026');
+    expect(spendingPiePeriod('not-a-month')).toBe('not-a-month');
+  });
+
+  it('is left unchanged by transaction anchoring and merging', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-14T00:00:00Z'));
+
+    const pie = spendingPieCard(
+      {
+        monthlyBreakdown: [
+          breakdown('2026-10', 250, [category('shopping', 250)])
+        ]
+      },
+      77,
+      4
+    );
+    if (!pie) throw new Error('expected a pie card');
+
+    const anchored = anchorTransactionCards('You spent at APPLE STORE.', [pie]);
+    expect(anchored[0]?.kind).toBe('spending-pie');
+    expect(anchored[0]?.afterText).toBe(77);
+    expect(anchored[0]).not.toBe(pie);
+
+    const merged = mergeEntityCards([pie], []);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toBe(pie);
+    expect((merged[0] as SpendingPieEntityCard).payload.period).toBe('October 2026');
+
+    const mixed = mergeEntityCards([pie], [transactionCard(1, 'a')]);
+    expect(mixed[0]).toBe(pie);
+    expect(mixed.map((entry) => entry.kind)).toEqual(['spending-pie', 'transaction']);
+  });
+});
+
+describe('billCard', () => {
+  const bill = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    billId: 'bill-1',
+    payee: 'City Power',
+    nickname: 'Home utilities',
+    amount: 120,
+    dueDate: '2026-11-20',
+    daysUntil: 6,
+    status: 'pending',
+    accountId: 'acct-checking',
+    ...overrides
+  });
+
+  it('selects the largest bill and whitelists its fields', () => {
+    const card = billCard(
+      {
+        asOf: '2026-11-14',
+        days: 30,
+        count: 2,
+        total: 3120,
+        coverageRatio: 1.4,
+        shortfall: 0,
+        bills: [bill(), bill({ billId: 'bill-2', payee: 'Rent', amount: 3000 })]
+      },
+      42,
+      7,
+      { customerId: 'cust-1' }
+    );
+
+    expect(card).not.toBeNull();
+    expect(card).toMatchObject({
+      id: 7,
+      entityId: 'bill-2',
+      kind: 'bill',
+      afterText: 42,
+      payload: {
+        billId: 'bill-2',
+        payee: 'Rent',
+        amount: 3000,
+        dueDate: '2026-11-20',
+        status: 'pending',
+        accountId: 'acct-checking',
+        customerId: 'cust-1'
+      }
+    });
+    expect(Object.keys(card!.payload).sort()).toEqual([
+      'accountId',
+      'amount',
+      'billId',
+      'customerId',
+      'dueDate',
+      'payee',
+      'status'
+    ]);
+    expect(card!.payload).not.toHaveProperty('total');
+    expect(card!.payload).not.toHaveProperty('coverageRatio');
+    expect(card!.payload).not.toHaveProperty('shortfall');
+    expect(card!.payload).not.toHaveProperty('nickname');
+    expect(card!.payload).not.toHaveProperty('daysUntil');
+  });
+
+  it('breaks amount ties with the earliest due date', () => {
+    const card = billCard(
+      {
+        bills: [
+          bill({ billId: 'late', payee: 'Late', amount: 200, dueDate: '2026-12-02' }),
+          bill({ billId: 'early', payee: 'Early', amount: 200, dueDate: '2026-11-18' })
+        ]
+      },
+      0,
+      1
+    );
+    expect((card as BillEntityCard).payload.billId).toBe('early');
+  });
+
+  it('normalizes a missing amount to null and keeps zero amounts', () => {
+    const missing = billCard({ bills: [bill({ amount: undefined })] }, 0, 1);
+    expect(missing?.payload.amount).toBeNull();
+
+    const zero = billCard({ bills: [bill({ amount: 0 })] }, 0, 1);
+    expect(zero?.payload.amount).toBe(0);
+    expect(zero?.payload).not.toHaveProperty('customerId');
+  });
+
+  it('skips empty payees, negative amounts, missing due dates, and malformed rows', () => {
+    const card = billCard(
+      {
+        bills: [
+          null,
+          'nope',
+          bill({ payee: '   ', amount: 500, dueDate: '2026-11-18' }),
+          bill({ payee: 'Refund', amount: -5, dueDate: '2026-11-18' }),
+          bill({ payee: 'No date', amount: 400, dueDate: '' }),
+          bill({ payee: 'No amount', amount: undefined, dueDate: '2026-12-01', billId: '' })
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(card?.payload.payee).toBe('No amount');
+    expect(card?.payload.amount).toBeNull();
+    expect(card?.entityId).toBe('bill|No amount|2026-12-01|null');
+  });
+
+  it('returns null for empty or malformed payloads and never throws', () => {
+    expect(billCard(null, 0, 1)).toBeNull();
+    expect(billCard(undefined, 0, 1)).toBeNull();
+    expect(billCard('bills', 0, 1)).toBeNull();
+    expect(billCard({}, 0, 1)).toBeNull();
+    expect(billCard({ bills: [] }, 0, 1)).toBeNull();
+    expect(billCard({ bills: 'nope' }, 0, 1)).toBeNull();
+    expect(billCard({ items: [bill()] }, 0, 1)).toBeNull();
+  });
+});
+
+describe('accountCard', () => {
+  const account = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    _id: 'acct-checking',
+    nickname: 'Everyday Checking',
+    type: 'Checking',
+    accountNumber: '\u2022\u2022\u2022\u2022 4212',
+    balance: 4218,
+    rewards: 0,
+    customerId: 'cust-1',
+    ...overrides
+  });
+
+  it('builds one card from a single account and masks the number', () => {
+    const card = accountCard(account({ accountNumber: '12345678904212' }), 12, 4);
+
+    expect(card).toMatchObject({
+      id: 4,
+      entityId: 'account:acct-checking',
+      kind: 'account',
+      afterText: 12,
+      payload: {
+        accountId: 'acct-checking',
+        nickname: 'Everyday Checking',
+        type: 'Checking',
+        maskedNumber: '\u2022\u2022\u2022\u2022 4212',
+        balance: 4218,
+        rewards: 0,
+        customerId: 'cust-1'
+      }
+    });
+    expect(Object.keys(card!.payload).sort()).toEqual([
+      'accountId',
+      'balance',
+      'customerId',
+      'maskedNumber',
+      'nickname',
+      'rewards',
+      'type'
+    ]);
+  });
+
+  it('never renders an account list, whether empty or multi-row', () => {
+    expect(accountCard({ items: [account(), account({ _id: 'acct-2' })] }, 0, 1)).toBeNull();
+    expect(accountCard({ results: [] }, 0, 1)).toBeNull();
+    expect(accountCard({ accounts: [account(), account()] }, 0, 1)).toBeNull();
+  });
+
+  it('requires an id and type and falls back to type as the nickname', () => {
+    expect(accountCard({ nickname: 'No id', type: 'Checking' }, 0, 1)).toBeNull();
+    expect(accountCard({ _id: 'acct-1', nickname: 'No type' }, 0, 1)).toBeNull();
+
+    const card = accountCard({ _id: 'acct-1', type: 'savings' }, 0, 1);
+    expect(card?.payload.nickname).toBe('savings');
+    expect(card?.payload.balance).toBeNull();
+    expect(card?.payload.rewards).toBeNull();
+  });
+
+  it('copies context customerId and accepts snake_case ids', () => {
+    const card = accountCard(
+      account({ customerId: undefined, customer_id: 'cust-row' }),
+      0,
+      1,
+      { customerId: 'cust-context' }
+    );
+    expect(card?.payload.customerId).toBe('cust-row');
+
+    const fallback = accountCard(
+      { _id: 'acct-2', type: 'Checking' },
+      0,
+      1,
+      { customerId: 'cust-context' }
+    );
+    expect(fallback?.payload.customerId).toBe('cust-context');
+  });
+
+  it('normalizes masked account numbers and returns null on malformed payloads', () => {
+    expect(normalizeMaskedAccountNumber('1234567890123456')).toBe('\u2022\u2022\u2022\u2022 3456');
+    expect(normalizeMaskedAccountNumber('****1234')).toBe('\u2022\u2022\u2022\u2022 1234');
+    expect(normalizeMaskedAccountNumber('\u2022\u2022\u2022\u2022 1234')).toBe(
+      '\u2022\u2022\u2022\u2022 1234'
+    );
+    expect(normalizeMaskedAccountNumber('')).toBe('');
+
+    expect(accountCard(null, 0, 1)).toBeNull();
+    expect(accountCard(undefined, 0, 1)).toBeNull();
+    expect(accountCard('account', 0, 1)).toBeNull();
+    expect(accountCard([], 0, 1)).toBeNull();
+    expect(accountCard({ count: 3 }, 0, 1)).toBeNull();
+  });
+});
+
+describe('accountHref', () => {
+  it('builds the dashboard account link with encoded ids', () => {
+    expect(accountHref('cust-1', 'acct 2')).toBe(
+      '/dashboard?customer=cust-1&account=acct%202'
+    );
+  });
+
+  it('returns undefined when either id is missing', () => {
+    expect(accountHref(undefined, 'acct-2')).toBeUndefined();
+    expect(accountHref('cust-1', undefined)).toBeUndefined();
+    expect(accountHref('', 'acct-2')).toBeUndefined();
+    expect(accountHref('cust-1', '  ')).toBeUndefined();
+  });
+});
+
+describe('loanCard', () => {
+  const loan = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    _id: 'loan-1',
+    type: 'Auto',
+    status: 'active',
+    monthlyPayment: 412,
+    amount: 18400,
+    creditScore: 721,
+    description: 'Auto loan',
+    accountId: 'acct-credit',
+    ...overrides
+  });
+
+  it('selects the largest loan and whitelists its fields', () => {
+    const card = loanCard(
+      {
+        count: 2,
+        truncated: false,
+        items: [loan(), loan({ _id: 'loan-2', type: 'Home', amount: 220000 })],
+        extra: 'do not leak'
+      },
+      42,
+      5,
+      { customerId: 'cust-1' }
+    );
+
+    expect(card).toMatchObject({
+      id: 5,
+      entityId: 'loan:loan-2',
+      kind: 'loan',
+      afterText: 42,
+      payload: {
+        loanId: 'loan-2',
+        type: 'Home',
+        balance: 220000,
+        monthlyPayment: 412,
+        status: 'active',
+        accountId: 'acct-credit',
+        customerId: 'cust-1'
+      }
+    });
+    expect(Object.keys(card!.payload).sort()).toEqual([
+      'accountId',
+      'balance',
+      'customerId',
+      'loanId',
+      'monthlyPayment',
+      'status',
+      'type'
+    ]);
+    expect(card!.payload).not.toHaveProperty('creditScore');
+    expect(card!.payload).not.toHaveProperty('description');
+  });
+
+  it('breaks balance ties by type and falls back to description', () => {
+    const tied = loanCard(
+      {
+        items: [
+          loan({ _id: 'z', type: 'Personal', amount: 5000 }),
+          loan({ _id: 'a', type: 'Auto', amount: 5000 })
+        ]
+      },
+      0,
+      1
+    );
+    expect((tied as LoanEntityCard).payload.loanId).toBe('a');
+
+    const description = loanCard(
+      { items: [{ _id: 'loan-3', description: 'Student', amount: 900 }] },
+      0,
+      1
+    );
+    expect(description?.payload.type).toBe('Student');
+    expect(description?.payload.monthlyPayment).toBeNull();
+  });
+
+  it('skips rows without an id or type/description, and empty payloads', () => {
+    const card = loanCard(
+      {
+        items: [
+          null,
+          'nope',
+          loan({ _id: '', type: 'No id' }),
+          loan({ _id: 'loan-4', type: '', description: '' })
+        ]
+      },
+      0,
+      1
+    );
+    expect(card).toBeNull();
+
+    expect(loanCard(null, 0, 1)).toBeNull();
+    expect(loanCard(undefined, 0, 1)).toBeNull();
+    expect(loanCard('loans', 0, 1)).toBeNull();
+    expect(loanCard({ items: [] }, 0, 1)).toBeNull();
+    expect(loanCard({ count: 0, message: 'No loans' }, 0, 1)).toBeNull();
+  });
+});
+
+describe('locationCard', () => {
+  it('builds one branch card with a composed address and hours', () => {
+    const card = locationCard(
+      {
+        count: 2,
+        results: [
+          {
+            _id: 'branch-1',
+            name: 'Clarendon Branch',
+            address: {
+              street: '2900 N Glebe Rd',
+              city: 'Arlington',
+              state: 'VA',
+              zip: '22207'
+            },
+            hours: ['MON-FRI 9:00-17:00', 'SAT 9:00-13:00'],
+            lat: 38.9,
+            lng: -77.1
+          },
+          { _id: 'branch-2', name: 'Second', address: {} }
+        ]
+      },
+      12,
+      3,
+      { customerId: 'cust-1' }
+    );
+
+    expect(card).toMatchObject({
+      id: 3,
+      entityId: 'location:branch-1',
+      kind: 'location',
+      afterText: 12,
+      payload: {
+        locationId: 'branch-1',
+        name: 'Clarendon Branch',
+        address: '2900 N Glebe Rd, Arlington, VA 22207',
+        hours: 'MON-FRI 9:00-17:00, SAT 9:00-13:00',
+        customerId: 'cust-1'
+      }
+    });
+    expect(card!.payload).not.toHaveProperty('lat');
+    expect(card!.payload).not.toHaveProperty('lng');
+  });
+
+  it('keeps an ATM address empty rather than inventing one', () => {
+    const card = locationCard(
+      { count: 1, results: [{ _id: 'atm-1', name: 'Arlington ATM', hours: '24 HOURS' }] },
+      0,
+      1
+    );
+    expect(card?.payload.address).toBe('');
+    expect(card?.payload.hours).toBe('24 HOURS');
+  });
+
+  it('skips rows without an id or name and malformed payloads', () => {
+    expect(
+      locationCard(
+        {
+          results: [
+            null,
+            { _id: '', name: 'No id' },
+            { _id: 'x', name: '   ' },
+            { _id: 'atm-2', name: 'Kept', address: {} }
+          ]
+        },
+        0,
+        1
+      )?.payload.locationId
+    ).toBe('atm-2');
+
+    expect(locationCard(null, 0, 1)).toBeNull();
+    expect(locationCard('locations', 0, 1)).toBeNull();
+    expect(locationCard({ count: 0, message: 'none' }, 0, 1)).toBeNull();
+    expect(locationCard([], 0, 1)).toBeNull();
+  });
+});
+
+describe('recurringCard', () => {
+  it('selects the largest average amount and whitelists its fields', () => {
+    const card = recurringCard(
+      {
+        count: 2,
+        recurringCharges: [
+          {
+            description: 'NETFLIX',
+            monthsSeen: 3,
+            occurrences: 3,
+            averageAmount: 15.49,
+            lastAmount: 15.49,
+            lastDate: '2026-11-02'
+          },
+          {
+            description: 'RENT',
+            monthsSeen: 6,
+            occurrences: 6,
+            averageAmount: 1800,
+            lastAmount: 1800,
+            lastDate: '2026-11-01'
+          }
+        ]
+      },
+      20,
+      8,
+      { customerId: 'cust-1' }
+    );
+
+    expect(card).toMatchObject({
+      id: 8,
+      entityId: 'RENT|1800',
+      kind: 'recurring',
+      afterText: 20,
+      payload: {
+        chargeId: 'RENT|1800',
+        description: 'RENT',
+        averageAmount: 1800,
+        monthsSeen: 6,
+        lastDate: '2026-11-01',
+        customerId: 'cust-1'
+      }
+    });
+    expect(Object.keys(card!.payload).sort()).toEqual([
+      'averageAmount',
+      'chargeId',
+      'customerId',
+      'description',
+      'lastDate',
+      'monthsSeen'
+    ]);
+    expect(card!.payload).not.toHaveProperty('occurrences');
+    expect(card!.payload).not.toHaveProperty('lastAmount');
+  });
+
+  it('skips rows without a description and normalizes missing values', () => {
+    const card = recurringCard(
+      {
+        recurringCharges: [
+          null,
+          { description: '   ', averageAmount: 99, monthsSeen: 2 },
+          { description: 'GYM', averageAmount: undefined, monthsSeen: undefined, lastDate: '' }
+        ]
+      },
+      0,
+      1
+    );
+    expect(card?.payload).toMatchObject({
+      chargeId: 'GYM|null',
+      description: 'GYM',
+      averageAmount: null,
+      monthsSeen: 0,
+      lastDate: ''
+    });
+
+    expect(recurringCard(null, 0, 1)).toBeNull();
+    expect(recurringCard('recurring', 0, 1)).toBeNull();
+    expect(recurringCard({ recurringCharges: [] }, 0, 1)).toBeNull();
+    expect(recurringCard({ recurringCharges: 'nope' }, 0, 1)).toBeNull();
+  });
+});
+
+describe('anchorEntityCards', () => {
+  function bill(id: number, payee: string, afterText?: number): BillEntityCard {
+    return {
+      id,
+      entityId: `bill-${id}`,
+      kind: 'bill',
+      payload: { billId: `bill-${id}`, payee, amount: 100, dueDate: '2026-11-20' },
+      ...(afterText === undefined ? {} : { afterText })
+    };
+  }
+
+  function account(id: number, nickname: string, type: string, afterText?: number): AccountEntityCard {
+    return {
+      id,
+      entityId: `account:${id}`,
+      kind: 'account',
+      payload: {
+        accountId: `acct-${id}`,
+        nickname,
+        type,
+        maskedNumber: '\u2022\u2022\u2022\u2022 1234',
+        balance: 100,
+        rewards: 0
+      },
+      ...(afterText === undefined ? {} : { afterText })
+    };
+  }
+
+  it('anchors a bill after its payee mention', () => {
+    const text = 'The largest bill is City Power: it is due soon.';
+    const [anchored] = anchorEntityCards(text, [bill(1, 'City Power')]);
+    expect(anchored?.afterText).toBe(text.indexOf(':') + 1);
+  });
+
+  it('anchors an account after its nickname, falling back to type', () => {
+    const byNickname = 'Your Everyday Checking account is your main one.';
+    const [nicknameCard] = anchorEntityCards(byNickname, [
+      account(1, 'Everyday Checking', 'Checking')
+    ]);
+    expect(nicknameCard?.afterText).toBe(byNickname.indexOf('account'));
+
+    const byType = 'This savings account earns interest.';
+    const [typeCard] = anchorEntityCards(byType, [account(1, 'Emergency Fund', 'savings')]);
+    expect(typeCard?.afterText).toBe(byType.indexOf('account'));
+  });
+
+  it('anchors loans, locations, and recurring charges after their names', () => {
+    const loan: LoanEntityCard = {
+      id: 1,
+      entityId: 'loan:loan-1',
+      kind: 'loan',
+      payload: {
+        loanId: 'loan-1',
+        type: 'Auto',
+        balance: 18400,
+        monthlyPayment: 412
+      }
+    };
+    const location: LocationEntityCard = {
+      id: 2,
+      entityId: 'location:branch-1',
+      kind: 'location',
+      payload: { locationId: 'branch-1', name: 'Clarendon Branch', address: '' }
+    };
+    const recurring: RecurringChargeEntityCard = {
+      id: 3,
+      entityId: 'NETFLIX|15.49',
+      kind: 'recurring',
+      payload: {
+        chargeId: 'NETFLIX|15.49',
+        description: 'NETFLIX',
+        averageAmount: 15.49,
+        monthsSeen: 3,
+        lastDate: '2026-11-02'
+      }
+    };
+
+    const loanText = 'Your Auto loan is the largest debt.';
+    const [anchoredLoan] = anchorEntityCards(loanText, [loan]);
+    expect(anchoredLoan?.afterText).toBe(loanText.indexOf('loan'));
+
+    const branchText = 'The Clarendon Branch is closest.';
+    const [anchoredLocation] = anchorEntityCards(branchText, [location]);
+    expect(anchoredLocation?.afterText).toBe(branchText.indexOf('is'));
+
+    const recurringText = 'Your NETFLIX charge repeats.';
+    const [anchoredRecurring] = anchorEntityCards(recurringText, [recurring]);
+    expect(anchoredRecurring?.afterText).toBe(recurringText.indexOf('charge'));
+  });
+
+  it('leaves non-target cards unchanged, keeps copies, and never throws', () => {
+    const list = transactionListCard(
+      { items: [{ _id: 'a', description: 'APPLE', amount: 1 }] },
+      55,
+      2
+    );
+    if (!list) throw new Error('expected list card');
+    const anchored = anchorEntityCards('APPLE and City Power.', [
+      list,
+      bill(3, 'City Power', 9)
+    ]);
+
+    expect(anchored[0]?.kind).toBe('transaction-list');
+    expect(anchored[0]?.afterText).toBe(55);
+    expect(anchored[0]).not.toBe(list);
+    expect(anchored[1]?.afterText).toBe('APPLE and City Power.'.length);
+
+    expect(anchorEntityCards(null as unknown as string, [bill(1, 'City Power')])).toHaveLength(1);
+    expect(anchorEntityCards('text', null as unknown as EntityCard[])).toEqual([]);
+    expect(anchorEntityCards('text', [null as unknown as EntityCard])).toEqual([]);
+  });
+
+  it('preserves bill and account cards through mergeEntityCards without counting the cap', () => {
+    const billCardValue = bill(1, 'City Power', 5);
+    const accountCardValue = account(2, 'Everyday Checking', 'Checking', 6);
+    const lists = mergeEntityCards([billCardValue, accountCardValue], [transactionCard(1, 'x')]);
+
+    expect(lists.map((entry) => entry.kind)).toEqual(['bill', 'account', 'transaction']);
+    expect(lists[0]).toBe(billCardValue);
+    expect(lists[1]).toBe(accountCardValue);
   });
 });

@@ -22,6 +22,7 @@
   import ViewShell from './ViewShell.svelte';
   import ChatPanel from './ChatPanel.svelte';
   import CapitalOneLogo from './CapitalOneLogo.svelte';
+  import ClimateWiseWidget from '$lib/climate/ClimateWiseWidget.svelte';
 
   type ChatPanelApi = { ask: (text: string) => Promise<void> };
 
@@ -475,6 +476,14 @@
   });
 
   onMount(() => {
+    // ClimateWise "Make a plan with Eno" links arrive as /dashboard?ask=<prompt>.
+    const ask = page.url.searchParams.get('ask')?.trim();
+    if (ask) {
+      // Replace the ?ask= history entry so Back doesn't re-send the prompt.
+      chatPrompt = { text: ask, id: ++promptSeq };
+      void goto('/chat', { replaceState: true, keepFocus: true });
+    }
+
     try {
       const saved = localStorage.getItem('dashboard-theme');
       if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved;
@@ -742,6 +751,7 @@
               </div>
               <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
             </article>
+            <ClimateWiseWidget />
             {:else if !snapshotLoading && !snapshotError}
               <article class="panel utility getting-started">
                 <h2>Make yourself at home.</h2>

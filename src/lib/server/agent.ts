@@ -14,7 +14,7 @@ import type {
 import { generateGemini, isGeminiConfigured, streamGemini } from './gemini';
 import { buildAllowlist, assertToolArgsAllowed } from './guard';
 import { callTool as realCallTool, type McpSession, type ToolCallResult } from './mcp';
-import { mockAgent } from './mockAgent';
+import { mockAgent, composeFastAnswer, composeIntro, routeIntent } from './mockAgent';
 import { buildSystemInstruction } from './prompts';
 import { trimContents, type Content, type ContentPart, type Session } from './session';
 import { summarizeToolResult, toFunctionDeclarations, toolLabel } from './toolBridge';
@@ -283,6 +283,7 @@ export async function runGeminiAgent({
       if (isGuest || round.functionCalls.length === 0) break;
 
       const responseParts: ContentPart[] = [];
+      let fastTool: { name: string; data: unknown } | undefined;
       for (const call of round.functionCalls) {
         if (!call.name) continue;
         emit({ type: 'tool_start', name: call.name, label: toolLabel(call.name) });
@@ -350,6 +351,10 @@ export async function runGeminiAgent({
               payload: result.data,
               ...(accountId ? { accountId } : {})
             });
+            // Only a genuine single-tool first round can take the fast path.
+            if (round.functionCalls.length === 1) {
+              fastTool = { name: call.name, data: result.data };
+            }
           }
           responseParts.push({
             functionResponse: {
@@ -374,6 +379,25 @@ export async function runGeminiAgent({
 
       if (responseParts.length > 0) {
         contents.push({ role: 'user', parts: responseParts });
+      }
+
+      // Conservative fast path: for a known single-tool intent, narrate from
+      // the tool payload immediately instead of waiting for a second Gemini
+      // round (which can take >10s to produce its first token). Unknown or
+      // multi-tool questions keep the normal loop.
+      if (
+        fastTool &&
+        rounds === 1 &&
+        round.text.trim().length === 0 &&
+        fastTool.name === routeIntent(message).tool
+      ) {
+        const intro = composeIntro(fastTool.name);
+        const answer = composeFastAnswer(fastTool.name, fastTool.data, new Date(deps.now()), message);
+        const prose = `${intro}\n\n${answer}`;
+        emit({ type: 'text', delta: intro });
+        emit({ type: 'text', delta: `\n\n${answer}` });
+        contents.push({ role: 'model', parts: [{ text: prose }] });
+        break;
       }
     }
 

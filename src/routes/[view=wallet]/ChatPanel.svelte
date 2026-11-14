@@ -4,16 +4,23 @@
   import { createSseParser } from '$lib/sse.js';
   import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
   import {
-    anchorTransactionCards,
+    accountCard,
+    anchorEntityCards,
     anomalyExplanation,
     anomalyTransactionCards,
+    billCard,
+    loanCard,
+    locationCard,
     mergeEntityCards,
     mergeTransactionListCards,
+    recurringCard,
+    spendingPieCard,
     transactionListCard,
     type EntityCard,
+    type SpendingPieEntityCard,
     type TransactionListEntityCard
   } from '$lib/chat/entityCards.js';
-  import { inlineBlocks } from '$lib/chat/inline.js';
+  import { inlineBlocks, revealInlineCards } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
   import { STARTER_PROMPTS } from '$lib/chat/starters.js';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
@@ -21,6 +28,7 @@
     friendlyToolLabel,
     initialThinking,
     pushThinkingStep,
+    THINKING_COMPOSING,
     type ThinkingState
   } from '$lib/chat/thinking.js';
   import { visibleCards } from '$lib/chat/relevance.js';
@@ -29,6 +37,12 @@
   import FollowUps from './FollowUps.svelte';
   import TransactionCard from './inline-cards/TransactionCard.svelte';
   import TransactionListCard from './inline-cards/TransactionListCard.svelte';
+  import PieChartCard from './inline-cards/PieChartCard.svelte';
+  import BillCard from './inline-cards/BillCard.svelte';
+  import AccountCard from './inline-cards/AccountCard.svelte';
+  import LoanCard from './inline-cards/LoanCard.svelte';
+  import LocationCard from './inline-cards/LocationCard.svelte';
+  import RecurringChargeCard from './inline-cards/RecurringChargeCard.svelte';
 
   interface Props {
     open: boolean;
@@ -252,6 +266,11 @@
           }
           case 'insight': {
             if (typeof data.kind !== 'string') break;
+            // Cards are about to render; the model still owes us prose. Surface
+            // that phase so the wait between the card and the answer is legible.
+            if (message.pending && !message.text.trim()) {
+              thinking = pushThinkingStep(thinking, THINKING_COMPOSING);
+            }
             const payload = data.payload;
             const accountId = typeof data.accountId === 'string' ? data.accountId : '';
             const fingerprint = `${data.kind}:${JSON.stringify(payload)}`;
@@ -269,7 +288,8 @@
               kind: chatCardKind(data.kind),
               tool: data.kind,
               payload,
-              afterText: message.text.length
+              afterText:
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER
             });
             if (data.kind === 'insight_anomalies') {
               // If the tool result arrives before any prose, anchor the cards at
@@ -284,6 +304,117 @@
               });
               cardSeq += incoming.length;
               message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
+            }
+            if (data.kind === 'insight_spending_breakdown') {
+              // One primitive pie card per turn: a later spending insight in the
+              // same turn replaces the earlier one rather than stacking charts.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = spendingPieCard(payload, anchor, cardSeq + 1);
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card): card is SpendingPieEntityCard => card.kind === 'spending-pie'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'spending-pie' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (data.kind === 'insight_upcoming_bills') {
+              // One primitive bill card per turn. The prose names the largest
+              // bill; a later bills insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = billCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'bill'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'bill' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (chatCardKind(data.kind) === 'account') {
+              // Accounts are single-entity cards; an all-accounts list stays in
+              // prose, and a later account insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = accountCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'account'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'account' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (chatCardKind(data.kind) === 'loans') {
+              // One primitive loan card per turn: the largest balance wins, and
+              // a later loan insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = loanCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'loan'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'loan' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (
+              data.kind === 'find_nearby_atms' ||
+              data.kind === 'find_nearby_branches'
+            ) {
+              // One primitive location card per turn: the first result is shown,
+              // and a later location insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = locationCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'location'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'location' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (data.kind === 'insight_recurring_charges') {
+              // One primitive recurring-charge card per turn: the largest
+              // average amount wins, and a later insight replaces the card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = recurringCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'recurring'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'recurring' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
             }
             if (chatCardKind(data.kind) === 'transactions') {
               // Deposits and withdrawals in one turn share a single merged list.
@@ -412,10 +543,22 @@
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const arrangedCards = anchorTransactionCards(message.text, message.inlineCards ?? [])}
-        {@const blocks = inlineBlocks(message.text, arrangedCards)}
+        {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [])}
+        {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
+        {@const blocks = inlineBlocks(message.text, readyCards)}
         {@const hasBlocks = blocks.length > 0}
         {@const isThinking = message.pending && !hasBlocks}
+        {@const inlineTransactionTurn =
+          hasBlocks &&
+          blocks.some(
+            (block) =>
+              block.type === 'cards' && block.cards.some((card) => card.kind === 'transaction')
+          ) &&
+          !blocks.some(
+            (block) =>
+              block.type === 'cards' &&
+              block.cards.some((card) => card.kind !== 'transaction')
+          )}
         {#if hasBlocks || message.pending}
           <div class="assistant-turn" class:intro={message.intro}>
             <EnoThinking {variant} active={message.pending} size={40} />
@@ -438,28 +581,64 @@
                   </div>
                 </div>
               {/if}
-              {#each blocks as block, index (block.type + index)}
-                {#if block.type === 'text'}
-                  {#if block.text.trim()}
-                    <div class="bubble assistant">
-                      <div class="richtext">{@html renderMarkdown(block.text)}</div>
-                    </div>
-                  {/if}
-                {:else}
-                  {#each block.cards as card (card.id)}
-                    {#if card.kind === 'transaction'}
-                      <TransactionCard {card} />
-                    {:else if card.kind === 'transaction-list'}
-                      <TransactionListCard {card} />
+              {#if inlineTransactionTurn}
+                <div class="bubble assistant inline-transactions">
+                  {#each blocks as block, index (block.type + index)}
+                    {#if block.type === 'text'}
+                      {#if block.text.trim()}
+                        <div class="richtext">{@html renderMarkdown(block.text)}</div>
+                      {/if}
+                    {:else}
+                      {#each block.cards as card (card.id)}
+                        {#if card.kind === 'transaction'}
+                          <TransactionCard {card} inline />
+                        {/if}
+                      {/each}
                     {/if}
                   {/each}
-                {/if}
-              {/each}
-              {#if message.pending && hasBlocks}
-                <div class="loading-line status-line">
-                  <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                  <span>{thinking.current || 'Still working…'}</span>
+                  {#if message.pending}
+                    <div class="loading-line status-line">
+                      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span>{thinking.current || 'Still working…'}</span>
+                    </div>
+                  {/if}
                 </div>
+              {:else}
+                {#each blocks as block, index (block.type + index)}
+                  {#if block.type === 'text'}
+                    {#if block.text.trim()}
+                      <div class="bubble assistant">
+                        <div class="richtext">{@html renderMarkdown(block.text)}</div>
+                      </div>
+                    {/if}
+                  {:else}
+                    {#each block.cards as card (card.id)}
+                      {#if card.kind === 'transaction'}
+                        <TransactionCard {card} />
+                      {:else if card.kind === 'transaction-list'}
+                        <TransactionListCard {card} />
+                      {:else if card.kind === 'spending-pie'}
+                        <PieChartCard {card} />
+                      {:else if card.kind === 'bill'}
+                        <BillCard {card} />
+                      {:else if card.kind === 'account'}
+                        <AccountCard {card} />
+                      {:else if card.kind === 'loan'}
+                        <LoanCard {card} />
+                      {:else if card.kind === 'location'}
+                        <LocationCard {card} />
+                      {:else if card.kind === 'recurring'}
+                        <RecurringChargeCard {card} />
+                      {/if}
+                    {/each}
+                  {/if}
+                {/each}
+                {#if message.pending && hasBlocks}
+                  <div class="loading-line status-line">
+                    <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span>{thinking.current || 'Still working…'}</span>
+                  </div>
+                {/if}
               {/if}
               {#if message.intro && (booting || !ready)}
                 <p class="status-line intro-status">{status || 'Connecting…'}</p>
