@@ -9,7 +9,7 @@
   import AddressAutocomplete from '$lib/components/AddressAutocomplete.svelte';
   import { type AddressCandidate, type AddressCheck, type MailingAddress } from '$lib/address';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
-  import { accountChoiceSchema, accountTypesFor, emptyAnswers, SIGNUP_FIELDS, customerFromAnswers, type AccountChoice, type SignupAnswers, type AccountSelection, type SignupStage } from '$lib/signup';
+  import { accountChoiceSchema, accountTypesFor, emptyAnswers, SIGNUP_FIELDS, customerCreateSchema, customerFromAnswers, type AccountChoice, type SignupAnswers, type AccountSelection, type SignupStage } from '$lib/signup';
 
   interface ChoiceInput { selectedSpending?: SpendingPreferences['categories']; selectedAccounts?: AccountSelection }
   interface Message { id: number; role: 'eno' | 'you'; text: string; review?: SignupAnswers; accountChoice?: AccountChoice; spending?: SpendingPreferences; includeCreditCard?: boolean | null; choices?: 'spending' | 'accounts'; selectedCategories?: SpendingPreferences['categories']; selection?: AccountSelection; recommendedCard?: DemoCard | null; retryChoices?: ChoiceInput; card?: DemoCard | null; retry?: 'turn' | 'signup'; retryText?: string; selectedAddress?: MailingAddress; addressCheck?: AddressCheck; recovery?: boolean; dashboard?: string }
@@ -20,6 +20,7 @@
   let spending = $state<SpendingPreferences>(emptySpending());
   let includeCreditCard = $state<boolean | null>(null);
   let latestChoiceId = $state(0);
+  let currentStage = $state<SignupStage>('details');
   let matchingCard = $derived(includeCreditCard === false ? null : recommendDemoCard(spending));
   let readyToCreate = $state(false);
   let messages = $state<Message[]>([{ id: 1, role: 'eno', text: 'Hey, I’m Eno. Really glad you’re here.\n\nLet’s get you set up. What should I call you?' }]);
@@ -105,12 +106,14 @@
         spending = spendingPreferencesSchema.safeParse(draft.spending).success ? draft.spending : emptySpending();
         includeCreditCard = typeof draft.includeCreditCard === 'boolean' ? draft.includeCreditCard : null;
         latestChoiceId = typeof draft.latestChoiceId === 'number' ? draft.latestChoiceId : 0;
+        currentStage = ['details', 'spending', 'accounts', 'review'].includes(draft.currentStage) ? draft.currentStage : 'details';
         readyToCreate = draft.readyToCreate === true && spendingComplete(spending) && includeCreditCard !== null;
         latestReviewId = typeof draft.latestReviewId === 'number' ? draft.latestReviewId : 0;
         reviewFingerprint = draft.reviewFingerprint || '';
         attemptKey = typeof draft.attemptKey === 'string' ? draft.attemptKey : attemptKey;
         recovery = draft.recovery === true;
         createdCustomerId = typeof draft.createdCustomerId === 'string' ? draft.createdCustomerId : '';
+        if (currentStage === 'details') { latestChoiceId = 0; latestReviewId = 0; readyToCreate = false; }
       }
     } catch { /* A new conversation still works without storage. */ }
     const onTheme = (event: MediaQueryListEvent) => { systemDark = event.matches; };
@@ -122,7 +125,7 @@
 
   $effect(() => {
     if (!ready || completed) return;
-    try { sessionStorage.setItem(draftKey, JSON.stringify({ answers, accountChoice, spending, includeCreditCard, latestChoiceId, messages, pendingAddress, readyToCreate, latestReviewId, reviewFingerprint, attemptKey, recovery, createdCustomerId })); } catch { /* Keep the current conversation in memory. */ }
+    try { sessionStorage.setItem(draftKey, JSON.stringify({ answers, accountChoice, spending, includeCreditCard, currentStage, latestChoiceId, messages, pendingAddress, readyToCreate, latestReviewId, reviewFingerprint, attemptKey, recovery, createdCustomerId })); } catch { /* Keep the current conversation in memory. */ }
   });
 
   function toggleTheme() { theme = isDark ? 'light' : 'dark'; try { localStorage.setItem('dashboard-theme', theme); } catch { /* Keep this visit’s choice. */ } }
@@ -186,18 +189,22 @@
       const result = await response.json() as ConversationReply & { error?: string };
       if (!response.ok || !result.answers || !accountChoiceSchema.safeParse(result.accountChoice).success || !spendingPreferencesSchema.safeParse(result.spending).success) throw new Error(result.error || 'I lost my train of thought. Your details are still here — let’s try that message again.');
       if (disposed) return;
-      answers = result.answers; accountChoice = result.accountChoice; spending = result.spending; includeCreditCard = result.includeCreditCard; readyToCreate = result.ready;
+      answers = result.answers; accountChoice = result.accountChoice; spending = result.spending; includeCreditCard = result.includeCreditCard;
+      const detailsAccepted = result.addressCheck?.status === 'matched' && customerCreateSchema.safeParse(customerFromAnswers(answers)).success && !asksToConfirmAddress(result.message);
+      currentStage = detailsAccepted ? result.stage ?? (result.ready ? 'review' : 'details') : 'details';
+      readyToCreate = result.ready && currentStage === 'review';
+      if (currentStage !== 'review') { latestReviewId = 0; reviewFingerprint = ''; }
       pendingAddress = result.addressCheck?.status === 'correction' && result.addressCheck.candidates?.length === 1 ? result.addressCheck.candidates[0].address : result.addressCheck?.status === 'matched' && asksToConfirmAddress(result.message) ? result.addressCheck.address : undefined;
-      const choiceStep = result.stage === 'spending' || result.stage === 'accounts' ? result.stage : undefined;
+      const choiceStep = currentStage === 'spending' || currentStage === 'accounts' ? currentStage : undefined;
       const messageId = addEno(result.message, { addressCheck: result.addressCheck, ...(choiceStep ? { choices: choiceStep, selectedCategories: [...spending.categories], selection: { checking: accountChoice === 'undecided' || accountChoice === 'both' || accountChoice === 'checking', savings: accountChoice === 'undecided' || accountChoice === 'both' || accountChoice === 'savings', creditCard: includeCreditCard !== false }, recommendedCard: result.recommendedCard ?? recommendDemoCard(spending) } : {}) });
       latestChoiceId = choiceStep ? messageId : 0;
       const fingerprint = profileFingerprint(answers, accountChoice, spending, includeCreditCard);
-      if (result.ready && !result.confirmed && fingerprint !== reviewFingerprint) {
+      if (readyToCreate && !result.confirmed && fingerprint !== reviewFingerprint) {
         latestReviewId = addEno('Your profile, at a glance. Take a look before we make it official.', { review: { ...answers }, accountChoice, spending: { ...spending, categories: [...spending.categories] }, includeCreditCard, card: includeCreditCard === false ? null : result.card ?? recommendDemoCard(spending), addressCheck: result.addressCheck }, false);
         reviewFingerprint = fingerprint;
       }
       waiting = false;
-      if (result.confirmed) await submit();
+      if (result.confirmed && readyToCreate) await submit();
     } catch (cause) {
       if (!disposed) addEno(cause instanceof Error && cause.name !== 'AbortError' ? cause.message : 'That reply took a little longer than expected. Your details are still here — want to try again?', { retry: 'turn', retryText: text, selectedAddress, retryChoices: choices });
     } finally { clearTimeout(timeout); waiting = false; void settle(); }
@@ -236,6 +243,7 @@
         const response = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': attemptKey }, body: JSON.stringify({ ...customerFromAnswers(answers), accountChoice, spending, includeCreditCard }) });
         const result = await response.json() as { customerId?: string; error?: string; created?: boolean; accountError?: string; addressCheck?: AddressCheck };
         if (!response.ok && result.addressCheck) {
+          currentStage = 'details'; latestChoiceId = 0; latestReviewId = 0;
           pendingAddress = result.addressCheck.status === 'correction' && result.addressCheck.candidates?.length === 1 ? result.addressCheck.candidates[0].address : undefined;
           readyToCreate = result.addressCheck.status === 'unavailable';
           reviewFingerprint = '';
@@ -286,10 +294,10 @@
                 {#if message.addressCheck?.status === 'correction'}
                   <div class="address-choices">{#each message.addressCheck.candidates ?? [] as candidate}<button disabled={busy || recovery || !!createdCustomerId} onclick={() => selectAddress(candidate)}>{candidate.label}</button>{/each}</div>
                 {/if}
-                {#if message.choices}
+                {#if message.choices && message.id === latestChoiceId && currentStage === message.choices}
                   <SignupChoices step={message.choices} bind:categories={message.selectedCategories} bind:selection={message.selection} card={message.recommendedCard} disabled={busy || message.id !== latestChoiceId || recovery || !!createdCustomerId} oncontinue={() => continueChoices(message)} />
                 {/if}
-                {#if message.review}
+                {#if message.review && currentStage === 'review' && message.id === latestReviewId}
                   {#if message.addressCheck?.status === 'matched'}<p class="address-matched">✓ Street address matched · apartment/unit not verified</p>{/if}
                   <div class="profile-preview" aria-label="Your profile">
                     {#each [{ label: 'First name', value: message.review.first_name }, { label: 'Last name', value: message.review.last_name }, { label: 'Street address', value: `${message.review.street_number} ${message.review.street_name}` }, { label: 'City', value: message.review.city }, { label: 'State', value: message.review.state }, { label: 'ZIP', value: message.review.zip }] as row}

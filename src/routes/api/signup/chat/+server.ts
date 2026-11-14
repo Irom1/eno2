@@ -1,11 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { RequestEvent } from './$types';
 import { resolveEnv } from '$lib/server/env';
-import { onboardingRequestSchema, reconcileOnboarding, runOnboarding } from '$lib/server/onboarding';
+import { onboardingRequestSchema, onboardingStageMessage, reconcileOnboarding, runOnboarding } from '$lib/server/onboarding';
 import { customerCreateSchema, customerFromAnswers } from '$lib/signup';
 import { answersWithAddress, type AddressCheck } from '$lib/address';
 import { verifyAddress } from '$lib/server/address';
-import { isAddressAffirmative, isAffirmative, reviewFingerprint } from '$lib/signupConfirmation';
+import { asksToConfirmAddress, isAddressAffirmative, isAffirmative, reviewFingerprint } from '$lib/signupConfirmation';
+import { spendingComplete } from '$lib/spending';
 import { SIGNUP_FIELDS } from '$lib/signup';
 
 export const prerender = false;
@@ -26,12 +27,34 @@ export async function POST({ request, platform }: RequestEvent): Promise<Respons
       ? reconcileOnboarding(input, { reply, updates: Object.fromEntries(SIGNUP_FIELDS.map((key) => [key, null])), accountChoice: input.accountChoice, spending: null, confirmed: profileAccepted })
       : await runOnboarding(resolveEnv(platform), input);
     const address = customerCreateSchema.shape.address.safeParse(customerFromAnswers(result.answers).address);
-    if (!address.success) return json(result);
+    if (!address.success) {
+      if (input.selectedSpending || input.selectedAccounts) {
+        result.spending = parsed.data.spending; result.accountChoice = parsed.data.accountChoice; result.includeCreditCard = parsed.data.includeCreditCard;
+        result.message = address.error.issues[0].message;
+      }
+      return json({ ...result, stage: 'details', ready: false, confirmed: false, card: null, recommendedCard: null });
+    }
     let addressCheck: AddressCheck;
     try { addressCheck = await verifyAddress(address.data); }
     catch { addressCheck = { status: 'unavailable', message: 'The address check is taking a break. Your details are still here; we’ll need to check the address before creating your profile.' }; }
     if (addressCheck.status === 'matched' && addressCheck.address) result.answers = answersWithAddress(result.answers, addressCheck.address);
-    else { result.ready = false; result.confirmed = false; result.message += '\n\n' + addressCheck.message; }
+    const addressUnchanged = Object.keys(address.data).every((key) => result.answers[key as keyof typeof address.data] === parsed.data.answers[key as keyof typeof address.data]);
+    const awaitingConfirmation = !selectedAddress && (asksToConfirmAddress(result.message) || (!!input.pendingAddress && addressUnchanged));
+    if (addressCheck.status !== 'matched' || awaitingConfirmation || !customerCreateSchema.safeParse(customerFromAnswers(result.answers)).success) {
+      result.stage = 'details'; result.ready = false; result.confirmed = false;
+      result.card = null; result.recommendedCard = null;
+      if (input.selectedSpending || input.selectedAccounts) {
+        result.spending = parsed.data.spending; result.accountChoice = parsed.data.accountChoice; result.includeCreditCard = parsed.data.includeCreditCard;
+      }
+      if (addressCheck.status !== 'matched') result.message = addressCheck.message;
+    } else {
+      if (input.selectedAccounts && !spendingComplete(input.spending)) {
+        result.accountChoice = input.accountChoice; result.includeCreditCard = input.includeCreditCard;
+        result.stage = 'spending'; result.ready = false; result.confirmed = false;
+        result.message = 'Let’s pick the spending categories that matter to you first.';
+      }
+      result.message = onboardingStageMessage(result.message, result.stage);
+    }
     return json({ ...result, addressCheck });
   }
   catch { return json({ error: 'I lost my train of thought for a moment. Your details are still here — can we try that message again?' }, { status: 502 }); }

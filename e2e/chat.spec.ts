@@ -1761,7 +1761,7 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.transaction-card[data-flag]')).toHaveCount(0);
 
     // Each anomaly card links to its transaction with the finding _id.
-    const cardLinks = cards.locator('a.transaction-link');
+    const cardLinks = page.locator('a.transaction-card.transaction-link');
     await expect(cardLinks).toHaveCount(count);
     const cardHrefs = await cardLinks.evaluateAll((elements) =>
       elements.map((element) => ({
@@ -1787,7 +1787,7 @@ test.describe('chat prompts', () => {
       elements.map((element) => Boolean(element.closest('.bubble.assistant')))
     );
     expect(insideBubble.every(Boolean), 'every transaction card sits inside a bubble').toBe(true);
-    await expect(page.locator('.bubble.assistant .transaction-card a.transaction-link')).toHaveCount(
+    await expect(page.locator('.bubble.assistant a.transaction-card.transaction-link')).toHaveCount(
       count
     );
     await expect(page.locator('.chat-card .transaction-card')).toHaveCount(0);
@@ -1801,7 +1801,7 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(page.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
 
-    // Prose carries the explanation; cards sit after their merchant mention.
+    // Prose carries a separate reason; each card follows its complete explanation.
     const prose = (await assistantText(page)).trim();
     expect(prose.length, 'assistant prose explains the finding').toBeGreaterThan(0);
     expect(prose).toMatch(/duplicate|large|suspicious/i);

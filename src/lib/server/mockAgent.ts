@@ -4,6 +4,7 @@
  */
 import type { ToolCallResult } from "./mcp";
 import { GUEST_CUSTOMER_ID } from "../chat/guest";
+import { anomalyTransactionCards, completeAnomalyContext } from '../chat/entityCards';
 import type { AgentEvent, Emit } from "./events";
 import { trimContents, type Session } from "./session";
 import { summarizeToolResult, toolLabel } from "./toolBridge";
@@ -254,28 +255,7 @@ function anomaliesAnswer(data: unknown): string {
   if (findings.length === 0) {
     return "Nothing unusual found on this account.";
   }
-  const duplicate = findings.find(
-    (finding) =>
-      finding.type === "duplicate" && String(finding.description ?? "").toUpperCase().includes("NETFLIX")
-  );
-  const parts: string[] = [`I found ${num(payload.count)} alerts worth a look.`];
-  if (duplicate) {
-    parts.push(
-      `There's a possible duplicate ${String(duplicate.description)} charge for ${money(
-        duplicate.amount
-      )} on ${String(duplicate.date)}, earlier on ${String(duplicate.duplicateOf)}.`
-    );
-  }
-  const largePurchases = findings.filter((finding) => finding.type === "outlier");
-  if (largePurchases.length > 0) {
-    const first = largePurchases[0] ?? {};
-    parts.push(
-      `There's an unusually large purchase: ${String(first.description ?? "a charge")} for ${money(
-        first.amount
-      )} on ${String(first.date ?? "an unknown date")}.`
-    );
-  }
-  return parts.join(" ");
+  return completeAnomalyContext(`I found ${findings.length} alerts worth a look.`, anomalyTransactionCards(data, 0, 1));
 }
 
 function overviewAnswer(data: unknown): string {
