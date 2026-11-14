@@ -487,6 +487,7 @@
             initialPrompt={chatPrompt}
             bind:canSend
             bind:hasMessages
+            variant={isDark ? 'navy' : 'light'}
             onClose={() => void goto('/dashboard')}
           />
         </main>

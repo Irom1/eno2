@@ -6,6 +6,8 @@
   import { filterCardDuplication } from '$lib/chat/dedupe.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
   import { allowedKindsFor, classifyIntents, isCreditOnlyPrompt, visibleCards } from '$lib/chat/relevance.js';
+  import type { EnoVariant } from '$lib/eno.js';
+  import EnoThinking from '$lib/components/EnoThinking.svelte';
   import ChatCardRenderer from './chat-cards/ChatCardRenderer.svelte';
   import FollowUps from './FollowUps.svelte';
 
@@ -16,6 +18,7 @@
     onClose: () => void;
     canSend: boolean;
     hasMessages: boolean;
+    variant?: EnoVariant;
   }
 
   interface ChatMessage {
@@ -33,7 +36,8 @@
     initialPrompt,
     onClose,
     canSend = $bindable(),
-    hasMessages = $bindable()
+    hasMessages = $bindable(),
+    variant = 'light'
   }: Props = $props();
 
   let ready = $state(false);
@@ -313,18 +317,20 @@
 <div
   class="chat-panel"
   role="region"
-  aria-label="Capital One Assistant"
+  aria-label="Eno 2.0"
   inert={!open}
 >
   <header class="chat-header">
     <div class="chat-heading">
-      <h2>Capital One Assistant</h2>
+      <EnoThinking {variant} size={34} />
+      <h2>Eno 2.0</h2>
     </div>
   </header>
 
   <div class="chat-log" aria-live="polite" aria-label="Conversation" bind:this={logEl}>
     {#if messages.length === 0}
       <div class="empty-state">
+        <EnoThinking {variant} size={104} />
         <p class="empty-title">Hi — I can look at your spending, bills, and accounts.</p>
         {#if booting || !ready}
           <p class="status-line">{status || 'Connecting…'}</p>
@@ -348,7 +354,10 @@
             {#if showText || message.pending}
               <div class="bubble assistant">
                 {#if message.pending && !showText}
-                  <p class="status-line">{status || 'Looking that up…'}</p>
+                  <div class="thinking-row">
+                    <EnoThinking {variant} active size={40} />
+                    <p class="status-line">{status || 'Looking that up…'}</p>
+                  </div>
                 {/if}
                 {#if showText}
                   <div class="richtext">{@html renderMarkdown(displayText)}</div>
@@ -398,7 +407,7 @@
     padding: 16px 18px;
     border-bottom: 1px solid var(--border);
   }
-  .chat-heading { display: grid; gap: 7px; min-width: 0; }
+  .chat-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .chat-heading h2 {
     margin: 0;
     font-size: 15px;
@@ -414,7 +423,7 @@
     flex-direction: column;
     gap: 12px;
   }
-  .empty-state { display: grid; gap: 14px; margin: auto 0 0; }
+  .empty-state { display: grid; justify-items: start; gap: 14px; margin: auto 0 0; }
   .empty-title { font-weight: 600; line-height: 1.4; }
   .bubble {
     max-width: 88%;
@@ -451,6 +460,8 @@
     margin-top: 8px;
   }
   .status-line { color: var(--muted); font-size: 14px; }
+  .thinking-row { display: flex; align-items: center; gap: 10px; }
+  .thinking-row .status-line { margin: 0; }
   .richtext { line-height: 1.5; }
   .richtext :global(p) { margin: 0 0 8px; }
   .richtext :global(p:last-child) { margin-bottom: 0; }
