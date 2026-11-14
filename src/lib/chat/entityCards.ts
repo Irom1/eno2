@@ -416,7 +416,11 @@ export function anomalyExplanation(cards: EntityCard[]): string {
 }
 
 /**
- * Merge by entityId, preserve first occurrence order, cap the total.
+ * Merge anomaly transaction cards by entityId. Non-transaction cards already
+ * present (for example a transaction list) are preserved unchanged and never
+ * count toward `cap`. Result order: preserved non-transaction cards in their
+ * existing order, followed by anomaly cards in first-seen order (existing,
+ * then incoming), capped at `cap` anomaly cards.
  * Malformed entries are ignored.
  */
 export function mergeEntityCards(
@@ -425,29 +429,44 @@ export function mergeEntityCards(
   cap = 2
 ): EntityCard[] {
   const limit = normalizeCap(cap);
-  if (limit === 0) return [];
 
-  const merged: EntityCard[] = [];
-  const seen = new Set<string>();
+  const preserved: EntityCard[] = [];
+  const anomalies: EntityCard[] = [];
+  const preservedIds = new Set<string>();
+  const seenAnomalies = new Set<string>();
 
-  const add = (cards: unknown): void => {
+  const addPreserved = (cards: unknown): void => {
     if (!Array.isArray(cards)) return;
     for (const card of cards) {
-      if (merged.length >= limit) return;
       if (!isRecord(card)) continue;
       if (typeof card.entityId !== 'string') continue;
-      if (seen.has(card.entityId)) continue;
-      seen.add(card.entityId);
-      merged.push(card as unknown as EntityCard);
+      if (card.kind === 'transaction') continue;
+      if (preservedIds.has(card.entityId)) continue;
+      preservedIds.add(card.entityId);
+      preserved.push(card as unknown as EntityCard);
+    }
+  };
+
+  const addAnomalies = (cards: unknown): void => {
+    if (!Array.isArray(cards)) return;
+    for (const card of cards) {
+      if (anomalies.length >= limit) return;
+      if (!isRecord(card)) continue;
+      if (card.kind !== 'transaction') continue;
+      if (typeof card.entityId !== 'string') continue;
+      if (seenAnomalies.has(card.entityId)) continue;
+      seenAnomalies.add(card.entityId);
+      anomalies.push(card as unknown as EntityCard);
     }
   };
 
   try {
-    add(existing);
-    add(incoming);
+    addPreserved(existing);
+    addAnomalies(existing);
+    addAnomalies(incoming);
   } catch {
-    return merged;
+    return [...preserved, ...anomalies];
   }
 
-  return merged;
+  return [...preserved, ...anomalies];
 }

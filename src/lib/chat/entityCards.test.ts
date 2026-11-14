@@ -450,6 +450,31 @@ describe('mergeEntityCards', () => {
     expect(merged.map((entry) => entry.entityId)).toEqual(['a', 'b']);
   });
 
+  it('preserves transaction-list cards and caps only anomaly cards', () => {
+    const list = transactionListCard(
+      { items: [{ _id: 't-1', description: 'Coffee', amount: 4.5 }] },
+      10,
+      9
+    );
+    if (!list) throw new Error('expected a list card');
+
+    const existing = [list, card(1, 'a'), card(2, 'b')];
+    const incoming = [card(3, 'c'), card(4, 'a')];
+
+    const merged = mergeEntityCards(existing, incoming);
+    expect(merged[0]).toBe(list);
+    expect(merged.map((entry) => entry.kind)).toEqual([
+      'transaction-list',
+      'transaction',
+      'transaction'
+    ]);
+    expect(merged.slice(1).map((entry) => entry.entityId)).toEqual(['a', 'b']);
+
+    const zeroCap = mergeEntityCards(existing, incoming, 0);
+    expect(zeroCap).toEqual([list]);
+    expect(zeroCap[0]).toBe(list);
+  });
+
   it('respects a custom cap and never throws on malformed input', () => {
     expect(mergeEntityCards([card(1, 'a')], [card(2, 'b')], 1).map((e) => e.entityId)).toEqual([
       'a'
