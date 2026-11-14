@@ -12,7 +12,8 @@
 		refresh;
 		let cancelled = false;
 		report = null; // show "Loading" instead of the previous customer's score
-		fetch('/api/climate?days=30')
+		// same 90-day window as the ClimateWise card, so both show the same score
+		fetch('/api/climate?days=90')
 			.then((r) => (r.ok ? r.json() : null))
 			.then((d) => !cancelled && (report = d?.report ?? null))
 			.catch(() => {});

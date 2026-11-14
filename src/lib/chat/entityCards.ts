@@ -130,6 +130,8 @@ export interface LocationCardPayload {
   type?: 'atm' | 'branch';
   lat?: number;
   lng?: number;
+  /** Straight-line miles from the geocoded search location, when known. */
+  distanceMiles?: number;
   customerId?: string;
 }
 
@@ -1014,6 +1016,7 @@ export function locationCard(
       const hours = locationHours(item.hours);
       const address = locationAddress(item.address);
       const coords = locationCoordinates(item.lat, item.lng);
+      const distance = finiteNumberOrNull(item.distanceMiles);
       const type =
         context?.type ?? (address ? 'branch' : coords ? 'atm' : undefined);
       const customerId = optionalTrimmed(context?.customerId);
@@ -1024,6 +1027,7 @@ export function locationCard(
         ...(hours ? { hours } : {}),
         ...(type ? { type } : {}),
         ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+        ...(distance !== null && distance >= 0 ? { distanceMiles: distance } : {}),
         ...(customerId ? { customerId } : {})
       };
 

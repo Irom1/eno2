@@ -15,9 +15,9 @@ export interface RuntimeEnv {
   NESSIE_BASE_URL: string;
   GEMINI_API_KEY: string;
   GEMINI_MODEL: string;
-  /** Server-only Mapbox token for ATM map previews. Never sent to the client. */
-  MAPBOX_TOKEN?: string;
   LLM: 'gemini' | 'mock';
+  /** Server-only Mapbox public token for ATM Static Images previews. */
+  MAPBOX_API_KEY?: string;
   /** Cards v2 pipeline: `off` keeps today's client-only inference. Defaults to `v2`. */
   CARDS_MODE?: CardsMode;
 }
@@ -43,7 +43,7 @@ export function resolveEnv(platform?: App.Platform): RuntimeEnv {
   const NESSIE_BASE_URL = read(sources, 'NESSIE_BASE_URL') || DEFAULT_BASE_URL;
   const GEMINI_API_KEY = read(sources, 'GEMINI_API_KEY');
   const GEMINI_MODEL = read(sources, 'GEMINI_MODEL') || DEFAULT_MODEL;
-  const MAPBOX_TOKEN = read(sources, 'MAPBOX_TOKEN') || undefined;
+  const MAPBOX_API_KEY = read(sources, 'MAPBOX_API_KEY');
 
   const requested = read(sources, 'LLM').toLowerCase();
   const LLM: RuntimeEnv['LLM'] =
@@ -57,8 +57,8 @@ export function resolveEnv(platform?: App.Platform): RuntimeEnv {
     NESSIE_BASE_URL,
     GEMINI_API_KEY,
     GEMINI_MODEL,
-    ...(MAPBOX_TOKEN ? { MAPBOX_TOKEN } : {}),
     LLM,
+    MAPBOX_API_KEY,
     CARDS_MODE
   };
 }

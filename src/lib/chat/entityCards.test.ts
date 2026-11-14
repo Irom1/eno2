@@ -1316,7 +1316,8 @@ describe('locationCard', () => {
             name: 'Arlington ATM',
             hours: '24 HOURS',
             lat: 38.88,
-            lng: -77.1
+            lng: -77.1,
+            distanceMiles: 1.4
           }
         ]
       },
@@ -1329,6 +1330,7 @@ describe('locationCard', () => {
     expect(card?.payload.type).toBe('atm');
     expect(card?.payload.lat).toBe(38.88);
     expect(card?.payload.lng).toBe(-77.1);
+    expect(card?.payload.distanceMiles).toBe(1.4);
     expect(card?.entityId).toBe('location:atm-1');
   });
 

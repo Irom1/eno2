@@ -34,6 +34,8 @@ describe('mapboxStaticUrl', () => {
     expect(mapboxStaticUrl('token', 38.88, -77.1, 12)).toContain(
       '/-77.1,38.88,12,0/640x280@2x'
     );
+    expect(mapboxStaticUrl('token', 38.88, -77.1, 1)).not.toBeNull();
+    expect(mapboxStaticUrl('token', 38.88, -77.1, 20)).not.toBeNull();
   });
 
   it('returns null for a missing token', () => {
@@ -50,5 +52,12 @@ describe('mapboxStaticUrl', () => {
     expect(mapboxStaticUrl('token', 38.88, -77.1, 0)).toBeNull();
     expect(mapboxStaticUrl('token', 38.88, -77.1, 21)).toBeNull();
     expect(mapboxStaticUrl('token', 38.88, -77.1, Number.NaN)).toBeNull();
+  });
+
+  it('encodes the access token in the query string', () => {
+    const url = mapboxStaticUrl('pk.fake+slash/', 1, 2);
+    expect(url).not.toBeNull();
+    expect(url).toContain('?access_token=pk.fake%2Bslash%2F');
+    expect(url).not.toContain('pk.fake+slash/');
   });
 });

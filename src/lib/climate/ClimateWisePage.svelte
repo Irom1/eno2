@@ -1,7 +1,8 @@
 <script lang="ts">
 	import RingChart, { type RingItem } from './RingChart.svelte';
 	import CategoryIcon from './CategoryIcon.svelte';
-	import ClimateWiseMark from './ClimateWiseMark.svelte';
+	import logoLight from '$lib/assets/climatewise-logo-light.png';
+	import logoDark from '$lib/assets/climatewise-logo-dark.png';
 	import { CATEGORIES, CATEGORY_BY_ID, type ClimateReport } from './emissions';
 
 	type Theme = 'light' | 'dark' | 'system';
@@ -35,32 +36,26 @@
 		return () => mq.removeEventListener('change', on);
 	});
 	let isDark = $derived(theme === 'dark' || (theme === 'system' && systemDark));
-	// 'to-dark' / 'to-light' while the sunset/sunrise plays, so CSS can stage it
-	let shift = $state<'' | 'to-dark' | 'to-light'>('');
-	let shiftTimer: ReturnType<typeof setTimeout> | undefined;
 	function toggleTheme() {
-		shift = isDark ? 'to-light' : 'to-dark';
-		clearTimeout(shiftTimer);
-		shiftTimer = setTimeout(() => (shift = ''), 3500);
 		theme = isDark ? 'light' : 'dark';
 		try {
 			localStorage.setItem('dashboard-theme', theme);
 		} catch {}
 	}
 
-	let days = $state(90);
+	const DAYS = 90;
 	let attempt = $state(0);
 	let report = $state<ClimateReport | null>(null);
 	let customer = $state<{ firstName: string; lastName: string } | null>(null);
 	let error = $state('');
 	let selected = $state<string | null>(null);
+	let showInfo = $state(false);
 
 	$effect(() => {
-		const d = days;
 		attempt;
 		let cancelled = false;
 		error = '';
-		fetch(`/api/climate?days=${d}`)
+		fetch(`/api/climate?days=${DAYS}`)
 			.then((r) => (r.ok ? r.json() : Promise.reject(new Error('Request failed'))))
 			.then((data) => {
 				if (cancelled) return;
@@ -80,9 +75,6 @@
 	const niceDate = (iso: string) =>
 		new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-	let sortedCats = $derived(report ? [...report.categories].filter((c) => c.kg > 0).sort((a, b) => b.kg - a.kg) : []);
-	let topCat = $derived(sortedCats[0]);
-
 	let ringItems = $derived.by((): RingItem[] => {
 		if (!report) return [];
 		return report.categories
@@ -99,14 +91,6 @@
 
 	const titleCase = (t: string) =>
 		t.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\.Com\b/, '.com');
-
-	let headline = $derived.by(() => {
-		if (!report) return { big: '', sub: '' };
-		return topCat
-			? { big: topCat.label, sub: `Your biggest source · ${Math.round(topCat.share * 100)}% of emissions` }
-			: { big: 'No purchases', sub: '' };
-	});
-	let showInfo = $state(false);
 
 	// Hub layout: SVG connectors from the ring out to each box.
 	let hubEl = $state<HTMLElement | null>(null);
@@ -153,7 +137,7 @@
 
 </script>
 
-<div class="cw {shift}" data-theme={theme} style={colorVars}>
+<div class="cw" data-theme={theme} style={colorVars}>
 	<!-- Page-level control, off the card, matching the dashboard's toggle -->
 	<button class="theme-toggle" onclick={toggleTheme} aria-pressed={isDark}
 		aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
@@ -162,28 +146,22 @@
 	<article class="card" aria-labelledby="cw-title">
 		<div class="sky" aria-hidden="true">
 			<div class="sky-day"></div>
-			<div class="sky-golden"></div>
 			<div class="sky-night"></div>
 			<div class="sun"><span class="sun-day"></span><span class="sun-dusk"></span></div>
 		</div>
 
-		<!-- Seamless top: small controls in the corners, brand centered -->
-		<div class="corner left">
-			<div class="range" role="group" aria-label="Time range">
-				{#each [30, 90] as d}
-					<button aria-pressed={days === d} onclick={() => (days = d)}>{d}d</button>
-				{/each}
-			</div>
-		</div>
+		<!-- Seamless top: close button in the corner, brand centered -->
 		<div class="corner right">
 			<a class="icon-btn" href={backHref} aria-label="Close and go back to dashboard" title="Close">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
 			</a>
 		</div>
 		<header class="brand">
-			<span class="mark-badge"><ClimateWiseMark size={46} /></span>
-			<h1 id="cw-title">ClimateWise</h1>
-			{#if report}<p>Last {report.days} days · Updated {niceDate(report.asOf)}</p>{/if}
+			<!-- Both logo colorways stacked; the theme crossfades between them -->
+			<h1 id="cw-title" class="logo">
+				<img class="logo-light" src={logoLight} alt="ClimateWise" width="1000" height="392" />
+				<img class="logo-dark" src={logoDark} alt="" aria-hidden="true" width="1000" height="392" />
+			</h1>
 		</header>
 
 		{#if error}
@@ -201,21 +179,13 @@
 				</svg>
 
 				<!-- Ring -->
-				<div class="tabs-wrap">
-					<div class="section-title">
-						<h2>Emissions</h2>
-						<button class="info" aria-expanded={showInfo} aria-label="How this is calculated" onclick={() => (showInfo = !showInfo)}>i</button>
-					</div>
+				<div class="chart-head">
+					<h2 class="chart-title">Carbon emissions by category</h2>
+					<button class="info" aria-expanded={showInfo} aria-controls="score-info" aria-label="How your score is estimated"
+						onclick={() => (showInfo = !showInfo)}>i</button>
 					{#if showInfo}
-						<p class="info-text">
-							Segment size = share of emissions. Fill = how green your choices in that category are. Tap a segment to filter purchases.
-						</p>
+						<p class="info-text" id="score-info">ClimateWise score estimated from purchases over the past {report.days} days.</p>
 					{/if}
-				</div>
-
-				<div class="headline">
-					<strong>{headline.big}</strong>
-					<p>{headline.sub}</p>
 				</div>
 
 				<div class="ring-wrap" bind:this={ringEl}>
@@ -342,7 +312,6 @@
 		--navy: var(--dark, #0d2b40) var(--light, #013d5b);
 		--accent: var(--dark, #4fc08a) var(--light, #12806a);
 		--leaf: var(--dark, #59c26f) var(--light, #3aa548);
-		--wordmark: var(--dark, #eaf4fa) var(--light, #0b4a73);
 		color-scheme: var(--dark, dark) var(--light, light);
 		box-sizing: border-box;
 		min-height: 100dvh;
@@ -373,24 +342,23 @@
 
 	/* Sky: day gradient in light mode; in dark mode the sun sets and the sky fades to dusk */
 	.sky { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-	.sky-day, .sky-golden, .sky-night { position: absolute; inset: 0; }
+	.sky-day, .sky-night { position: absolute; inset: 0; }
 	.sky-day {
-		/* soft overlapping washes on a diagonal base, so the bands curve instead of stacking flat */
+		/* clean white top half; muted green/blue washes only in the lower half, still curving on a diagonal */
 		background:
-			radial-gradient(120% 70% at 15% 0%, #ffe89a 0%, rgba(255, 232, 154, 0) 60%),
-			radial-gradient(90% 60% at 95% 30%, rgba(200, 242, 194, 0.9) 0%, rgba(200, 242, 194, 0) 70%),
-			radial-gradient(110% 70% at 0% 75%, rgba(143, 223, 214, 0.85) 0%, rgba(143, 223, 214, 0) 70%),
-			radial-gradient(130% 80% at 85% 110%, #5ab4ff 0%, rgba(90, 180, 255, 0) 70%),
-			linear-gradient(160deg, #fff3c4 0%, #c8f2c2 40%, #8fdfd6 70%, #7cc4ff 100%);
+			linear-gradient(180deg, #ffffff 0%, #ffffff 40%, rgba(255, 255, 255, 0) 72%),
+			radial-gradient(110% 60% at 0% 85%, rgba(150, 214, 200, 0.55) 0%, rgba(150, 214, 200, 0) 70%),
+			radial-gradient(120% 70% at 95% 110%, rgba(120, 180, 230, 0.55) 0%, rgba(120, 180, 230, 0) 70%),
+			linear-gradient(160deg, #f6f9fb 0%, #e6f2ee 55%, #d6e8f5 100%);
 		opacity: var(--dark, 0) var(--light, 1);
 	}
 	.sky-night {
+		/* near-black top easing into deep navy, with a faint teal/ember glow low down */
 		background:
-			radial-gradient(120% 70% at 85% 0%, #050f3a 0%, rgba(5, 15, 58, 0) 65%),
-			radial-gradient(90% 60% at 5% 35%, rgba(10, 47, 110, 0.9) 0%, rgba(10, 47, 110, 0) 70%),
-			radial-gradient(110% 60% at 100% 70%, rgba(11, 90, 76, 0.85) 0%, rgba(11, 90, 76, 0) 70%),
-			radial-gradient(130% 70% at 20% 110%, #a2400f 0%, rgba(162, 64, 15, 0) 70%),
-			linear-gradient(200deg, #07164a 0%, #0a2f6e 30%, #0b5a4c 60%, #6a5210 100%);
+			linear-gradient(180deg, #03060c 0%, #050b18 38%, rgba(5, 11, 24, 0) 72%),
+			radial-gradient(110% 60% at 100% 80%, rgba(11, 80, 72, 0.55) 0%, rgba(11, 80, 72, 0) 70%),
+			radial-gradient(130% 70% at 15% 112%, rgba(150, 62, 18, 0.5) 0%, rgba(150, 62, 18, 0) 70%),
+			linear-gradient(200deg, #060d1e 0%, #0a1d40 55%, #0b2f3e 100%);
 		opacity: var(--dark, 1) var(--light, 0);
 	}
 	.sun {
@@ -403,57 +371,12 @@
 		transform: translate(var(--dark, 8vw) var(--light, -26vw), var(--dark, 54vh) var(--light, -44vmax));
 	}
 	.sun span { position: absolute; inset: 0; border-radius: 50%; }
-	.sun-day { background: radial-gradient(circle, rgba(255, 246, 180, 0.95) 0%, rgba(255, 226, 110, 0.5) 22%, transparent 55%); opacity: var(--dark, 0) var(--light, 1); }
+	/* kept faint so the white top stays white */
+	.sun-day { background: radial-gradient(circle, rgba(255, 246, 180, 0.95) 0%, rgba(255, 226, 110, 0.5) 22%, transparent 55%); opacity: var(--dark, 0) var(--light, 0.1); }
 	.sun-dusk { background: radial-gradient(circle, rgba(255, 140, 50, 0.75) 0%, rgba(240, 90, 40, 0.3) 24%, transparent 55%); opacity: var(--dark, 1) var(--light, 0); }
-	/* Golden hour: only visible mid-transition */
-	.sky-golden {
-		background:
-			radial-gradient(120% 70% at 20% 0%, #2f4a8c 0%, rgba(47, 74, 140, 0) 65%),
-			radial-gradient(130% 80% at 80% 105%, #ffc46e 0%, rgba(255, 196, 110, 0) 70%),
-			linear-gradient(165deg, #3a508c 0%, #c8705a 45%, #f59a4e 75%, #ffc46e 100%);
-		opacity: 0;
-	}
-
-	/*
-	 * Night sits on top of day, so each crossfade happens over a fully opaque layer:
-	 * the incoming sky is always solid underneath, and the card never goes see-through mid-change.
-	 */
-	/* ---- Sunset (light → dark): day → warm glow → night, ~3s ---- */
-	.cw.to-dark .sun { transition: transform 3s cubic-bezier(0.42, 0, 0.3, 1); }
-	.cw.to-dark .sun-day { transition: opacity 1.6s ease-in-out 0.2s; }
-	.cw.to-dark .sun-dusk { transition: opacity 1.2s ease-in-out 0.1s; }
-	.cw.to-dark .sky-golden { animation: golden 2.8s ease-in-out; }
-	.cw.to-dark .sky-night { transition: opacity 2.2s ease-in-out 0.5s; }
-	.cw.to-dark .sky-day { transition: opacity 0.4s linear 2.7s; } /* hidden under night by now */
-	/* ---- Sunrise (dark → light), mirrored ---- */
-	.cw.to-light .sun { transition: transform 3s cubic-bezier(0.4, 0, 0.3, 1); }
-	.cw.to-light .sun-dusk { transition: opacity 1.4s ease-in-out 0.9s; }
-	.cw.to-light .sun-day { transition: opacity 1.4s ease-in-out 1s; }
-	.cw.to-light .sky-day { transition: opacity 0.3s linear; } /* solid under night before it fades */
-	.cw.to-light .sky-golden { animation: golden 2.8s ease-in-out; animation-name: golden-up; }
-	.cw.to-light .sky-night { transition: opacity 2.2s ease-in-out 0.3s; }
-	@keyframes golden { 0% { opacity: 0; } 40% { opacity: 0.75; } 100% { opacity: 0; } }
-	@keyframes golden-up { 0% { opacity: 0; } 45% { opacity: 0.7; } 100% { opacity: 0; } }
-
-	/* Page, cards and text ease over the same span as the sky */
-	.cw.to-dark, .cw.to-dark :global(*:not(.sky):not(.sky *)),
-	.cw.to-light, .cw.to-light :global(*:not(.sky):not(.sky *)) {
-		transition: color 1.4s ease-in-out 0.8s, background-color 2.2s ease-in-out 0.4s, border-color 2.2s ease-in-out 0.4s,
-			fill 2.2s ease-in-out 0.4s, stroke 2.2s ease-in-out 0.4s, box-shadow 2.2s ease-in-out 0.4s,
-			backdrop-filter 2.2s ease-in-out 0.4s !important;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.cw.to-dark *, .cw.to-light * { transition: none !important; animation: none !important; }
-	}
-
 	/* Seamless top */
 	.corner { position: absolute !important; top: 14px; z-index: 6 !important; display: flex; align-items: center; gap: 2px; }
-	.corner.left { left: 14px; }
 	.corner.right { right: 12px; }
-	.range { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--sunken); }
-	.range button { min-height: 22px; padding: 0 8px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
-	.range button[aria-pressed='true'] { background: var(--glass-strong); color: var(--ink); box-shadow: 0 1px 3px rgba(10, 25, 40, 0.15); }
 	.theme-toggle {
 		position: fixed; top: 16px; right: 16px; z-index: 10;
 		display: grid; place-items: center; width: 42px; height: 42px; padding: 0;
@@ -463,17 +386,10 @@
 	.icon-btn { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
 	.icon-btn:hover { background: var(--sunken); color: var(--ink); }
 	.brand { display: grid; justify-items: center; gap: 2px; padding: 22px 16px 0; text-align: center; }
-	.mark-badge {
-		display: grid; place-items: center; width: 58px; height: 58px; margin-bottom: 6px;
-		border-radius: 18px;
-		/* badge only at night; in daylight the logo sits straight on the warm sky */
-		border: 1px solid var(--dark, var(--glass-edge)) var(--light, transparent);
-		background: var(--dark, rgba(255, 255, 255, 0.1)) var(--light, transparent);
-		backdrop-filter: var(--dark, blur(12px)) var(--light, none);
-		box-shadow: var(--dark, 0 8px 22px rgba(0, 0, 0, 0.25)) var(--light, none);
-	}
-	.brand h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.025em; color: var(--wordmark); line-height: 1.1; }
-	.brand p { font-size: 11.5px; color: var(--muted); }
+	.logo { display: grid; width: 168px; margin: 4px 0 6px; }
+	.logo img { grid-area: 1 / 1; width: 100%; height: auto; }
+	.logo-light { opacity: var(--dark, 0) var(--light, 1); }
+	.logo-dark { opacity: var(--dark, 1) var(--light, 0); }
 
 	/* Hub: ring on top, three tiles branching below */
 	.hub { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 14px 18px; }
@@ -481,22 +397,19 @@
 	.links path { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 2 5; stroke-linecap: round; }
 	.links circle { fill: var(--line); }
 
-	.tabs-wrap { position: relative; z-index: 4; }
-	.section-title { display: flex; align-items: center; gap: 4px; }
-	.section-title h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-	.info { width: 16px; height: 16px; margin: 0; border: 1.3px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font-family: Georgia, serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
-	.info[aria-expanded='true'] { border-color: var(--link); color: var(--link); }
+	.chart-head { position: relative; z-index: 4; display: flex; align-items: center; gap: 6px; }
+	.chart-title { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+	.info { width: 17px; height: 17px; padding: 0; border: 1.3px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font-family: Georgia, serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
+	.info:hover, .info[aria-expanded='true'] { border-color: var(--link); color: var(--link); }
 	.info-text {
-		position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: 280px;
-		padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-edge); background: var(--glass-strong); backdrop-filter: blur(18px);
-		box-shadow: 0 10px 28px #0b1a2a33; font-size: 12px; color: var(--muted); text-align: center;
+		position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: min(240px, calc(100vw - 48px));
+		padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-edge);
+		background: var(--glass-strong); backdrop-filter: blur(18px); box-shadow: 0 10px 28px #0b1a2a33;
+		font-size: 12px; line-height: 1.4; color: var(--muted); text-align: center;
 	}
 
 	.ring-wrap { position: relative; z-index: 1; width: min(70vw, 270px, 32vh); min-width: 170px; margin-bottom: 26px; padding: 10px; border-radius: 50%; background: var(--glass-strong); backdrop-filter: blur(18px); box-shadow: 0 0 0 1px var(--glass-edge), 0 14px 36px rgba(20, 45, 70, 0.14); }
 	.ring-wrap :global(.ring) { width: 100% !important; }
-	.headline { position: relative; z-index: 1; text-align: center; }
-	.headline strong { display: block; font-size: 21px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
-	.headline p { font-size: 12.5px; color: var(--muted); }
 
 	/* Tiles */
 	.tiles { position: relative; z-index: auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }

@@ -18,13 +18,13 @@ function numberParam(value: string | null): number | null {
 /**
  * Server-side proxy for the Mapbox Static Images API.
  *
- * Keeps `MAPBOX_TOKEN` out of the client, DOM, and error responses. When the
- * token is absent or the coordinates are invalid the endpoint returns a small
+ * Keeps `MAPBOX_API_KEY` out of the client, DOM, and error responses. When the
+ * key is absent or the coordinates are invalid the endpoint returns a small
  * error so the ATM card can show its fallback.
  */
 export async function GET({ url, platform }: RequestEvent): Promise<Response> {
   const runtime = resolveEnv(platform);
-  if (!runtime.MAPBOX_TOKEN) {
+  if (!runtime.MAPBOX_API_KEY) {
     return new Response('Map previews are not configured', { status: 404 });
   }
 
@@ -44,7 +44,7 @@ export async function GET({ url, platform }: RequestEvent): Promise<Response> {
     return new Response('Invalid map coordinates', { status: 400 });
   }
 
-  const target = mapboxStaticUrl(runtime.MAPBOX_TOKEN, lat, lng, zoom);
+  const target = mapboxStaticUrl(runtime.MAPBOX_API_KEY, lat, lng, zoom);
   if (!target) {
     return new Response('Invalid map coordinates', { status: 400 });
   }
