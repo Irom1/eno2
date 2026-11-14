@@ -3,6 +3,12 @@
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
   import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
+  import {
+    anomalyTransactionCards,
+    mergeEntityCards,
+    type EntityCard
+  } from '$lib/chat/entityCards.js';
+  import { inlineBlocks } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
   import {
     friendlyToolLabel,
@@ -14,6 +20,7 @@
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
   import FollowUps from './FollowUps.svelte';
+  import TransactionCard from './inline-cards/TransactionCard.svelte';
 
   interface Props {
     open: boolean;
@@ -32,6 +39,7 @@
     prompt?: string;
     pending?: boolean;
     cards?: ChatCard[];
+    inlineCards?: EntityCard[];
     intro?: boolean;
   }
 
@@ -241,6 +249,17 @@
               payload,
               afterText: message.text.length
             });
+            if (data.kind === 'insight_anomalies') {
+              // If the tool result arrives before any prose, anchor the cards at
+              // the end of the text so the answer reads first and the cited
+              // charges follow it. If an intro already exists, anchor inline.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const startId = cardSeq + 1;
+              const incoming = anomalyTransactionCards(payload, anchor, startId);
+              cardSeq += incoming.length;
+              message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
+            }
             scrollLog();
             break;
           }
@@ -343,9 +362,10 @@
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const hasText = message.text.trim().length > 0}
-        {@const isThinking = message.pending && !hasText}
-        {#if hasText || message.pending}
+        {@const blocks = inlineBlocks(message.text, message.inlineCards ?? [])}
+        {@const hasBlocks = blocks.length > 0}
+        {@const isThinking = message.pending && !hasBlocks}
+        {#if hasBlocks || message.pending}
           <div class="assistant-turn" class:intro={message.intro}>
             <EnoThinking {variant} active={message.pending} size={40} />
             <div class="assistant-content">
@@ -367,11 +387,21 @@
                   </div>
                 </div>
               {/if}
-              {#if hasText}
-                <div class="bubble assistant">
-                  <div class="richtext">{@html renderMarkdown(message.text)}</div>
-                </div>
-              {/if}
+              {#each blocks as block, index (block.type + index)}
+                {#if block.type === 'text'}
+                  {#if block.text.trim()}
+                    <div class="bubble assistant">
+                      <div class="richtext">{@html renderMarkdown(block.text)}</div>
+                    </div>
+                  {/if}
+                {:else}
+                  {#each block.cards as card (card.id)}
+                    {#if card.kind === 'transaction'}
+                      <TransactionCard {card} />
+                    {/if}
+                  {/each}
+                {/if}
+              {/each}
               {#if message.intro && (booting || !ready)}
                 <p class="status-line intro-status">{status || 'Connecting…'}</p>
               {/if}

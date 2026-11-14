@@ -94,7 +94,7 @@ export function routeIntent(message: string): {
       args: (session) => ({ accountId: checkingAccountId(session) })
     };
   }
-  if (/\bweird|anomal|duplicate|charge/.test(text)) {
+  if (/\bweird|anomal|duplicate|suspicious|charge/.test(text)) {
     return {
       tool: "insight_anomalies",
       args: (session) => ({ accountId: checkingAccountId(session) })

@@ -1,6 +1,6 @@
 # Inline entity cards
 
-Status: planned — Phase 0 shipped (legacy cards archived, chat prose-only).
+Status: Phase 0 shipped (legacy cards archived, chat prose-only). The first Phase 2 slice is implemented: anomaly findings render as inline single-transaction cards (1–2 per turn), while all other legacy cards stay archived.
 Owner: Eno 2.0 chat.
 
 ## 1. Problem
@@ -126,7 +126,10 @@ Acceptance: flag off = identical to Phase 0; flag v2 = events emitted but render
 
 **Phase 2 — first three cards.**
 `TransactionCard`, `BillCard`, `AccountCard` and `InlineCardRenderer`/`CardFrame`. Wire block rendering.
+First slice shipped: `CardFrame` + `TransactionCard` render `insight_anomalies` findings as 1–2 single-transaction cards via `entityCards.ts` + the generic `inlineBlocks<T>`. `BillCard` and `AccountCard` remain next.
 Acceptance: single-entity cards appear inline between prose segments; at most 2 per turn; no fallback. Rollback: flag off.
+
+Placement rule for this slice: if a card arrives before any prose (no intro yet), anchor it at end-of-text so the answer reads first and the source card(s) follow the claim; if prose precedes the insight, anchor inline at that offset.
 
 **Phase 3 — remaining cards.**
 `LoanCard`, `SpendingCategoryCard`, `LocationCard`; enable `v2` by default.

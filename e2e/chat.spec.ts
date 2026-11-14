@@ -616,27 +616,45 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Anything weird in my transactions?" renders product-language anomalies', async ({
+  test('"Any suspicious transactions?" cites flagged charges with inline transaction cards', async ({
     page
   }) => {
     const errors = collectErrors(page);
-    await runPrompt(page, 'Anything weird in my transactions?');
+    await runPrompt(page, 'Any suspicious transactions?');
 
-    await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(titles).toEqual([]);
-    await expect(page.locator('.chat-card .card-head')).toHaveCount(0);
-    await expect(page.locator('.chat-card .badge')).toHaveCount(0);
+    const cards = page.locator('.transaction-card');
+    await expect(cards.first()).toBeVisible({ timeout: 20_000 });
 
-    const text = await cardText(page);
-    expect(text).toMatch(/Possible duplicate|Unusual amount/);
+    const count = await cards.count();
+    expect(count, 'render 1–2 single-transaction cards').toBeGreaterThanOrEqual(1);
+    expect(count, 'render 1–2 single-transaction cards').toBeLessThanOrEqual(2);
 
-    const combined = `${text}\n${await assistantText(page)}`;
-    for (const jargon of ['outlier', 'median', 'threshold']) {
-      expect(combined.toLowerCase()).not.toContain(jargon);
+    for (let index = 0; index < count; index += 1) {
+      await expect(cards.nth(index)).toHaveAttribute('data-kind', 'transaction');
     }
 
-    await expectCardStyle(page);
+    const cardsText = (await cards.allInnerTexts()).join('\n');
+    expect(cardsText).toMatch(/Possible duplicate|Unusual amount/);
+
+    // Exactly one assistant turn owns the cards; no archived card chrome.
+    await expect(
+      page.locator('.assistant-turn').filter({ has: page.locator('.transaction-card') })
+    ).toHaveCount(1);
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+
+    // The response leads with prose, then cites the flagged charges.
+    const prose = page.locator('.assistant-turn .bubble.assistant .richtext').last();
+    await expect(prose).toBeVisible();
+    const proseBox = await prose.boundingBox();
+    const cardBox = await cards.first().boundingBox();
+    expect(proseBox, 'assistant prose should be laid out').not.toBeNull();
+    expect(cardBox, 'transaction card should be laid out').not.toBeNull();
+    expect(cardBox!.y, 'cards should follow the prose').toBeGreaterThanOrEqual(proseBox!.y);
+
+    const combined = `${cardsText}\n${await assistantText(page)}`;
+    expect(combined).not.toMatch(/outlier|median|\bmad\b|threshold|findings/i);
+
     expectNoErrors(errors);
   });
 

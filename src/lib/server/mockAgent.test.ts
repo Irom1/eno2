@@ -199,6 +199,7 @@ describe("mockAgent", () => {
       "nessie_list_customer_accounts"
     );
     expect(routeIntent("Anything weird in my transactions?").tool).toBe("insight_anomalies");
+    expect(routeIntent("Any suspicious transactions?").tool).toBe("insight_anomalies");
   });
 
   it("composes a loans answer from live loan rows", async () => {
