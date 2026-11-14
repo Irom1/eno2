@@ -23,7 +23,7 @@ Eno 2.0 answers from grounded banking tools. Cards are small, reusable data disp
 Shipped:
 
 - Phase 0: legacy broad cards archived; chat is prose-only.
-- Phase 2 first slice: `TransactionCard` for anomaly findings (1–2 per turn), `TransactionListCard` for multi-transaction answers (max 8 rows plus “N more”), and the spending pie chart for `insight_spending_breakdown`.
+- Phase 2 first slice: `TransactionCard` for anomaly findings (one card per flagged transaction, capped at 8 per turn for layout/performance), `TransactionListCard` for multi-transaction answers (max 8 rows plus “N more”), and the spending pie chart for `insight_spending_breakdown`.
 - Phase 2 second slice: `BillCard` (one largest upcoming bill from `insight_upcoming_bills`) and `AccountCard` (exactly one account; never an account list), plus the shared `StatusChip` primitive.
 - Phase 2 third slice: `LoanCard` (one loan), `LocationCard` (one ATM or branch), and `RecurringChargeCard` (one recurring charge), each a single-entity primitive.
 - Phase 3 first slice: `RewardCard` (highest credit-account reward or overview total), `GoalCard` (target/current/months/projected date), `CashflowPointCard` (latest complete month), plus the shared `EntityKeyValue` primitive.
@@ -40,7 +40,7 @@ Next:
 - **No baked-in interpretation.** No titles, reason tags, counts, rankings, “top category,” recommendations, combined summaries, or broad/fallback cards.
 - **Prose carries the insight.** The AI produces the novel insight, ranking, comparison, recommendation, or takeaway in prose. The card must not bake those in.
 - **Prefer omission.** Prefer omitting a card over showing a broad or interpretive one.
-- **Card budget.** At most 1–2 cards per turn. Lists stay prose unless a specific list card is warranted; the transaction list is the current exception.
+- **Card budget.** Anomaly findings get one inline `TransactionCard` each, capped at 8 per turn for layout/performance; every flagged transaction with valid fields gets a card. Other primitive cards remain at 1–2 per turn. The previous 1–2 cap was a layout budget, not a limit on how many transactions could be flagged. Lists stay prose unless a specific list card is warranted; the transaction list is the current exception.
 - **Inline placement.** Intended rhythm: one short intro sentence → card → takeaway. Cards are buffered until the streamed prose reaches their anchor.
 - **Inline single cards, standalone series cards.** Single-entity cards (`transaction`, `bill`, `account`, `loan`, `location`, `recurring`, `reward`, `goal`, `cashflow`, `merchant`, `profile`) render inline inside the assistant prose bubble (`.bubble.assistant`), using the shared `CardFrame` DOM restyled by the bubble: 1px border, no lift shadow, no top accent, width capped by the bubble. Multi/series cards (`transaction-list`, `spending-pie`) stay standalone: high-contrast `CardFrame` (surface, border, lift shadow — no top accent strip), left-aligned and capped at the Eno chat bubble max width (88% of the assistant content column).
 - **No duplicated data.** Prose does not restate values, names, dates, statuses, or rows visible in a card. It adds meaning or a next step.
@@ -139,7 +139,7 @@ Explicitly omitted:
 - `Overview` / all-purpose snapshot card.
 - `AccountList` / all-accounts card.
 - `Fallback` / “More information” / unknown-tool card.
-- Broad anomaly list card (the primitive is 1–2 single-transaction cards).
+- Broad anomaly list card (the primitive is one single-transaction card per finding, capped at 8).
 - Raw tool-payload dump cards.
 
 Archived legacy cards in `src/lib/chat/archive/legacy-cards/` (18 files, archived in Phase 0, do not use):
@@ -199,7 +199,7 @@ type EntityCard =
 - Payloads are whitelisted view models. Raw tool records never pass through.
 - `entityId` identifies the entity within a turn: a transaction id or stable key, the single `transaction-list`, `spending-pie`, the bill id (or a stable `bill|payee|dueDate|amount` key), `account:<id>`, `loan:<id>`, `location:<id>`, `description|amount` for a recurring charge, `reward:<accountId|total>`, `goal:<accountId>:<target>`, or `cashflow:<month>`.
 - `afterText` is the pending buffer/anchor contract; missing offsets render at end-of-text.
-- Anomaly cards dedupe by `entityId` and cap at 1–2. A turn keeps one transaction list, one pie, one bill, one account, one loan, one location, one recurring charge, one reward, one goal, and one cashflow month, replacing rather than stacking duplicates.
+- Anomaly cards dedupe by `entityId`, render one card per finding, and cap at 8. The previous 1–2 cap was a layout budget, not a limit on flagged findings. A turn keeps one transaction list, one pie, one bill, one account, one loan, one location, one recurring charge, one reward, one goal, and one cashflow month, replacing rather than stacking duplicates.
 - Bill, account, loan, location, recurring, reward, goal, and cashflow cards are single-entity by construction: one largest bill, only a payload whose `asItems` resolves to exactly one account, one largest loan, the first location result, one largest recurring charge, one highest credit-account reward (or one overview total), one goal projection, and one complete cashflow month. Lists render no entity card and stay in prose.
 - Data limitations: recurring charges carry no cadence or next date, ATMs carry no street address, and locations carry no distance. Cards omit those fields rather than inventing them.
 
@@ -231,7 +231,7 @@ Inference:
 | --- | --- | --- | --- | --- |
 | Phase 0 | Archive legacy cards; chat prose-only; add plan | Shipped | App builds; no app import of archived components | Revert commit |
 | Phase 1 | `EntityCard` schema, per-kind normalizers, `present_card`, ownership validation, `card` SSE event, flag (`off` / `v2`) | Shipped | Flag off matches current behavior; flag v2 emits normalized events the existing renderer already handles; ownership rejects cross-customer and missing-account ids | Flag to `off` |
-| Phase 2 | First cards: `TransactionCard`, `TransactionListCard`, `SpendingPieCard`, `BillCard`, `AccountCard` | Transaction cards, transaction list, pie, bill, account, loan, location, and recurring cards shipped; remaining Phase 3 cards planned | Cards appear inline with correct contrast; 1–2 per turn; no fallback; bills/accounts/loans/locations/recurring show one entity only | Revert slice |
+| Phase 2 | First cards: `TransactionCard`, `TransactionListCard`, `SpendingPieCard`, `BillCard`, `AccountCard` | Transaction cards, transaction list, pie, bill, account, loan, location, and recurring cards shipped; remaining Phase 3 cards planned | Cards appear inline with correct contrast; one transaction card per anomaly finding (cap 8), other cards 1–2 per turn; no fallback; bills/accounts/loans/locations/recurring show one entity only | Revert slice |
 | Phase 3 | Remaining cards: loan, location, recurring, reward, goal, cashflow | All shipped, including reward, goal, and cashflow | Each kind is primitive, accessible, and theme-safe | Revert slice |
 | Phase 4 | Remove legacy registry/relevance coupling; migrate follow-ups to `EntityCard`; rewrite stale E2E card assertions | Shipped | No legacy card-kind rendering paths remain; follow-ups consume `EntityCard[]`; E2E helpers/specs target primitive selectors | Revert commit |
 
@@ -320,7 +320,7 @@ Current verification commands: `npm run check`, `npm test`, `npm run build`. Bro
 
 - **Model compliance:** the model may not call `present_card`; strong prompt rules plus fallback builders and telemetry are needed.
 - **Inference accuracy:** reference matching can pick the wrong entity. Prefer omitting a card over showing a wrong or broad one.
-- **Card volume:** cap at 1–2, dedupe by `entityId`, and suppress cards in pure list answers.
+- **Card volume:** anomaly findings get one inline card each (cap 8); other cards cap at 1–2. Dedupe by `entityId`, and suppress cards in pure list answers. The old 1–2 cap was a layout budget, not a limit on flagged findings.
 - **Cross-customer leakage:** ownership validation is mandatory; reject and log cross-customer ids.
 - **List vs prose:** when does a multi-row answer deserve a list card? Current exception is transaction lists; revisit with telemetry.
 - **Fast path vs Gemini:** deterministic narration must obey the same no-repeat and insight/tip rules as the model path.

@@ -99,17 +99,60 @@ describe('anomalyTransactionCards', () => {
     expect(cards.map((card) => card.payload.flag)).toEqual(['unusual', 'unusual', 'unusual']);
   });
 
-  it('caps at two cards by default and honours a custom cap', () => {
-    const findings = Array.from({ length: 5 }, (_, index) => ({
+  it('shows all findings up to the default cap and honours a custom cap', () => {
+    const findings = Array.from({ length: 9 }, (_, index) => ({
       type: 'outlier',
       description: `CHARGE ${index}`,
       amount: index + 1,
       date: '2026-11-01'
     }));
 
-    expect(anomalyTransactionCards(payload(findings), 0, 1)).toHaveLength(2);
+    expect(anomalyTransactionCards(payload(findings), 0, 1)).toHaveLength(8);
     expect(anomalyTransactionCards(payload(findings), 0, 1, { cap: 1 })).toHaveLength(1);
     expect(anomalyTransactionCards(payload(findings), 0, 1, { cap: 0 })).toEqual([]);
+  });
+
+  it('renders one inline card per finding (regression: three findings)', () => {
+    const findings = [
+      {
+        _id: 'txn-dup-1',
+        type: 'duplicate',
+        description: 'NETFLIX.COM',
+        amount: 15.49,
+        date: '2026-11-02',
+        duplicateOf: '2026-11-01'
+      },
+      { _id: 'txn-outlier', type: 'outlier', description: 'APPLE STORE', amount: 1299, date: '2026-11-03' },
+      {
+        _id: 'txn-dup-2',
+        type: 'duplicate',
+        description: 'SPOTIFY',
+        amount: 9.99,
+        date: '2026-11-04',
+        duplicateOf: '2026-11-03'
+      }
+    ];
+
+    const cards = anomalyTransactionCards(payload(findings), 0, 1);
+    expect(cards).toHaveLength(3);
+    expect(cards.map((card) => card.payload.description)).toEqual([
+      'NETFLIX.COM',
+      'APPLE STORE',
+      'SPOTIFY'
+    ]);
+    expect(cards.map((card) => card.payload.flag)).toEqual([
+      'duplicate',
+      'unusual',
+      'duplicate'
+    ]);
+
+    const merged = mergeEntityCards([], cards);
+    expect(merged).toHaveLength(3);
+    expect(merged.map((entry) => entry.entityId)).toEqual([
+      'txn-dup-1',
+      'txn-outlier',
+      'txn-dup-2'
+    ]);
   });
 
   it('deduplicates by _id and by the stable key', () => {
@@ -599,14 +642,14 @@ describe('mergeEntityCards', () => {
     };
   }
 
-  it('merges by entityId, preserves first occurrence order, and caps total', () => {
+  it('merges by entityId, preserves first occurrence order, and caps at 8 by default', () => {
     const merged = mergeEntityCards(
       [card(1, 'a'), card(2, 'b')],
       [card(3, 'a'), card(4, 'c'), card(5, 'd')]
     );
 
-    expect(merged.map((entry) => entry.entityId)).toEqual(['a', 'b']);
-    expect(merged.map((entry) => entry.id)).toEqual([1, 2]);
+    expect(merged.map((entry) => entry.entityId)).toEqual(['a', 'b', 'c', 'd']);
+    expect(merged.map((entry) => entry.id)).toEqual([1, 2, 4, 5]);
   });
 
   it('deduplicates within each input list', () => {
@@ -614,29 +657,40 @@ describe('mergeEntityCards', () => {
     expect(merged.map((entry) => entry.entityId)).toEqual(['a', 'b']);
   });
 
-  it('preserves transaction-list cards and caps only anomaly cards', () => {
+  it('preserves transaction-list and pie cards while showing up to 8 anomaly cards', () => {
     const list = transactionListCard(
       { items: [{ _id: 't-1', description: 'Coffee', amount: 4.5 }] },
       10,
       9
     );
     if (!list) throw new Error('expected a list card');
+    const pie = spendingPieCard(
+      { categories: [{ category: 'Groceries', total: 100 }] },
+      0,
+      20
+    );
+    if (!pie) throw new Error('expected a pie card');
 
-    const existing = [list, card(1, 'a'), card(2, 'b')];
-    const incoming = [card(3, 'c'), card(4, 'a')];
+    const existing = [list, pie, card(1, 'a'), card(2, 'b')];
+    const incoming = [card(3, 'c'), card(4, 'a'), card(5, 'd')];
 
     const merged = mergeEntityCards(existing, incoming);
     expect(merged[0]).toBe(list);
+    expect(merged[1]).toBe(pie);
     expect(merged.map((entry) => entry.kind)).toEqual([
       'transaction-list',
+      'spending-pie',
+      'transaction',
+      'transaction',
       'transaction',
       'transaction'
     ]);
-    expect(merged.slice(1).map((entry) => entry.entityId)).toEqual(['a', 'b']);
+    expect(merged.slice(2).map((entry) => entry.entityId)).toEqual(['a', 'b', 'c', 'd']);
 
     const zeroCap = mergeEntityCards(existing, incoming, 0);
-    expect(zeroCap).toEqual([list]);
+    expect(zeroCap).toEqual([list, pie]);
     expect(zeroCap[0]).toBe(list);
+    expect(zeroCap[1]).toBe(pie);
   });
 
   it('respects a custom cap and never throws on malformed input', () => {

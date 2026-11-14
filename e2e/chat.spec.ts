@@ -1610,7 +1610,7 @@ test.describe('chat prompts', () => {
       kind: 'insight_anomalies',
       accountId: 'acct-checking',
       payload: {
-        count: 2,
+        count: 3,
         findings: [
           {
             _id: 'txn-apple',
@@ -1626,6 +1626,14 @@ test.describe('chat prompts', () => {
             amount: 15.49,
             date: '2026-11-02',
             duplicateOf: '2026-11-01'
+          },
+          {
+            _id: 'txn-spotify',
+            type: 'duplicate',
+            description: 'SPOTIFY',
+            amount: 9.99,
+            date: '2026-11-04',
+            duplicateOf: '2026-11-03'
           }
         ]
       }
@@ -1642,7 +1650,11 @@ test.describe('chat prompts', () => {
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'both posted this week.'
+        delta: ' and another duplicate at SPOTIFY: '
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'all three posted this week.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -1661,8 +1673,7 @@ test.describe('chat prompts', () => {
     await expect(cards.first()).toBeVisible({ timeout: 20_000 });
 
     const count = await cards.count();
-    expect(count, 'render 1–2 single-transaction cards').toBeGreaterThanOrEqual(1);
-    expect(count, 'render 1–2 single-transaction cards').toBeLessThanOrEqual(2);
+    expect(count, 'one card per flagged transaction').toBe(3);
 
     for (let index = 0; index < count; index += 1) {
       await expect(cards.nth(index)).toHaveAttribute('data-kind', 'transaction');
@@ -1672,6 +1683,7 @@ test.describe('chat prompts', () => {
     const cardsText = (await cards.allInnerTexts()).join('\n');
     expect(cardsText, 'cards name the merchant').toContain('APPLE STORE');
     expect(cardsText, 'cards name the merchant').toContain('NETFLIX.COM');
+    expect(cardsText, 'cards name the merchant').toContain('SPOTIFY');
     expect(cardsText, 'cards show the amount').toContain('1,299');
     expect(cardsText).not.toContain('Possible duplicate');
     expect(cardsText).not.toContain('Unusual amount');
@@ -1695,7 +1707,8 @@ test.describe('chat prompts', () => {
     }
     expect(cardHrefs.map((link) => link.href)).toEqual([
       expect.stringMatching(/txn=txn-apple$/),
-      expect.stringMatching(/txn=txn-netflix$/)
+      expect.stringMatching(/txn=txn-netflix$/),
+      expect.stringMatching(/txn=txn-spotify$/)
     ]);
 
     // Single transaction rows render inside the assistant bubble, not as
@@ -1735,7 +1748,9 @@ test.describe('chat prompts', () => {
         return [];
       });
     });
-    expect(order, 'text → card → text → card → text ordering').toEqual([
+    expect(order, 'text → card → text → card → text → card → text ordering').toEqual([
+      'text',
+      'card',
       'text',
       'card',
       'text',
