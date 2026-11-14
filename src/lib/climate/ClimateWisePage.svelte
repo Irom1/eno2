@@ -19,7 +19,8 @@
 
 	function readTheme(): Theme {
 		try {
-			const t = localStorage.getItem('eno-theme');
+			// Same key the dashboard writes, so ClimateWise opens in whatever mode the dashboard was in.
+			const t = localStorage.getItem('dashboard-theme');
 			if (t === 'light' || t === 'dark' || t === 'system') return t;
 		} catch {}
 		return 'system';
@@ -43,7 +44,7 @@
 		shiftTimer = setTimeout(() => (shift = ''), 3500);
 		theme = isDark ? 'light' : 'dark';
 		try {
-			localStorage.setItem('eno-theme', theme);
+			localStorage.setItem('dashboard-theme', theme);
 		} catch {}
 	}
 
@@ -153,6 +154,11 @@
 </script>
 
 <div class="cw {shift}" data-theme={theme} style={colorVars}>
+	<!-- Page-level control, off the card, matching the dashboard's toggle -->
+	<button class="theme-toggle" onclick={toggleTheme} aria-pressed={isDark}
+		aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+		<CategoryIcon id={isDark ? 'sun' : 'moon'} size={18} />
+	</button>
 	<article class="card" aria-labelledby="cw-title">
 		<div class="sky" aria-hidden="true">
 			<div class="sky-day"></div>
@@ -170,10 +176,6 @@
 			</div>
 		</div>
 		<div class="corner right">
-			<button class="icon-btn" onclick={toggleTheme} aria-pressed={isDark}
-				aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} title={isDark ? 'Light mode' : 'Dark mode'}>
-				<CategoryIcon id={isDark ? 'sun' : 'moon'} size={15} />
-			</button>
 			<a class="icon-btn" href={backHref} aria-label="Close and go back to dashboard" title="Close">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
 			</a>
@@ -450,6 +452,12 @@
 	.range { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--sunken); }
 	.range button { min-height: 22px; padding: 0 8px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
 	.range button[aria-pressed='true'] { background: var(--glass-strong); color: var(--ink); box-shadow: 0 1px 3px rgba(10, 25, 40, 0.15); }
+	.theme-toggle {
+		position: fixed; top: 16px; right: 16px; z-index: 10;
+		display: grid; place-items: center; width: 42px; height: 42px; padding: 0;
+		border: 1px solid var(--border); border-radius: 50%; background: var(--page); color: var(--ink); cursor: pointer;
+	}
+	.theme-toggle:hover { background: var(--surface); }
 	.icon-btn { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
 	.icon-btn:hover { background: var(--sunken); color: var(--ink); }
 	.brand { display: grid; justify-items: center; gap: 2px; padding: 22px 16px 0; text-align: center; }
@@ -565,6 +573,8 @@
 	@media (max-width: 480px) {
 		.cw { padding: 0; place-items: stretch; }
 		.card { width: 100%; min-height: 100dvh; border-radius: 0; }
+		/* card fills the screen here, so sit beside the close button instead of on top of it */
+		.theme-toggle { top: 12px; right: 46px; width: 32px; height: 32px; }
 		.hub { flex: 1; justify-content: center; }
 		.sun { width: 140vmax; margin-left: -70vmax; }
 	}
