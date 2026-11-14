@@ -719,51 +719,26 @@ test.describe('chat prompts', () => {
 });
 
 test.describe('Eno mascot', () => {
-  test('Eno mascot renders and animates through wave, open, reach while thinking', async ({
-    page
-  }) => {
+  test('Eno logo renders and pulses while thinking', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);
 
     const emptyMascot = page.locator('.assistant-turn.intro .eno-thinking');
     await expect(emptyMascot).toBeVisible();
-    const emptyFrame = emptyMascot.locator('img');
-    await expect(emptyFrame).toHaveAttribute('src', /\/eno\/eno-navy-wave\.png$/);
+    const emptyLogo = emptyMascot.locator('img');
+    await expect(emptyLogo).toHaveAttribute('src', /\/eno\/eno_logo_light\.png$/);
     await expect
       .poll(
         async () =>
-          emptyFrame.evaluate((img) => (img as HTMLImageElement).naturalWidth),
+          emptyLogo.evaluate((img) => (img as HTMLImageElement).naturalWidth),
         { timeout: 10_000 }
       )
       .toBe(1000);
 
-    // Slow the chat request enough for the pending mascot animation to run.
+    // Slow the chat request enough for the pending mascot pulse to run.
     await page.route('**/api/chat', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1500));
       await route.continue();
-    });
-
-    // Record the thinking image's pose every time it is inserted or retargeted.
-    await page.evaluate(() => {
-      const target = window as unknown as { __enoFrames?: string[] };
-      target.__enoFrames = [];
-      const log = document.querySelector('.chat-log');
-      if (!log) return;
-      const record = (): void => {
-        const img = document.querySelector('.assistant-turn .eno-thinking[data-active="true"] img');
-        const pose = img?.getAttribute('data-pose');
-        if (!pose) return;
-        const frames = target.__enoFrames!;
-        if (!frames.includes(pose)) frames.push(pose);
-      };
-      const observer = new MutationObserver(record);
-      observer.observe(log, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ['data-pose']
-      });
-      record();
     });
 
     const composer = page.locator('textarea[aria-label="Ask Capital One"]');
@@ -785,28 +760,25 @@ test.describe('Eno mascot', () => {
     await expect(thinkingAvatar).toHaveCount(1);
     await expect(thinkingAvatar).toBeVisible();
 
-    // Flicker-free: exactly one image layer with no opacity transition.
+    // One logo layer, pulsing while thinking (no frame swapping).
     const thinkingImg = thinkingAvatar.locator('img');
     await expect(thinkingImg).toHaveCount(1);
     await expect
-      .poll(() => thinkingImg.evaluate((img) => getComputedStyle(img).transitionDuration))
-      .toBe('0s');
+      .poll(() => thinkingImg.evaluate((img) => getComputedStyle(img).animationName))
+      .not.toBe('none');
 
     const response = await chatResponse;
     expect(response.status(), 'chat request should succeed').toBeLessThan(400);
     await response.finished().catch(() => undefined);
     await waitForChatSettled(page);
 
-    const frames = await page.evaluate(
-      () => (window as unknown as { __enoFrames?: string[] }).__enoFrames ?? []
-    );
-    expect(frames.slice(0, 3), `recorded poses: ${JSON.stringify(frames)}`).toEqual([
-      'wave',
-      'open',
-      'reach'
-    ]);
-
     await expect(thinkingRow).toHaveCount(0);
+
+    const lastAvatar = page.locator('.assistant-turn .eno-thinking').last();
+    await expect(lastAvatar).toHaveAttribute('data-active', 'false');
+    await expect
+      .poll(() => lastAvatar.locator('img').evaluate((img) => getComputedStyle(img).animationName))
+      .toBe('none');
     expectNoErrors(errors);
   });
 
@@ -921,12 +893,12 @@ test.describe('Eno mascot', () => {
     await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
 
     const emptyImg = page.locator('.assistant-turn.intro .eno-thinking img');
-    await expect(emptyImg).toHaveAttribute('src', /\/eno\/eno-navy-wave\.png$/);
+    await expect(emptyImg).toHaveAttribute('src', /\/eno\/eno_logo_light\.png$/);
 
     await page.locator('button[aria-label="Switch to dark mode"]').click();
     await expect(page.locator('.dashboard')).toHaveAttribute('data-theme', 'dark');
 
-    await expect(emptyImg).toHaveAttribute('src', /\/eno\/eno-light-wave\.png$/);
+    await expect(emptyImg).toHaveAttribute('src', /\/eno\/eno_logo_dark\.png$/);
 
     expectNoErrors(errors);
   });

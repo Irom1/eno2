@@ -99,7 +99,7 @@
       <a class="brand" href="/" aria-label="Capital One and Eno 2.0 home">
         <CapitalOneLogo label="Capital One" />
         <span class="divider"></span>
-        <Eno variant={isDark ? "light" : "navy"} size={39} alt="" />
+        <Eno variant={isDark ? "dark" : "light"} size={39} alt="" />
         <span>Eno 2.0</span>
       </a>
 
