@@ -1,7 +1,8 @@
 <script lang="ts">
 	import RingChart, { type RingItem } from './RingChart.svelte';
 	import CategoryIcon from './CategoryIcon.svelte';
-	import ClimateWiseMark from './ClimateWiseMark.svelte';
+	import logoLight from '$lib/assets/climatewise-logo-light.png';
+	import logoDark from '$lib/assets/climatewise-logo-dark.png';
 	import { CATEGORIES, CATEGORY_BY_ID, type ClimateReport } from './emissions';
 
 	type Theme = 'light' | 'dark' | 'system';
@@ -48,7 +49,7 @@
 		} catch {}
 	}
 
-	let days = $state(90);
+	const DAYS = 90;
 	let attempt = $state(0);
 	let report = $state<ClimateReport | null>(null);
 	let customer = $state<{ firstName: string; lastName: string } | null>(null);
@@ -56,11 +57,10 @@
 	let selected = $state<string | null>(null);
 
 	$effect(() => {
-		const d = days;
 		attempt;
 		let cancelled = false;
 		error = '';
-		fetch(`/api/climate?days=${d}`)
+		fetch(`/api/climate?days=${DAYS}`)
 			.then((r) => (r.ok ? r.json() : Promise.reject(new Error('Request failed'))))
 			.then((data) => {
 				if (cancelled) return;
@@ -167,22 +167,18 @@
 			<div class="sun"><span class="sun-day"></span><span class="sun-dusk"></span></div>
 		</div>
 
-		<!-- Seamless top: small controls in the corners, brand centered -->
-		<div class="corner left">
-			<div class="range" role="group" aria-label="Time range">
-				{#each [30, 90] as d}
-					<button aria-pressed={days === d} onclick={() => (days = d)}>{d}d</button>
-				{/each}
-			</div>
-		</div>
+		<!-- Seamless top: close button in the corner, brand centered -->
 		<div class="corner right">
 			<a class="icon-btn" href={backHref} aria-label="Close and go back to dashboard" title="Close">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
 			</a>
 		</div>
 		<header class="brand">
-			<span class="mark-badge"><ClimateWiseMark size={46} /></span>
-			<h1 id="cw-title">ClimateWise</h1>
+			<!-- Both logo colorways stacked; the theme crossfades between them -->
+			<h1 id="cw-title" class="logo">
+				<img class="logo-light" src={logoLight} alt="ClimateWise" width="1000" height="392" />
+				<img class="logo-dark" src={logoDark} alt="" aria-hidden="true" width="1000" height="392" />
+			</h1>
 			{#if report}<p>Last {report.days} days · Updated {niceDate(report.asOf)}</p>{/if}
 		</header>
 
@@ -342,7 +338,6 @@
 		--navy: var(--dark, #0d2b40) var(--light, #013d5b);
 		--accent: var(--dark, #4fc08a) var(--light, #12806a);
 		--leaf: var(--dark, #59c26f) var(--light, #3aa548);
-		--wordmark: var(--dark, #eaf4fa) var(--light, #0b4a73);
 		color-scheme: var(--dark, dark) var(--light, light);
 		box-sizing: border-box;
 		min-height: 100dvh;
@@ -440,7 +435,7 @@
 	.cw.to-light, .cw.to-light :global(*:not(.sky):not(.sky *)) {
 		transition: color 1.4s ease-in-out 0.8s, background-color 2.2s ease-in-out 0.4s, border-color 2.2s ease-in-out 0.4s,
 			fill 2.2s ease-in-out 0.4s, stroke 2.2s ease-in-out 0.4s, box-shadow 2.2s ease-in-out 0.4s,
-			backdrop-filter 2.2s ease-in-out 0.4s !important;
+			backdrop-filter 2.2s ease-in-out 0.4s, opacity 2.2s ease-in-out 0.4s !important;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -449,11 +444,7 @@
 
 	/* Seamless top */
 	.corner { position: absolute !important; top: 14px; z-index: 6 !important; display: flex; align-items: center; gap: 2px; }
-	.corner.left { left: 14px; }
 	.corner.right { right: 12px; }
-	.range { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--sunken); }
-	.range button { min-height: 22px; padding: 0 8px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
-	.range button[aria-pressed='true'] { background: var(--glass-strong); color: var(--ink); box-shadow: 0 1px 3px rgba(10, 25, 40, 0.15); }
 	.theme-toggle {
 		position: fixed; top: 16px; right: 16px; z-index: 10;
 		display: grid; place-items: center; width: 42px; height: 42px; padding: 0;
@@ -463,16 +454,10 @@
 	.icon-btn { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
 	.icon-btn:hover { background: var(--sunken); color: var(--ink); }
 	.brand { display: grid; justify-items: center; gap: 2px; padding: 22px 16px 0; text-align: center; }
-	.mark-badge {
-		display: grid; place-items: center; width: 58px; height: 58px; margin-bottom: 6px;
-		border-radius: 18px;
-		/* badge only at night; in daylight the logo sits straight on the warm sky */
-		border: 1px solid var(--dark, var(--glass-edge)) var(--light, transparent);
-		background: var(--dark, rgba(255, 255, 255, 0.1)) var(--light, transparent);
-		backdrop-filter: var(--dark, blur(12px)) var(--light, none);
-		box-shadow: var(--dark, 0 8px 22px rgba(0, 0, 0, 0.25)) var(--light, none);
-	}
-	.brand h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.025em; color: var(--wordmark); line-height: 1.1; }
+	.logo { display: grid; width: 168px; margin: 4px 0 6px; }
+	.logo img { grid-area: 1 / 1; width: 100%; height: auto; }
+	.logo-light { opacity: var(--dark, 0) var(--light, 1); }
+	.logo-dark { opacity: var(--dark, 1) var(--light, 0); }
 	.brand p { font-size: 11.5px; color: var(--muted); }
 
 	/* Hub: ring on top, three tiles branching below */
