@@ -7,6 +7,8 @@
     open: boolean;
     initialPrompt: { text: string; id: number } | null;
     onClose: () => void;
+    canSend: boolean;
+    hasMessages: boolean;
   }
 
   interface Customer {
@@ -22,15 +24,7 @@
     pending?: boolean;
   }
 
-  let { open, initialPrompt, onClose }: Props = $props();
-
-  const suggestions = [
-    'Give me a snapshot of my finances',
-    'Where did my money go last month?',
-    "What's due in the next 30 days?",
-    'Anything weird in my transactions?',
-    'Find an ATM near Arlington'
-  ];
+  let { open, initialPrompt, onClose, canSend = $bindable(), hasMessages = $bindable() }: Props = $props();
 
   let customers = $state<Customer[]>([]);
   let customerId = $state('');
@@ -40,12 +34,10 @@
   let messages = $state<ChatMessage[]>([]);
   let streaming = $state(false);
   let status = $state('');
-  let draft = $state('');
   let messageSeq = 0;
   let requestSeq = 0;
   let lastPromptId = 0;
   let logEl: HTMLDivElement;
-  let composerEl: HTMLTextAreaElement;
 
   const displayName = (customer: Customer): string =>
     `${customer.firstName} ${customer.lastName}`.trim() || 'Customer';
@@ -147,7 +139,6 @@
     messages.push({ id: assistantId, role: 'assistant', text: '', pending: true });
     streaming = true;
     status = 'Thinking…';
-    draft = '';
     scrollLog();
 
     try {
@@ -218,24 +209,6 @@
     }
   }
 
-  function submitDraft(): void {
-    const text = draft.trim();
-    if (!text) return;
-    void send(text);
-  }
-
-  function handleSubmit(event: SubmitEvent): void {
-    event.preventDefault();
-    submitDraft();
-  }
-
-  function handleComposerKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      submitDraft();
-    }
-  }
-
   function handleKeydown(event: KeyboardEvent): void {
     if (open && event.key === 'Escape' && !event.defaultPrevented) {
       event.preventDefault();
@@ -248,8 +221,8 @@
   });
 
   $effect(() => {
-    if (!open) return;
-    void tick().then(() => composerEl?.focus());
+    canSend = ready && !streaming;
+    hasMessages = messages.length > 0;
   });
 
   $effect(() => {
@@ -267,7 +240,6 @@
 
 <div
   class="chat-panel"
-  class:open
   role="region"
   aria-label="Capital One Assistant"
   inert={!open}
@@ -288,7 +260,6 @@
         </select>
       </label>
     </div>
-    <button class="close-button" aria-label="Close assistant" onclick={onClose}>×</button>
   </header>
 
   <div class="chat-log" aria-live="polite" aria-label="Conversation" bind:this={logEl}>
@@ -298,15 +269,6 @@
         {#if booting || !ready}
           <p class="status-line">{status || 'Connecting…'}</p>
         {/if}
-        <div class="suggestions">
-          {#each suggestions as suggestion}
-            <button
-              class="suggestion"
-              disabled={!ready || streaming}
-              onclick={() => void send(suggestion)}
-            >{suggestion}</button>
-          {/each}
-        </div>
       </div>
     {/if}
 
@@ -326,24 +288,7 @@
     {/each}
   </div>
 
-  <form class="chat-composer" onsubmit={handleSubmit}>
-    <textarea
-      bind:this={composerEl}
-      bind:value={draft}
-      rows="1"
-      aria-label="Message the assistant"
-      placeholder="Message the assistant…"
-      onkeydown={handleComposerKeydown}
-    ></textarea>
-    <button
-      class="send-button"
-      type="submit"
-      aria-label="Send message"
-      disabled={!ready || streaming || !draft.trim()}
-    >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12 16-8-6 16-2.5-6.5L4 12Z"/></svg>
-    </button>
-  </form>
+
 </div>
 
 <style>
@@ -356,23 +301,12 @@
     white-space: nowrap;
   }
   .chat-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 70;
-    width: min(27rem, 100vw);
-    border-left: 1px solid var(--border);
-    background: var(--surface);
+    height: 100%;
     color: var(--ink);
     display: flex;
     flex-direction: column;
     min-width: 0;
-    transform: translateX(100%);
-    visibility: hidden;
-    transition: transform 240ms ease, visibility 240ms;
   }
-  .chat-panel.open { transform: none; visibility: visible; }
   .chat-header {
     display: flex;
     align-items: center;
@@ -399,18 +333,6 @@
     color: var(--ink);
     font-size: 13px;
   }
-  .close-button {
-    flex: none;
-    width: 36px;
-    height: 36px;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--muted);
-    font-size: 23px;
-    line-height: 1;
-  }
-  .close-button:hover { background: var(--page); color: var(--ink); }
   .chat-log {
     flex: 1;
     overflow-y: auto;
@@ -421,21 +343,6 @@
   }
   .empty-state { display: grid; gap: 14px; margin: auto 0 0; }
   .empty-title { font-weight: 600; line-height: 1.4; }
-  .suggestions { display: grid; gap: 8px; margin-top: 4px; }
-  .suggestion {
-    width: 100%;
-    background: var(--page);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 10px 12px;
-    text-align: left;
-    font-size: 14px;
-    color: var(--ink);
-  }
-  .suggestion:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--link) 45%, var(--border));
-  }
-  .suggestion:disabled, .send-button:disabled { opacity: 0.55; cursor: default; }
   .bubble {
     max-width: 88%;
     padding: 10px 14px;
@@ -476,48 +383,5 @@
     border-radius: 5px;
     background: color-mix(in srgb, var(--border) 55%, transparent);
     font-size: 0.92em;
-  }
-  .chat-composer {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-    padding: 12px;
-    border-top: 1px solid var(--border);
-  }
-  .chat-composer textarea {
-    flex: 1;
-    min-height: 42px;
-    max-height: 130px;
-    resize: none;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    background: var(--page);
-    color: var(--ink);
-    font: inherit;
-    line-height: 1.4;
-  }
-  .chat-composer textarea::placeholder { color: var(--muted); }
-  .chat-composer textarea:focus-visible {
-    outline: 2px solid var(--link);
-    outline-offset: 1px;
-  }
-  .send-button {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 42px;
-    height: 42px;
-    border: 0;
-    border-radius: 50%;
-    background: var(--button);
-    color: var(--button-text);
-  }
-  .send-button svg { width: 19px; height: 19px; }
-  @media (max-width: 900px) {
-    .chat-panel {
-      width: 100%;
-      border-left: 0;
-    }
   }
 </style>
