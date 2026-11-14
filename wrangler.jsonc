@@ -7,5 +7,11 @@
   "assets": {
     "directory": ".svelte-kit/cloudflare",
     "binding": "ASSETS"
+  },
+  "vars": {
+    "ALLOW_SEED": "0",
+    "GEMINI_MODEL": "gemini-3.8-flash",
+    "LLM": "gemini",
+    "NESSIE_BASE_URL": "https://prod-api.nessieisreal.com"
   }
 }
