@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mergeTransactions } from '../server/accounts';
-import { buildReport, fromNessiePurchase, scoreFor, tierFor, US_AVG_TONNES } from './emissions';
+import { buildDemoTransactions } from '../server/nessie/seedTransactions';
+import { buildReport, classify, fromNessiePurchase, scoreFor, tierFor, US_AVG_TONNES } from './emissions';
 
 // Raw Nessie deposits/withdrawals, run through the same normalizer /api/accounts/:id uses,
 // so these tests break if that endpoint's transaction shape ever drifts from what ClimateWise reads.
@@ -54,6 +55,26 @@ describe('ClimateWise report', () => {
     expect(report.purchaseCount).toBe(0);
     expect(report.totalKg).toBe(0);
     expect(Number.isFinite(report.score)).toBe(true);
+  });
+
+  it('classifies every merchant the demo seed generates', () => {
+    const categories = ['dining', 'groceries', 'entertainment', 'travel', 'shopping', 'gas', 'bills', 'other'] as const;
+    const seeded = (['Checking', 'Savings', 'Credit Card'] as const).flatMap((type) =>
+      buildDemoTransactions(type, `acct-${type}`, asOf, categories)
+    );
+    const merchants = new Set(seeded.filter((t) => t.kind === 'withdrawal').map((t) => t.description));
+    const counts = (description: string) =>
+      buildReport([{ id: 'x', kind: 'withdrawal', amount: 10, description, date: '2026-11-10' }], { days: 30, asOf }).purchaseCount;
+    for (const m of merchants) {
+      // either excluded as a non-purchase, or matched by a real rule
+      if (/TRANSFER|SAVINGS GOAL|DEMO OPENING/.test(m)) expect(counts(m), m).toBe(0);
+      else expect(classify(m).sub, m).not.toBe('Other purchases');
+    }
+  });
+
+  it('counts flights as carbon-heavy travel', () => {
+    expect(classify('DELTA AIR LINES')).toMatchObject({ category: 'transport', rating: 'heavy', sub: 'Flights' });
+    expect(classify('MARRIOTT HOTEL').sub).toBe('Hotels');
   });
 
   it('maps raw Nessie purchases', () => {

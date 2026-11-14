@@ -33,7 +33,7 @@ export interface Category {
 
 /** Fixed order = ring order = color order (validated for light + dark). Don't reorder. */
 export const CATEGORIES: Category[] = [
-	{ id: 'transport', label: 'Fuel & rides', factor: 2.87, color: '#c4562e', colorDark: '#c95436', reducible: 0.3,
+	{ id: 'transport', label: 'Travel & transport', factor: 2.87, color: '#c4562e', colorDark: '#c95436', reducible: 0.3,
 	  tip: 'Swap two drives a week for the T or a bike' },
 	{ id: 'shopping', label: 'Shopping & services', factor: 0.2, color: '#7a5cc7', colorDark: '#8569d4', reducible: 0.3,
 	  tip: 'Choose refurbished for your next electronics buy' },
@@ -67,6 +67,8 @@ const RULES: [RegExp, CategoryId, Rating, string, number][] = [
 	[/\b(SHELL|EXXON|MOBIL|CHEVRON|SUNOCO|BP|CITGO|GULF|MARATHON|SPEEDWAY|GAS|FUEL|OIL)\b/i, 'transport', 'heavy', 'Gas', 2.87],
 	[/\b(UBER|LYFT|TAXI|CAB)\b/i, 'transport', 'mixed', 'Rideshare', 0.45],
 	[/\b(MBTA|SUBWAY|TRANSIT|AMTRAK|METRO|BUS|BLUEBIKES|BIKE)\b/i, 'transport', 'green', 'Public transit & bikes', 0.2],
+	// Air transportation (NAICS 481) is the most carbon-intensive spend per dollar after fuel
+	[/\b(DELTA|JETBLUE|SOUTHWEST|AIR ?LINES?|AIRWAYS|AIRFARE)\b/i, 'transport', 'heavy', 'Flights', 1.0],
 	[/\b(EVERSOURCE|NATIONAL GRID|ENERGY|ELECTRIC|UTILIT|POWER)\b/i, 'energy', 'mixed', 'Utilities', 0.85],
 	[/\b(WHOLE FOODS|SAFEWAY|TRADER JOE'?S?|KROGER|STOP ?& ?SHOP|MARKET BASKET|GROCER|MKT|ALDI|COSTCO|FARMERS)\b/i, 'food', 'green', 'Groceries', 0.55],
 	[/\b(DOORDASH|GRUBHUB|UBER ?EATS|POSTMATES|INSTACART)\b/i, 'food', 'heavy', 'Delivery', 0.3],
@@ -75,10 +77,12 @@ const RULES: [RegExp, CategoryId, Rating, string, number][] = [
 	[/\b(RENT|PROPERTIES|APARTMENT|MORTGAGE|LEASING)\b/i, 'housing', 'fixed', 'Rent', 0.1],
 	[/\b(APPLE STORE|BEST ?BUY|ELECTRONICS|MICRO ?CENTER)\b/i, 'shopping', 'heavy', 'New electronics', 0.2],
 	[/\b(THRIFT|GOODWILL|REFURB|BACK ?MARKET)\b/i, 'shopping', 'green', 'Secondhand', 0.1],
-	[/\b(AMAZON|MKTPLACE|TEMU|SHEIN)\b/i, 'shopping', 'mixed', 'Online orders', 0.25],
-	[/\b(TARGET|WALMART|IKEA|STORE|SHOP)\b/i, 'shopping', 'mixed', 'Retail', 0.2],
+	[/\b(MARRIOTT|HILTON|HYATT|HOTELS?|MOTEL|AIRBNB)\b/i, 'shopping', 'mixed', 'Hotels', 0.2],
+	[/\b(AMAZON|MKTPLACE|MARKETPLACE|TEMU|SHEIN)\b/i, 'shopping', 'mixed', 'Online orders', 0.25],
+	[/\b(TARGET|WALMART|IKEA|STORE|SHOP|BOOKSTORE|BOOKS)\b/i, 'shopping', 'mixed', 'Retail', 0.2],
 	[/\b(NETFLIX|SPOTIFY|HULU|DISNEY)\b/i, 'shopping', 'green', 'Streaming', 0.08],
-	[/\b(COMCAST|VERIZON|AT&T|T-MOBILE)\b/i, 'shopping', 'green', 'Phone & internet', 0.1],
+	[/\b(AMC|THEATRES?|THEATERS?|CINEMA|CONCERT|LIVE NATION|TICKETMASTER)\b/i, 'shopping', 'green', 'Entertainment', 0.15],
+	[/\b(COMCAST|VERIZON|AT&T|T-MOBILE|MOBILE PHONE|PHONE BILL|WIRELESS)\b/i, 'shopping', 'green', 'Phone & internet', 0.1],
 	[/\b(FITNESS|EQUINOX|GYM)\b/i, 'shopping', 'green', 'Gym', 0.15],
 	[/\b(GEICO|INSURANCE)\b/i, 'shopping', 'green', 'Insurance', 0.05]
 ];
@@ -86,8 +90,11 @@ const RULES: [RegExp, CategoryId, Rating, string, number][] = [
 /** Weight of each rating when scoring how green a set of purchases is. */
 export const RATING_WEIGHT: Record<Rating, number> = { green: 1, mixed: 0.5, heavy: 0.15, fixed: 0.5 };
 
-/** Not purchases: money moving between your own accounts, card payments, payroll, refunds. */
-const NON_PURCHASE = /\b(TRANSFER|PAYMENT THANK YOU|PAYROLL|REFUND|DEPOSIT|INTEREST)\b/i;
+/**
+ * Not purchases: money moving between your own accounts, card payments, payroll, refunds,
+ * and the demo seed's opening-balance placeholder.
+ */
+const NON_PURCHASE = /\b(TRANSFER|PAYMENT THANK YOU|CARD PAYMENT|SAVINGS GOAL|PAYROLL|REFUND|DEPOSIT|INTEREST|DEMO OPENING)\b/i;
 
 export function classify(description: string): { category: CategoryId; rating: Rating; sub: string; factor: number } {
 	for (const [re, category, rating, sub, factor] of RULES) if (re.test(description)) return { category, rating, sub, factor };
