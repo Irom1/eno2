@@ -12,9 +12,8 @@
   <div class="follow-ups" aria-label="Suggested follow-ups">
     {#each suggestions as suggestion (suggestion)}
       <button class="follow-up" type="button" {disabled} onclick={() => onSelect(suggestion)}>
-        <span class="follow-up-label">{suggestion}</span>
         <svg
-          class="follow-up-arrow"
+          class="follow-up-elbow"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -23,8 +22,10 @@
           stroke-linejoin="round"
           aria-hidden="true"
         >
-          <path d="M5 12h14m-6-6 6 6-6 6" />
+          <path d="M6 4v7a5 5 0 0 0 5 5h8" />
+          <path d="m15 12 4 4-4 4" />
         </svg>
+        <span class="follow-up-label">{suggestion}</span>
       </button>
     {/each}
   </div>
@@ -39,8 +40,8 @@
   .follow-up {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
+    justify-content: flex-start;
+    gap: 8px;
     width: 100%;
     padding: 7px 2px;
     border: 0;
@@ -51,10 +52,11 @@
     font-weight: 600;
     line-height: 1.3;
     text-align: left;
+    text-decoration: none;
     cursor: pointer;
-  }
-  .follow-up + .follow-up {
-    border-top: 1px solid var(--border);
+    transition:
+      background-color 140ms ease,
+      color 140ms ease;
   }
   .follow-up-label {
     min-width: 0;
@@ -62,18 +64,17 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .follow-up-arrow {
-    width: 14px;
-    height: 14px;
+  .follow-up-elbow {
+    width: 15px;
+    height: 15px;
     flex: none;
     color: var(--link);
-    transition: transform 140ms ease;
   }
-  .follow-up:hover:not(:disabled) {
+  .follow-up:hover:not(:disabled),
+  .follow-up:focus-visible {
+    background: color-mix(in srgb, var(--link) 10%, transparent);
     color: var(--link);
-  }
-  .follow-up:hover:not(:disabled) .follow-up-arrow {
-    transform: translateX(3px);
+    text-decoration: none;
   }
   .follow-up:focus-visible {
     outline: 2px solid var(--link);
@@ -82,13 +83,11 @@
   .follow-up:disabled {
     opacity: 0.55;
     cursor: default;
+    background: transparent;
   }
   @media (prefers-reduced-motion: reduce) {
-    .follow-up-arrow {
+    .follow-up {
       transition: none;
-    }
-    .follow-up:hover:not(:disabled) .follow-up-arrow {
-      transform: none;
     }
   }
 </style>
