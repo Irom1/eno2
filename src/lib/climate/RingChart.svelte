@@ -2,8 +2,8 @@
 	export interface RingItem {
 		id: string;
 		label: string;
-		share: number; // 0..1 — angular size of the segment
-		fill: number; // 0..1 — how far the solid fill grows outward inside the segment
+		share: number; // 0..1 — shown as a percentage in the centre while the segment is active
+		fill: number; // 0..1 — how far the solid fill grows outward inside the segment (0 = empty slot)
 		color: string; // any CSS color, e.g. var(--cat-transport)
 		detail: string;
 	}
@@ -11,14 +11,15 @@
 
 <script lang="ts">
 	/**
-	 * Apple-style "filled" segmented ring. Each segment is a pale slot at full thickness;
-	 * a solid fill grows outward from the inner edge to show a 0..1 value.
+	 * Apple-style "filled" segmented ring. Every item gets an equal, fixed slice shown as a pale slot;
+	 * a solid fill grows outward from the inner edge to show its 0..1 value.
 	 */
 	let {
 		items,
 		centerValue,
 		centerUnit,
 		selected = $bindable<string | null>(null),
+		hovered = $bindable<string | null>(null),
 		ariaLabel,
 		size = 200
 	}: {
@@ -26,6 +27,8 @@
 		centerValue: string;
 		centerUnit: string;
 		selected?: string | null;
+		/** The segment under the pointer, so the page can follow it too. */
+		hovered?: string | null;
 		ariaLabel: string;
 		size?: number;
 	} = $props();
@@ -37,10 +40,9 @@
 	const T = R_OUT - R_IN;
 	const GAP = 3.5; // half the gap between segments, px
 	const INSET = 3.5; // pale border left around the solid fill, px
-	const MIN_FILL = 0.16;
+	const MIN_FILL = 0.1; // smallest visible fill for a non-zero value
 
-	let hover = $state<string | null>(null);
-	let active = $derived(hover ?? selected);
+	let active = $derived(hovered ?? selected);
 	let activeItem = $derived(items.find((i) => i.id === active) ?? null);
 
 	const pt = (a: number, r: number) => `${(C + r * Math.sin(a)).toFixed(2)} ${(C - r * Math.cos(a)).toFixed(2)}`;
@@ -64,29 +66,18 @@
 	}
 
 	let segs = $derived.by(() => {
-		let a = 0;
-		return items
-			.filter((i) => i.share > 0)
-			.map((i) => {
-				const sweep = i.share * Math.PI * 2;
-				const a0 = a;
-				a += sweep;
-				const f = Math.max(MIN_FILL, Math.min(1, i.fill));
-				const fillOut = R_IN + INSET + (T - INSET * 2) * f;
-				const slot = sector(a0, a, R_IN, R_OUT, GAP);
-				const solid = sector(a0, a, R_IN + INSET, fillOut, GAP + INSET);
-				// slices too thin for a slot become a dot pair
-				const mid = a0 + sweep / 2;
-				const rMid = R_IN + T / 2;
-				const dotR = Math.max(3.5, Math.min(T / 2 - 1, (sweep * rMid) / 2 - GAP));
-				return {
-					...i,
-					f,
-					slot,
-					solid,
-					dot: { x: C + rMid * Math.sin(mid), y: C - rMid * Math.cos(mid), r: dotR }
-				};
-			});
+		const sweep = (Math.PI * 2) / Math.max(1, items.length);
+		return items.map((i, k) => {
+			const a0 = k * sweep;
+			const a1 = a0 + sweep;
+			const f = i.fill > 0 ? Math.max(MIN_FILL, Math.min(1, i.fill)) : 0;
+			const fillOut = R_IN + INSET + (T - INSET * 2) * f;
+			return {
+				...i,
+				slot: sector(a0, a1, R_IN, R_OUT, GAP),
+				solid: f > 0 ? sector(a0, a1, R_IN + INSET, fillOut, GAP + INSET) : null
+			};
+		});
 	});
 
 	const toggle = (id: string) => (selected = selected === id ? null : id);
@@ -102,18 +93,15 @@
 				role="button"
 				tabindex="0"
 				aria-label="{s.label}: {s.detail}"
-				onpointerenter={() => (hover = s.id)}
-				onpointerleave={() => (hover = null)}
+				onpointerenter={() => (hovered = s.id)}
+				onpointerleave={() => (hovered = null)}
+				onfocus={() => (hovered = s.id)}
+				onblur={() => (hovered = null)}
 				onclick={() => toggle(s.id)}
 				onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle(s.id))}
 			>
-				{#if s.slot}
-					<path class="slot" d={s.slot.d} stroke-width={s.slot.w} />
-					{#if s.solid}<path class="solid" d={s.solid.d} stroke-width={s.solid.w} />{/if}
-				{:else}
-					<circle class="slot" cx={s.dot.x} cy={s.dot.y} r={s.dot.r} />
-					<circle class="solid" cx={s.dot.x} cy={s.dot.y} r={Math.max(2, s.dot.r * (0.35 + 0.5 * s.f))} />
-				{/if}
+				{#if s.slot}<path class="slot" d={s.slot.d} stroke-width={s.slot.w} />{/if}
+				{#if s.solid}<path class="solid" d={s.solid.d} stroke-width={s.solid.w} />{/if}
 			</g>
 		{/each}
 	</svg>
@@ -149,10 +137,6 @@
 		fill: color-mix(in srgb, var(--c) 24%, var(--surface));
 		stroke: color-mix(in srgb, var(--c) 24%, var(--surface));
 		stroke-linejoin: round;
-	}
-	circle.slot,
-	circle.solid {
-		stroke: none;
 	}
 	.solid {
 		fill: var(--c);
