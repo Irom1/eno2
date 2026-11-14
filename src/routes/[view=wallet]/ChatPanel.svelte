@@ -3,8 +3,6 @@
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
   import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
-  import { filterCardDuplication } from '$lib/chat/dedupe.js';
-  import { inlineBlocks } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
   import {
     friendlyToolLabel,
@@ -12,10 +10,9 @@
     pushThinkingStep,
     type ThinkingState
   } from '$lib/chat/thinking.js';
-  import { allowedKindsFor, classifyIntents, isCreditOnlyPrompt, visibleCards } from '$lib/chat/relevance.js';
+  import { visibleCards } from '$lib/chat/relevance.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
-  import ChatCardRenderer from './chat-cards/ChatCardRenderer.svelte';
   import FollowUps from './FollowUps.svelte';
 
   interface Props {
@@ -346,13 +343,9 @@
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const allowedKinds = allowedKindsFor(classifyIntents(message.prompt ?? ''))}
-        {@const creditOnly = isCreditOnlyPrompt(message.prompt ?? '')}
-        {@const shownCards = visibleCards(message.cards ?? [], message.prompt ?? '')}
-        {@const blocks = inlineBlocks(message.text, shownCards)}
-        {@const hasBlocks = blocks.length > 0}
-        {@const isThinking = message.pending && !hasBlocks}
-        {#if hasBlocks || message.pending}
+        {@const hasText = message.text.trim().length > 0}
+        {@const isThinking = message.pending && !hasText}
+        {#if hasText || message.pending}
           <div class="assistant-turn" class:intro={message.intro}>
             <EnoThinking {variant} active={message.pending} size={40} />
             <div class="assistant-content">
@@ -374,26 +367,11 @@
                   </div>
                 </div>
               {/if}
-              {#each blocks as block, index (block.type + index)}
-                {#if block.type === 'text'}
-                  {@const clean = filterCardDuplication(block.text, shownCards)}
-                  {#if clean.trim()}
-                    <div class="bubble assistant">
-                      <div class="richtext">{@html renderMarkdown(clean)}</div>
-                    </div>
-                  {/if}
-                {:else}
-                  <div class="chat-cards">
-                    {#each block.cards as card (card.id)}
-                      <ChatCardRenderer
-                        {card}
-                        allowedKinds={allowedKinds.size > 0 ? allowedKinds : undefined}
-                        accountFilter={creditOnly ? 'credit' : 'all'}
-                      />
-                    {/each}
-                  </div>
-                {/if}
-              {/each}
+              {#if hasText}
+                <div class="bubble assistant">
+                  <div class="richtext">{@html renderMarkdown(message.text)}</div>
+                </div>
+              {/if}
               {#if message.intro && (booting || !ready)}
                 <p class="status-line intro-status">{status || 'Connecting…'}</p>
               {/if}
@@ -469,14 +447,6 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-  }
-  .chat-cards {
-    display: grid;
-    gap: 10px;
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    margin: 0;
   }
   .chat-followups { margin-top: 2px; }
   .status-line { color: var(--muted); font-size: 14px; }
