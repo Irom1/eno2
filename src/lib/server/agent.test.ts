@@ -124,17 +124,25 @@ describe("agent loop", () => {
 
     expect(callTool).toHaveBeenCalledWith("insight_upcoming_bills", { customerId: "cust-1" });
     const types = events.map((event) => event.type);
-    expect(types).toEqual(["tool_start", "tool_result", "insight", "text", "usage", "done"]);
+    expect(types).toEqual([
+      "tool_start",
+      "tool_result",
+      "insight",
+      "text",
+      "text",
+      "usage",
+      "done"
+    ]);
 
     const text = events
       .filter((event): event is Extract<AgentEvent, { type: "text" }> => event.type === "text")
       .map((event) => event.delta)
       .join("");
-    expect(text).toContain("4,283.59");
+    expect(text).toContain("8 bills");
     expect(events.find((event) => event.type === "usage")).toMatchObject({
-      promptTokens: 20,
-      outputTokens: 9,
-      rounds: 2
+      promptTokens: 10,
+      outputTokens: 2,
+      rounds: 1
     });
 
     // Thought signature is preserved verbatim across turns.
@@ -213,6 +221,7 @@ describe("agent loop", () => {
       "tool_start",
       "tool_result",
       "insight",
+      "text",
       "text",
       "usage",
       "done"
@@ -367,6 +376,10 @@ describe("agent loop", () => {
     expect(toolResults[0]?.summary).not.toContain("(reused)");
     expect(toolResults[1]?.summary).toContain("(reused)");
     expect(events.filter((event) => event.type === "insight")).toHaveLength(1);
+    const insight = events.find(
+      (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
+    );
+    expect(insight?.accountId).toBe("acct-1");
     expect(events[events.length - 1]?.type).toBe("done");
   });
 
@@ -384,6 +397,225 @@ describe("agent loop", () => {
     await runGeminiAgent({ session, message: "What's due again?", emit, runtime, mcp, deps });
     expect(stream).toHaveBeenCalledTimes(1);
     expect(events.filter((event) => event.type === "notice")).toHaveLength(1);
+    expect(events[events.length - 1]?.type).toBe("done");
+  });
+
+  it("emits a normalized card event for present_card without calling MCP", async () => {
+    let streamCalls = 0;
+    const { session, events, emit } = capture();
+    const loansPayload = {
+      count: 1,
+      items: [
+        {
+          _id: "loan-1",
+          type: "Auto",
+          monthlyPayment: 412,
+          amount: 18400,
+          accountId: "acct-1"
+        }
+      ]
+    };
+    const callTool = vi.fn(async () => ({
+      ok: true,
+      data: loansPayload,
+      text: JSON.stringify(loansPayload)
+    }));
+
+    const rounds: RoundResult[] = [
+      {
+        text: "Here is your loan.",
+        parts: [
+          { text: "Here is your loan." },
+          {
+            functionCall: { name: "nessie_list_account_loans", args: { accountId: "acct-1" } },
+            thoughtSignature: "sig-loan"
+          }
+        ],
+        functionCalls: [{ name: "nessie_list_account_loans", args: { accountId: "acct-1" } }]
+      },
+      {
+        text: "",
+        parts: [{ functionCall: { name: "present_card", args: { kind: "loan", id: "loan-1" } } }],
+        functionCalls: [{ name: "present_card", args: { kind: "loan", id: "loan-1" } }]
+      },
+      {
+        text: "You can review the payment schedule in the app.",
+        parts: [{ text: "You can review the payment schedule in the app." }],
+        functionCalls: []
+      }
+    ];
+
+    await runGeminiAgent({
+      session,
+      message: "Show me my auto loan",
+      emit,
+      runtime,
+      mcp,
+      deps: baseDeps({
+        stream: async (params) => {
+          const round = rounds[streamCalls++] as RoundResult;
+          if (round.text) params.onText(round.text);
+          return round;
+        },
+        callTool
+      })
+    });
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(callTool).toHaveBeenCalledWith("nessie_list_account_loans", { accountId: "acct-1" });
+    expect(callTool).not.toHaveBeenCalledWith("present_card", expect.anything());
+
+    const cardEvents = events.filter(
+      (event): event is Extract<AgentEvent, { type: "card" }> => event.type === "card"
+    );
+    expect(cardEvents).toHaveLength(1);
+    expect(cardEvents[0]?.card).toMatchObject({
+      kind: "loan",
+      entityId: "loan:loan-1",
+      afterText: "Here is your loan.".length,
+      payload: {
+        loanId: "loan-1",
+        type: "Auto",
+        balance: 18400,
+        monthlyPayment: 412,
+        accountId: "acct-1",
+        customerId: "cust-1"
+      }
+    });
+
+    const presentResults = events.filter(
+      (event): event is Extract<AgentEvent, { type: "tool_result" }> =>
+        event.type === "tool_result" && event.name === "present_card"
+    );
+    expect(presentResults).toHaveLength(1);
+    expect(presentResults[0]).toMatchObject({ ok: true });
+    expect(events[events.length - 1]?.type).toBe("done");
+  });
+
+  it("rejects present_card when the entity was not returned this turn", async () => {
+    let streamCalls = 0;
+    const { session, events, emit } = capture();
+    const callTool = vi.fn(async () => toolResult);
+
+    const rounds: RoundResult[] = [
+      {
+        text: "",
+        parts: [{ functionCall: { name: "present_card", args: { kind: "loan", id: "loan-nope" } } }],
+        functionCalls: [{ name: "present_card", args: { kind: "loan", id: "loan-nope" } }]
+      },
+      {
+        text: "I couldn't find that loan to show.",
+        parts: [{ text: "I couldn't find that loan to show." }],
+        functionCalls: []
+      }
+    ];
+
+    await runGeminiAgent({
+      session,
+      message: "Show me that loan",
+      emit,
+      runtime,
+      mcp,
+      deps: baseDeps({
+        stream: async (params) => {
+          const round = rounds[streamCalls++] as RoundResult;
+          if (round.text) params.onText(round.text);
+          return round;
+        },
+        callTool
+      })
+    });
+
+    expect(callTool).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === "card")).toHaveLength(0);
+    expect(
+      events.find(
+        (event) => event.type === "tool_result" && event.name === "present_card"
+      )
+    ).toMatchObject({ ok: false, summary: "Card not available" });
+    expect(events.filter((event) => event.type === "text").length).toBeGreaterThan(0);
+    expect(events[events.length - 1]?.type).toBe("done");
+  });
+
+  it("rejects present_card for an entity owned by another account", async () => {
+    let streamCalls = 0;
+    const { session, events, emit } = capture();
+    const foreignLoans = {
+      count: 1,
+      items: [
+        {
+          _id: "loan-foreign",
+          type: "Auto",
+          monthlyPayment: 100,
+          amount: 5000,
+          accountId: "acct-foreign"
+        }
+      ]
+    };
+    const callTool = vi.fn(async () => ({
+      ok: true,
+      data: foreignLoans,
+      text: JSON.stringify(foreignLoans)
+    }));
+
+    const rounds: RoundResult[] = [
+      {
+        text: "",
+        parts: [
+          {
+            functionCall: {
+              name: "nessie_list_account_loans",
+              args: { accountId: "acct-1" }
+            }
+          }
+        ],
+        functionCalls: [
+          { name: "nessie_list_account_loans", args: { accountId: "acct-1" } }
+        ]
+      },
+      {
+        text: "",
+        parts: [
+          {
+            functionCall: {
+              name: "present_card",
+              args: { kind: "loan", id: "loan-foreign" }
+            }
+          }
+        ],
+        functionCalls: [
+          { name: "present_card", args: { kind: "loan", id: "loan-foreign" } }
+        ]
+      },
+      {
+        text: "I can't show that loan.",
+        parts: [{ text: "I can't show that loan." }],
+        functionCalls: []
+      }
+    ];
+
+    await runGeminiAgent({
+      session,
+      message: "What about the car payment?",
+      emit,
+      runtime,
+      mcp,
+      deps: baseDeps({
+        stream: async (params) => {
+          const round = rounds[streamCalls++] as RoundResult;
+          if (round.text) params.onText(round.text);
+          return round;
+        },
+        callTool
+      })
+    });
+
+    expect(events.filter((event) => event.type === "card")).toHaveLength(0);
+    expect(
+      events.find(
+        (event) => event.type === "tool_result" && event.name === "present_card"
+      )
+    ).toMatchObject({ ok: false });
     expect(events[events.length - 1]?.type).toBe("done");
   });
 });

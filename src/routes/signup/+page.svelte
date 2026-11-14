@@ -380,7 +380,6 @@
   @keyframes pulse { 50% { opacity: .3; transform: translateY(-2px); } }
   .composer-area { flex: none; padding: 12px 22px max(18px, env(safe-area-inset-bottom)); }
   .composer { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--border); border-radius: 30px; background: var(--surface); box-shadow: 0 8px 24px #102b4212; }
-  .composer:focus-within { border-color: color-mix(in srgb, var(--link) 65%, var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 12%, transparent); }
   .composer input { flex: 1; min-width: 0; padding: 9px 6px 9px 14px; border: 0; background: transparent; outline: 0; font-size: 15px; }
   .composer input::placeholder { color: var(--muted); }
   .send { display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--button); color: var(--button-text); }

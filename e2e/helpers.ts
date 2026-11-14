@@ -143,20 +143,39 @@ export async function askChat(page: Page, prompt: string): Promise<void> {
   await waitForChatSettled(page);
 }
 
-/** Titles rendered in card headers, in DOM order. */
-export async function cardTitles(page: Page): Promise<string[]> {
-  const titles = await page.locator('.chat-card .card-head h3').allInnerTexts();
-  return titles.map((title) => title.trim()).filter(Boolean);
-}
+/** Every primitive card selector the chat can render. */
+export const PRIMITIVE_CARD_SELECTOR = [
+  '.transaction-card',
+  '.transaction-list-card',
+  '.pie-chart-card',
+  '.bill-card',
+  '.account-card',
+  '.loan-card',
+  '.location-card',
+  '.recurring-card',
+  '.reward-card',
+  '.goal-card',
+  '.cashflow-card',
+  '.merchant-card',
+  '.profile-card'
+].join(', ');
 
-/** Count of rendered card shells. */
+/** Count of rendered primitive card shells. */
 export function cardShells(page: Page) {
-  return page.locator('.chat-card');
+  return page.locator(PRIMITIVE_CARD_SELECTOR);
 }
 
-/** Concatenated text of every rendered card. */
+/** Concatenated text of every rendered primitive card. */
 export async function cardText(page: Page): Promise<string> {
-  return (await page.locator('.chat-card').allInnerTexts()).join('\n');
+  return (await page.locator(PRIMITIVE_CARD_SELECTOR).allInnerTexts()).join('\n');
+}
+
+/** `data-kind` values of the rendered primitive cards, in DOM order. */
+export async function cardKinds(page: Page): Promise<string[]> {
+  const kinds = await page.locator(PRIMITIVE_CARD_SELECTOR).evaluateAll((cards) =>
+    cards.map((card) => card.getAttribute('data-kind') ?? '')
+  );
+  return kinds.filter(Boolean);
 }
 
 /** Rendered markdown of assistant bubbles. */
@@ -165,40 +184,94 @@ export async function assistantText(page: Page): Promise<string> {
 }
 
 /**
- * Card style/label contract: no uppercase eyebrow chips, and no header that
- * just repeats internal naming such as "Rewards points".
+ * Primitive card style contract: no legacy `.chat-card` chrome or eyebrow
+ * labels. Single-entity cards render inline inside the assistant bubble, with
+ * no lift shadow, no accent strip, and a width capped by the bubble. Multi or
+ * series cards (`transaction-list`, `spending-pie`) stay standalone: a framed
+ * `.entity-card` surface with lift, a border, left alignment, and the same 88%
+ * column cap as the Eno chat bubble.
  */
 export async function expectCardStyle(page: Page): Promise<void> {
-  expect(
-    await page.locator('.chat-card .eyebrow').count(),
+  await expect(
+    page.locator('.chat-card'),
+    'legacy chat cards must not render'
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.chat-card .eyebrow'),
     'cards must not render eyebrow labels'
-  ).toBe(0);
+  ).toHaveCount(0);
 
-  for (const title of await cardTitles(page)) {
-    expect(title.toLowerCase(), 'card titles should be product language').not.toBe(
-      'rewards points'
-    );
-  }
-
-  const surfaces = await page.locator('.chat-card').evaluateAll((cards) =>
+  const surfaces = await page.locator(PRIMITIVE_CARD_SELECTOR).evaluateAll((cards) =>
     cards.map((card) => {
-      const style = getComputedStyle(card);
-      const accent = getComputedStyle(card, '::before');
+      const bubble = card.closest('.bubble.assistant');
+      const inline = Boolean(bubble);
+      const frame = card.closest('.entity-card');
+      const bubbleRect = bubble?.getBoundingClientRect();
+      const target = frame ?? card;
+      const style = getComputedStyle(target);
+      const accent = getComputedStyle(target, '::before');
+      const column = target.closest('.assistant-content');
+      const targetRect = target.getBoundingClientRect();
+      const columnRect = column?.getBoundingClientRect();
       return {
+        inline,
+        framed: Boolean(frame),
         shadow: style.boxShadow,
         borderTopWidth: Number.parseFloat(style.borderTopWidth),
-        accentHeight: Number.parseFloat(accent.height)
+        accentContent: accent.content,
+        leftAligned: columnRect ? Math.abs(targetRect.left - columnRect.left) <= 1 : false,
+        withinBubbleWidth: columnRect
+          ? targetRect.width <= columnRect.width * 0.88 + 1
+          : false,
+        withinInlineBubbleWidth: bubbleRect
+          ? targetRect.width <= bubbleRect.width + 1
+          : false
       };
     })
   );
 
   for (const surface of surfaces) {
+    if (surface.inline) {
+      // Inline cards keep the shared border but lose the standalone lift and
+      // accent, and never exceed the bubble they sit in.
+      expect(surface.shadow, 'inline cards must not use the standalone frame lift').toBe(
+        'none'
+      );
+      expect(
+        ['none', 'normal'],
+        'inline cards must not render a ::before accent bar'
+      ).toContain(surface.accentContent);
+      if (surface.framed) {
+        expect(
+          surface.borderTopWidth,
+          'inline cards keep the 1px frame border'
+        ).toBeGreaterThanOrEqual(1);
+      }
+      expect(
+        surface.withinInlineBubbleWidth,
+        'inline cards must not exceed the assistant bubble width'
+      ).toBe(true);
+      continue;
+    }
+
+    expect(surface.framed, 'standalone primitive cards sit in a contrast frame').toBe(true);
     expect(surface.shadow, 'cards should lift off the chat surface').not.toBe('none');
     expect(surface.borderTopWidth, 'cards need a visible border').toBeGreaterThanOrEqual(1);
-    expect(surface.accentHeight, 'cards need a 3px accent strip').toBeGreaterThan(2);
-    expect(surface.accentHeight, 'cards need a 3px accent strip').toBeLessThan(4);
+    expect(
+      ['none', 'normal'],
+      'cards must not render a ::before accent bar'
+    ).toContain(surface.accentContent);
+    expect(
+      surface.leftAligned,
+      'standalone cards align to the assistant content column left edge'
+    ).toBe(true);
+    expect(
+      surface.withinBubbleWidth,
+      'standalone cards must not exceed the chat bubble max width'
+    ).toBe(true);
   }
 }
+
 
 /**
  * Card values must not be repeated in the assistant prose. `values` are the

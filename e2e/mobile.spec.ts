@@ -2,7 +2,6 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   askChat,
   cardShells,
-  cardTitles,
   collectErrors,
   expectCardCount,
   expectNoErrors
@@ -75,7 +74,8 @@ test.describe('iPhone 13 viewport', () => {
 
     await askChat(page, 'Show me my loans');
     await expectCardCount(page, 1);
-    expect(await cardTitles(page)).toEqual(['Loans']);
+    await expect(page.locator('.loan-card')).toHaveCount(1);
+    await expect(page.locator('.loan-card')).toHaveAttribute('data-kind', 'loan');
 
     await expectNoHorizontalOverflow(page);
     expectNoErrors(errors);

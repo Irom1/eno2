@@ -8,10 +8,14 @@
     "directory": ".svelte-kit/cloudflare",
     "binding": "ASSETS"
   },
+  // Server-only secrets are set with `wrangler secret put` (never commit values):
+  // NESSIE_API_KEY, GEMINI_API_KEY, and MAPBOX_TOKEN. MAPBOX_TOKEN is required
+  // for ATM map previews; without it the card shows a fallback.
   "vars": {
     "ALLOW_SEED": "0",
     "GEMINI_MODEL": "gemini-3.8-flash",
     "LLM": "gemini",
+    "CARDS_MODE": "v2",
     "NESSIE_BASE_URL": "https://prod-api.nessieisreal.com"
   }
 }

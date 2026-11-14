@@ -202,6 +202,7 @@ export function computeMedian(values: readonly number[]): number {
 
 export interface DuplicateFinding {
   type: "duplicate";
+  _id: string;
   description: string;
   amount: number;
   date: string;
@@ -233,6 +234,7 @@ export function detectDuplicateCharges(
       flagged.add(j);
       findings.push({
         type: "duplicate",
+        _id: later.id,
         description: truncateText(later.description, 160),
         amount: toMoney(later.amount),
         date: toISODate(later.date),
@@ -248,6 +250,7 @@ export function detectDuplicateCharges(
 
 export interface OutlierFinding {
   type: "outlier";
+  _id: string;
   description: string;
   amount: number;
   date: string;
@@ -292,6 +295,7 @@ export function detectOutliers(
     if (findings.has(tx)) return;
     findings.set(tx, {
       type: "outlier",
+      _id: tx.id,
       description: truncateText(tx.description, 160),
       amount: toMoney(tx.amount),
       date: toISODate(tx.date),

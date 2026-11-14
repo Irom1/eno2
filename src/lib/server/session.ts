@@ -109,7 +109,9 @@ export function destroySession(id: string | undefined | null): boolean {
 }
 
 export function destroyCustomerSessions(customerId: string): void {
-  for (const [id, session] of store()) if (session.customer.id === customerId) store().delete(id);
+  for (const [id, session] of store()) {
+    if (session.customer.id === customerId) store().delete(id);
+  }
 }
 
 const isFunctionResponsePart = (part: ContentPart): boolean =>

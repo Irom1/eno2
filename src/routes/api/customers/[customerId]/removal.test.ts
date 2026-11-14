@@ -33,7 +33,8 @@ it('filters persisted removal markers and exposes deletion only for unprotected 
     { _id: 'maya', firstName: 'Maya', lastName: 'Chen' },
     { _id: 'demo', firstName: 'Demo', lastName: 'Tester' },
     { _id: 'new', firstName: 'Future', lastName: 'Person' },
-    { _id: 'removed', firstName: DELETED_CUSTOMER_PREFIX + 'Old', lastName: 'Person' }
+    { _id: 'removed', firstName: DELETED_CUSTOMER_PREFIX + 'Old', lastName: 'Person' },
+    { _id: 'closed', firstName: 'Closed', lastName: 'Eno Demo Profile', address: { zip: '00000' } }
   ] } } as Awaited<ReturnType<typeof callTool>>);
   const result = await GET({ url: new URL('http://localhost/api/customers') } as Parameters<typeof GET>[0]);
   expect((await result.json()).customers.map(({ id, canDelete }: { id: string; canDelete: boolean }) => ({ id, canDelete }))).toEqual([{ id: 'maya', canDelete: false }, { id: 'demo', canDelete: false }, { id: 'new', canDelete: true }]);

@@ -42,11 +42,12 @@ test('CreditWise updates score, label, ring color and fill per profile and survi
   expect(new Set(colors).size).toBe(5);
   expect(fills).toEqual([...fills].sort((a, b) => a - b));
   const last = customers.at(-1)!;
+  const lastGauge = page.getByRole('img', { name: `Demo credit score: ${demoCreditScore(last.id)} out of 850, Excellent`, exact: true });
   // Switcher selection lives in the session; clear the original URL override.
   await page.goto('/dashboard');
-  await expect(page.locator('.gauge strong')).toHaveText(String(demoCreditScore(last.id)));
+  await expect(lastGauge.locator('strong')).toHaveText(String(demoCreditScore(last.id)));
   await page.reload();
-  await expect(page.locator('.gauge strong')).toHaveText(String(demoCreditScore(last.id)));
+  await expect(lastGauge.locator('strong')).toHaveText(String(demoCreditScore(last.id)));
   await page.locator('.theme-toggle').click();
-  await expect(page.locator('.gauge')).toHaveAttribute('style', /--score-color: #27926a/);
+  await expect(lastGauge).toHaveAttribute('style', /--score-color: #27926a/);
 });

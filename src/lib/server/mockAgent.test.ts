@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "./events";
 import type { ToolCallResult } from "./mcp";
-import { composeIntro, mockAgent, routeIntent, type MockAgentDeps } from "./mockAgent";
+import { composeFastAnswer, composeIntro, mockAgent, routeIntent, type MockAgentDeps } from "./mockAgent";
 import { createSession } from "./session";
 
 const customer = { id: "cust-1", firstName: "Maya", lastName: "Chen" };
@@ -117,10 +117,34 @@ describe("mockAgent", () => {
     expect(text).toContain("4,283.59");
     expect(text).toContain("4,218");
     expect(text).toContain("65.59");
-    expect(text).toContain("Rent");
-    expect(text).toContain("1,650");
+    expect(text).toContain("largest payment");
+    expect(text).toContain("within the next week");
+    expect(text).not.toContain("Rent");
+    expect(text).not.toContain("1,650");
+    expect(text).not.toContain("2026-11-20");
+    expect(text).toContain("Tip:");
+    const tip = text.slice(text.indexOf("Tip:"));
+    expect(tip).not.toContain("4,283.59");
+    expect(tip).not.toContain("4,218");
+    expect(tip).not.toContain("65.59");
     expect(text).not.toContain("not financial advice");
     expect(text).not.toContain("read-only");
+  });
+
+  it("keeps fast bill prose analytical instead of restating card fields", () => {
+    const text = composeFastAnswer(
+      "insight_upcoming_bills",
+      billsPayload,
+      new Date("2026-11-14T12:00:00Z"),
+      "Show me my bills"
+    );
+
+    expect(text).toContain("largest payment");
+    expect(text).toContain("within the next week");
+    expect(text).toContain("Tip:");
+    expect(text).not.toContain("Rent");
+    expect(text).not.toContain("1,650");
+    expect(text).not.toContain("2026-11-20");
   });
 
   it("uses the latest complete month for spending answers", async () => {
@@ -134,13 +158,17 @@ describe("mockAgent", () => {
     expect(text).toContain("shopping");
     expect(text).toContain("$1,800");
     expect(text).toContain("20 transactions");
+    expect(text).toContain("Tip:");
+    const tip = text.slice(text.indexOf("Tip:"));
+    expect(tip).not.toContain("$2,470");
+    expect(tip).not.toContain("$1,800");
     expect(text).not.toContain("estimated");
     expect(text).not.toContain("descriptions");
     expect(text).not.toContain("November 2026");
   });
 
   it("describes anomalies in plain language", async () => {
-    const { text } = await run("Anything weird in my transactions?", async (name) => {
+    const { events, text } = await run("Anything weird in my transactions?", async (name) => {
       expect(name).toBe("insight_anomalies");
       return ok({
         count: 2,
@@ -164,7 +192,16 @@ describe("mockAgent", () => {
 
     expect(text).toContain("possible duplicate");
     expect(text).toContain("unusually large purchase");
+    expect(text).toContain("Tip:");
+    const tip = text.slice(text.indexOf("Tip:"));
+    expect(tip).not.toContain("15.99");
+    expect(tip).not.toContain("1,200");
     expect(text).not.toMatch(/outlier|median|MAD|threshold|findings/i);
+
+    const insight = events.find(
+      (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
+    );
+    expect(insight?.accountId).toBe("acct-1");
   });
 
   it("degrades gracefully when a tool fails", async () => {

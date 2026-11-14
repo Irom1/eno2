@@ -4,6 +4,7 @@ import { resolveEnv } from '$lib/server/env';
 import { callTool, withMcp } from '$lib/server/mcp';
 import { isDeletedDemoCustomer } from '$lib/server/deletedDemoCustomers';
 import { isProtectedCustomer, isRemovedCustomer } from '$lib/customerDeletion';
+import { isClosedProfile } from '$lib/server/nessie/closeProfile';
 
 export const prerender = false;
 
@@ -28,7 +29,9 @@ export async function GET({ platform, url }: RequestEvent): Promise<Response> {
       const items: RawCustomer[] = customerId
         ? [result.data as RawCustomer].filter((customer) => customer?._id === customerId)
         : Array.isArray(payload?.items) ? payload.items : [];
-      const customers = items.filter((customer) => !isDeletedDemoCustomer(String(customer._id ?? '')) && !isRemovedCustomer(customer)).map((customer) => ({
+      const customers = items.filter((customer) =>
+        !isDeletedDemoCustomer(String(customer._id ?? '')) && !isRemovedCustomer(customer) && !isClosedProfile(customer)
+      ).map((customer) => ({
         id: String(customer._id ?? ''),
         firstName: customer.firstName ?? '',
         lastName: customer.lastName ?? '',

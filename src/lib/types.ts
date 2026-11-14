@@ -1,4 +1,5 @@
 /** Public shapes shared by the Svelte UI and the SSE client. No server-only imports. */
+import type { EntityCard } from './chat/entityCards.js';
 
 export interface Customer {
   id: string;
@@ -187,9 +188,10 @@ export type ProviderFailureReason = "credits" | "auth" | "rate_limit" | "unavail
 
 export type SseEvent =
   | { type: "text"; delta: string }
+  | { type: "card"; card: EntityCard }
   | { type: "tool_start"; name: string; label: string }
   | { type: "tool_result"; name: string; ok: boolean; ms: number; summary: string }
-  | { type: "insight"; kind: string; payload: unknown }
+  | { type: "insight"; kind: string; payload: unknown; accountId?: string }
   | { type: "usage"; promptTokens: number; outputTokens: number; rounds: number }
   | { type: "done"; sessionId: string }
   | { type: "notice"; provider: "gemini"; reason: ProviderFailureReason; message: string }

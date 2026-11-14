@@ -199,8 +199,46 @@
       </a>
 
       <div class="nav-actions">
+        <div class="sign-in-area" bind:this={signInArea}>
+          <button type="button" class="sign-in" disabled={!ready} bind:this={signInButton} aria-label="Sign in" aria-expanded={accountsOpen} aria-controls="account-list" onclick={toggleAccounts}>
+            <span class="profile" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21v-2a8 6 0 0 1 16 0v2Z" />
+              </svg>
+            </span>
+            Sign in
+          </button>
+          <div class="account-list" id="account-list" bind:this={accountList} hidden={!accountsOpen}>
+            <p class="list-heading">Choose your account</p>
+            {#if customersLoading}
+              <p class="list-message" role="status">Loading accounts…</p>
+            {:else if customersError}
+              <div class="list-message" role="status">
+                <p>We couldn’t load your accounts.</p>
+                <button class="retry" onclick={loadCustomers}>Try again {@render arrowIcon()}</button>
+              </div>
+            {:else if customers.length === 0}
+              <p class="list-message" role="status">No accounts available yet.</p>
+            {:else}
+              <nav class="account-links" aria-label="Current accounts">
+                {#each customers as customer (customer.id)}
+                  <div class="customer-row">
+                  <a class="account-choice" href={`/dashboard?customer=${encodeURIComponent(customer.id)}`}>
+                    <span class="avatar" aria-hidden="true">{customer.firstName[0]?.toUpperCase() ?? 'A'}</span>
+                    <span class="account-name"><strong>{`${customer.firstName} ${customer.lastName}`.trim() || 'Account'}</strong>{#if customer.city}<small>{customer.city}{customer.state ? `, ${customer.state}` : ''}</small>{/if}</span>
+                    {@render arrowIcon()}
+                  </a>
+                  <DeleteCustomerButton {customer} disabled={!!deletingId} ondelete={() => deleteCustomer(customer)} />
+                  </div>
+                {/each}
+              </nav>
+            {/if}
+            <CustomerRemovalNotice removed={removedCustomer} error={removalError} busy={!!deletingId} onundo={undoRemoval} />
+          </div>
+        </div>
         <button type="button" class="theme-toggle" disabled={!ready} aria-label={themeLabel} aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
             {#if isDark}
               <circle cx="12" cy="12" r="4" />
               <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
@@ -209,44 +247,6 @@
             {/if}
           </svg>
         </button>
-        <div class="sign-in-area" bind:this={signInArea}>
-        <button type="button" class="sign-in" disabled={!ready} bind:this={signInButton} aria-label="Sign in" aria-expanded={accountsOpen} aria-controls="account-list" onclick={toggleAccounts}>
-          <span class="profile" aria-hidden="true">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="12" cy="8" r="4" />
-              <path d="M4 21v-2a8 6 0 0 1 16 0v2Z" />
-            </svg>
-          </span>
-          Sign in
-        </button>
-        <div class="account-list" id="account-list" bind:this={accountList} hidden={!accountsOpen}>
-          <p class="list-heading">Choose your account</p>
-          {#if customersLoading}
-            <p class="list-message" role="status">Loading accounts…</p>
-          {:else if customersError}
-            <div class="list-message" role="status">
-              <p>We couldn’t load your accounts.</p>
-              <button class="retry" onclick={loadCustomers}>Try again {@render arrowIcon()}</button>
-            </div>
-          {:else if customers.length === 0}
-            <p class="list-message" role="status">No accounts available yet.</p>
-          {:else}
-            <nav class="account-links" aria-label="Current accounts">
-              {#each customers as customer (customer.id)}
-                <div class="customer-row">
-                <a class="account-choice" href={`/dashboard?customer=${encodeURIComponent(customer.id)}`}>
-                  <span class="avatar" aria-hidden="true">{customer.firstName[0]?.toUpperCase() ?? 'A'}</span>
-                  <span class="account-name"><strong>{`${customer.firstName} ${customer.lastName}`.trim() || 'Account'}</strong>{#if customer.city}<small>{customer.city}{customer.state ? `, ${customer.state}` : ''}</small>{/if}</span>
-                  {@render arrowIcon()}
-                </a>
-                <DeleteCustomerButton {customer} disabled={!!deletingId} ondelete={() => deleteCustomer(customer)} />
-                </div>
-              {/each}
-            </nav>
-          {/if}
-          <CustomerRemovalNotice removed={removedCustomer} error={removalError} busy={!!deletingId} onundo={undoRemoval} />
-        </div>
-        </div>
       </div>
     </nav>
   </header>
@@ -279,8 +279,8 @@
 
       <div class="foreground">
         <img class="hills" src="/rolling-hills.svg" alt="" width="1440" height="340" />
-        <a class="account-link" href="/signup" aria-label="Sign up">
-          I’d like to open an account <span aria-hidden="true">↑</span>
+        <a class="account-link" href="/signup">
+          I'd like to open my first account <span aria-hidden="true">↑</span>
         </a>
       </div>
     </section>
@@ -306,7 +306,6 @@
     --surface: #fff;
     --border: #bdcdd0;
     --hover: #eaf5f8;
-    --avatar: #e7f1f5;
     --focus: #174b67;
     background: var(--page);
     color: var(--ink);
@@ -322,7 +321,6 @@
     --surface: #1d2e3e;
     --border: #465f72;
     --hover: #2b465b;
-    --avatar: #294960;
     --focus: #a8dcf6;
   }
 
@@ -381,38 +379,60 @@
   .brand { gap: 8px; white-space: nowrap; color: var(--brand); font-size: 1.15rem; font-weight: 750; }
   .brand :global(svg) { width: 108px; height: auto; }
   .divider { width: 1px; height: 29px; margin-inline: 5px; background: var(--border); }
-  .nav-actions { display: flex; align-items: center; gap: 8px; justify-self: end; }
+  .nav-actions {
+    --control-background: #f4f6f8;
+    --control-hover: #fff;
+    --control-border: #dae3e8;
+    --control-text: #142632;
+    --avatar-background: #ecf4f7;
+    --avatar-text: #075e80;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-self: end;
+  }
+  .dark .nav-actions {
+    --control-background: #10191f;
+    --control-hover: #18252d;
+    --control-border: #31444f;
+    --control-text: #ecf3f6;
+    --avatar-background: #1b313b;
+    --avatar-text: #9fdbf0;
+  }
+  .theme-toggle, .sign-in {
+    box-sizing: border-box;
+    color: var(--control-text);
+    background: var(--control-background);
+    border: 1px solid var(--control-border);
+  }
   .theme-toggle {
     display: grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     padding: 0;
-    color: inherit;
-    background: transparent;
-    border: 1px solid var(--border);
     border-radius: 50%;
     cursor: pointer;
   }
   .sign-in {
-    gap: 8px;
-    min-height: 44px;
-    padding-inline: 5px 14px;
-    border: 1px solid var(--border);
-    border-radius: 99px;
+    gap: 7px;
+    min-height: 42px;
+    padding: 0 12px 0 5px;
+    border-radius: 999px;
+    font-size: 13px;
     font-weight: 650;
     white-space: nowrap;
   }
   .profile {
     display: grid;
     place-items: center;
-    width: 34px;
-    height: 34px;
-    background: var(--avatar);
-    color: var(--brand);
+    width: 30px;
+    height: 30px;
+    background: var(--avatar-background);
+    color: var(--avatar-text);
     border-radius: 50%;
   }
-  .theme-toggle:hover, .sign-in:hover { background: var(--hover); }
+  .theme-toggle:hover, .sign-in:hover { background: var(--control-hover); }
 
   .hero {
     box-sizing: border-box;
@@ -448,7 +468,9 @@
     justify-self: stretch;
     z-index: 1;
     display: grid;
-    place-items: end center;
+    place-items: center;
+    align-content: end;
+    gap: 12px;
     box-sizing: border-box;
     padding: 24px 12px clamp(60px, 10vh, 104px);
   }
@@ -583,12 +605,10 @@
     .brand { font-size: 1rem; gap: 4px; }
     .brand :global(svg) { width: 84px; }
     .brand :global(img) { width: 28px; height: 28px; }
-    .sign-in { padding-inline: 4px 9px; font-size: 0.85rem; }
-    .profile { width: 28px; height: 28px; }
   }
 
   .sign-in-area { position: relative; }
-  button.sign-in { color: inherit; background: transparent; font: inherit; font-weight: 650; cursor: pointer; }
+  button.sign-in { font-family: inherit; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
   .account-list { position: absolute; top: calc(100% + 12px); right: 0; z-index: 10; width: min(320px, calc(100vw - 48px)); padding: 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 12px 30px #16374626; text-align: left; }
   .account-list[hidden] { display: none; }
@@ -597,7 +617,7 @@
   .customer-row { display: flex; align-items: center; border-radius: 10px; }.customer-row:hover { background: var(--hover); }
   .account-choice { flex: 1; min-width: 0; display: flex; align-items: center; gap: 11px; padding: 11px; border-radius: 10px; }
   .account-choice:hover { background: var(--hover); }
-  .avatar { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; color: var(--brand); background: var(--avatar); font-weight: 650; }
+  .avatar { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; color: var(--avatar-text); background: var(--avatar-background); font-weight: 650; }
   .account-name { flex: 1; min-width: 0; }.account-name strong { display: block; font-size: 14px; overflow-wrap: anywhere; }.account-name small { display: block; color: var(--muted); font-size: 12px; }
   .account-choice :global(svg), .retry :global(svg) { width: 18px; height: 18px; flex: none; }
   .list-message { margin: 0; padding: 10px; color: var(--muted); font-size: 13px; }.list-message p { margin: 0 0 10px; }

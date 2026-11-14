@@ -186,6 +186,7 @@ describe("duplicate detection", () => {
       tx("NETFLIX.COM", 15, "2026-10-20"),
     ]);
     expect(findings).toHaveLength(1);
+    expect(findings[0]?._id).toBe("NETFLIX.COM-2026-10-06-15");
     expect(findings[0]?.duplicateOf).toBe("2026-10-05");
     expect(findings[0]?.date).toBe("2026-10-06");
     expect(findings[0]?.amount).toBe(15);
@@ -214,6 +215,7 @@ describe("outlier detection", () => {
       { description: 'SHELL GAS STATION', amount: 1800 }, { description: 'NEIGHBORHOOD RESTAURANT', amount: 1250 }
     ]);
     expect(findings.every((finding) => finding.reason.includes('usual purchases'))).toBe(true);
+    expect(findings.map((finding) => finding._id)).toEqual(transactions.slice(-2).map((item) => item.id));
   });
 
   it("detects merchant spikes when ordinary charges have no amount variation", () => {
@@ -238,6 +240,7 @@ describe("outlier detection", () => {
     );
     const findings = detectOutliers(transactions, asOf);
     expect(findings).toHaveLength(1);
+    expect(findings[0]?._id).toBe("PURCHASE-2026-10-09-500");
     expect(findings[0]?.amount).toBe(500);
     expect(findings[0]?.threshold).toBe(30);
   });

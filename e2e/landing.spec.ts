@@ -15,7 +15,7 @@ test('landing links sign up and opens the chosen customer’s dashboard with the
   await page.route('**/api/overview', (route) => route.fulfill({ json: {} }));
   await page.goto('/');
 
-  await expect(page.getByRole('link', { name: 'Sign up', exact: true })).toHaveAttribute('href', '/signup');
+  await expect(page.getByRole('link', { name: "I'd like to open my first account", exact: true })).toHaveAttribute('href', '/signup');
   await page.getByRole('button', { name: 'Switch to dark mode' }).click();
   await expect(page.locator('.landing')).toHaveAttribute('data-theme', 'dark');
   await page.reload();

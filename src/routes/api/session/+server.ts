@@ -1,15 +1,18 @@
-import { json } from '@sveltejs/kit';
+import { json, type Cookies } from '@sveltejs/kit';
 import type { RequestEvent } from './$types';
+import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
 import { resolveEnv } from '$lib/server/env';
 import { callTool, withMcp } from '$lib/server/mcp';
 import { isDeletedDemoCustomer } from '$lib/server/deletedDemoCustomers';
 import { isRemovedCustomer } from '$lib/customerDeletion';
+import { isClosedProfile } from '$lib/server/nessie/closeProfile';
 import {
   createSession,
   destroySession,
   getSession,
   type AccountSummary,
-  type CustomerIdentity
+  type CustomerIdentity,
+  type Session
 } from '$lib/server/session';
 import { SESSION_COOKIE, publicSession } from '$lib/server/sessionCookie';
 
@@ -19,6 +22,7 @@ interface RawCustomer {
   _id?: string;
   firstName?: string;
   lastName?: string;
+  address?: { zip?: string };
 }
 
 interface RawAccount {
@@ -35,6 +39,17 @@ const num = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+function respondWithSession(cookies: Cookies, request: Request, session: Session): Response {
+  cookies.set(SESSION_COOKIE, session.id, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 1800,
+    secure: new URL(request.url).protocol === 'https:'
+  });
+  return json(publicSession(session));
+}
+
 export async function POST({ request, cookies, platform }: RequestEvent): Promise<Response> {
   let body: { customerId?: unknown };
   try {
@@ -47,12 +62,20 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
   if (!customerId) return json({ error: 'customerId is required' }, { status: 400 });
   if (isDeletedDemoCustomer(customerId)) return json({ error: 'Unknown customerId' }, { status: 404 });
 
+  if (customerId === GUEST_CUSTOMER_ID) {
+    return respondWithSession(cookies, request, createSession({
+      id: customerId,
+      firstName: 'Guest',
+      lastName: ''
+    }, []));
+  }
+
   const runtime = resolveEnv(platform);
   try {
     return await withMcp(runtime, async (mcp) => {
       const customerResult = await callTool(mcp, 'nessie_get_customer', { customerId });
       const match = customerResult.data as RawCustomer | null;
-      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId || isRemovedCustomer(match)) {
+      if (!customerResult.ok || !match || String(match._id ?? '') !== customerId || isRemovedCustomer(match) || isClosedProfile(match)) {
         return json({ error: 'Unknown customerId' }, { status: 404 });
       }
 
@@ -75,16 +98,7 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
         accountNumber: account.accountNumber ?? ''
       }));
 
-      const session = createSession(customer, accounts);
-      cookies.set(SESSION_COOKIE, session.id, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 1800,
-        secure: new URL(request.url).protocol === 'https:'
-      });
-
-      return json(publicSession(session));
+      return respondWithSession(cookies, request, createSession(customer, accounts));
     });
   } catch (error) {
     return json(

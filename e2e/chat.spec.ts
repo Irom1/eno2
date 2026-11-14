@@ -2,9 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   askChat,
   assistantText,
+  cardKinds,
   cardShells,
   cardText,
-  cardTitles,
   collectErrors,
   expectCardCount,
   expectCardStyle,
@@ -12,8 +12,6 @@ import {
   expectNoErrors,
   waitForChatSettled
 } from './helpers';
-
-const OVERVIEW_KINDS = ['Overview', 'Accounts', 'Rewards', 'Cashflow'];
 
 const STARTER_PROMPTS = [
   'Give me a snapshot of my finances',
@@ -80,13 +78,6 @@ async function mockChatStream(page: Page, chunks: StreamChunk[]): Promise<void> 
   }, chunks);
 }
 
-/** Every title must be one of the supplied product labels. */
-function expectTitlesWithin(titles: string[], allowed: string[]): void {
-  for (const title of titles) {
-    expect(allowed, `unexpected card title "${title}"`).toContain(title);
-  }
-}
-
 /** Follow-ups start at the assistant content edge and span the bubble max width. */
 async function expectFollowupsMatchBubble(page: Page): Promise<void> {
   const followups = page.locator('.chat-followups');
@@ -141,23 +132,363 @@ async function expectFollowupBorders(page: Page): Promise<void> {
 }
 
 test.describe('chat prompts', () => {
-  test('"Show me my loans" renders exactly one Loans card', async ({ page }) => {
+  test('"Show me my loans" renders exactly one primitive loan card', async ({ page }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my loans');
 
-    await expectCardCount(page, 1);
+    const loan = page.locator('.loan-card');
+    await expect(loan).toHaveCount(1);
+    await expect(loan).toBeVisible();
+    await expect(loan).toHaveAttribute('data-kind', 'loan');
 
-    const titles = await cardTitles(page);
-    expect(titles).toEqual(['Loans']);
-    expectTitlesWithin(titles, ['Loans']);
-    await expect(page.locator('.chat-card .badge')).toHaveCount(0);
+    const text = await loan.innerText();
+    expect(text.length, 'the loan card shows its type').toBeGreaterThan(0);
+    // Primitive: no credit score, recommendation, or coverage copy.
+    expect(text.toLowerCase()).not.toMatch(/credit score|recommend|insight|coverage|tip:/);
 
-    const text = await cardText(page);
-    expect(text).toContain('Loans');
-    expect(text).not.toMatch(/No loans/i);
-    for (const forbidden of ['Overview', 'Accounts', 'Rewards', 'Cashflow']) {
-      expect(titles).not.toContain(forbidden);
-    }
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .loan-card')).toHaveCount(1);
+    expect(
+      await loan.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the loan card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('a rewards payload renders one primitive reward card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Your Venture Rewards balance is '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_list_customer_accounts',
+        payload: {
+          accounts: [
+            { _id: 'acct-checking', type: 'Checking', nickname: 'Everyday Checking', rewards: 0 },
+            { _id: 'acct-venture', type: 'Credit Card', nickname: 'Venture Rewards', rewards: 24850 },
+            { _id: 'acct-quick', type: 'Credit Card', nickname: 'Quicksilver', rewards: 5000 }
+          ],
+          extra: 'do not leak'
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'the highest across your cards.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my credit card rewards');
+
+    const card = page.locator('.reward-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'reward');
+
+    const text = await card.innerText();
+    expect(text).toContain('Venture Rewards');
+    expect(text).toContain('24,850 pts');
+    // Primitive: points are never converted into an invented dollar value.
+    expect(text, 'no invented dollar value for points').not.toContain('$');
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .reward-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the reward card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('a merchant payload renders one primitive merchant card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'You shop at Whole Foods Market often. '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_list_merchants',
+        payload: {
+          count: 2,
+          truncated: false,
+          items: [
+            {
+              _id: 'merchant-whole-foods',
+              name: 'Whole Foods Market',
+              category: 'groceries',
+              address: {
+                street: '123 Main St',
+                city: 'Arlington',
+                state: 'VA',
+                zip: '22201'
+              }
+            },
+            {
+              _id: 'merchant-other',
+              name: 'Other Merchant',
+              category: 'retail'
+            }
+          ]
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'It is your usual grocery stop.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Where do I shop?');
+
+    const card = page.locator('.merchant-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'merchant');
+
+    const text = await card.innerText();
+    expect(text).toContain('Whole Foods Market');
+    expect(text).toContain('Groceries');
+    expect(text).toContain('123 Main St, Arlington, VA');
+    // Primitive: one merchant only, no amount/count, recommendation, or list.
+    expect(text).not.toContain('Other Merchant');
+    expect(text).not.toMatch(/\$|\bcount\b|spend here|recommend|tip:/i);
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .merchant-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the merchant card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('a single customer payload renders one primitive profile card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'This is the profile on file for Maya Chen. '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_get_customer',
+        payload: {
+          _id: 'cust-maya',
+          firstName: 'Maya',
+          lastName: 'Chen',
+          email: 'maya@example.com',
+          phone: '555-0100',
+          address: {
+            street: '123 Main St',
+            city: 'Arlington',
+            state: 'VA',
+            zip: '22201'
+          }
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'You can update it from the app if anything changes.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my profile');
+
+    const card = page.locator('.profile-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'profile');
+
+    const text = await card.innerText();
+    expect(text).toContain('Maya Chen');
+    expect(text).toContain('Arlington, VA');
+    // Primitive and private: no street, zip, contact, or identifier fields.
+    expect(text).not.toContain('123 Main St');
+    expect(text).not.toContain('22201');
+    expect(text).not.toContain('maya@example.com');
+    expect(text).not.toContain('555-0100');
+    expect(text).not.toContain('cust-maya');
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .profile-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the profile card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('a goal projection renders one primitive goal card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is the projection for your savings goal: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_goal_projection',
+        payload: {
+          asOf: '2026-11-14',
+          accountId: 'acct-savings',
+          currentBalance: 12640,
+          targetAmount: 20000,
+          monthlyNet: 1840,
+          monthsToTarget: 4,
+          projections: [{ months: 3, projectedBalance: 18160 }],
+          onTrack: true,
+          extra: 'do not leak'
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'the prose carries the progress narrative.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Help me plan a savings goal');
+
+    const card = page.locator('.goal-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'goal');
+
+    const text = await card.innerText();
+    expect(text).toContain('Target');
+    expect(text).toContain('$20,000.00');
+    expect(text).toContain('Current');
+    expect(text).toContain('$12,640.00');
+    expect(text).toContain('Months to target');
+    expect(text).toContain('Projected date');
+    expect(text.toLowerCase(), 'no advice or on-track copy').not.toMatch(
+      /on track|recommend|you should|tip:/
+    );
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .goal-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the goal card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('an overview prompt renders one primitive cashflow month', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Your latest complete month: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_financial_overview',
+        payload: {
+          totalRewards: 0,
+          accounts: [],
+          monthlyCashflow: [
+            { month: '2020-01', inflow: 5000, outflow: 4200, net: 800 },
+            { month: '2020-02', inflow: 6100, outflow: 4800, net: 1300 },
+            { month: '2020-03', inflow: 900, outflow: 300, net: 600 }
+          ]
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'the prose compares it with the other months.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Give me a snapshot of my finances');
+
+    const card = page.locator('.cashflow-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'cashflow');
+
+    const text = await card.innerText();
+    expect(text).toContain('February 2020');
+    expect(text).toContain('Inflow');
+    expect(text).toContain('$6,100.00');
+    expect(text).toContain('Outflow');
+    expect(text).toContain('$4,800.00');
+    expect(text).toContain('Net');
+    expect(text).toContain('+$1,300.00');
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .cashflow-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the cashflow card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -236,7 +567,7 @@ test.describe('chat prompts', () => {
     await expectFollowupsMatchBubble(page);
     await expectFollowupBorders(page);
 
-    // The mascot sits to the left of the intro bubble, aligned near its top.
+    // The mascot sits to the left of the intro bubble, aligned to its bottom.
     const introAvatar = page.locator('.assistant-turn.intro .eno-thinking');
     const introBubble = page.locator('.assistant-turn.intro .bubble.assistant');
     await expect(introAvatar).toBeVisible();
@@ -250,9 +581,19 @@ test.describe('chat prompts', () => {
       'intro mascot should sit left of the bubble'
     ).toBeLessThanOrEqual(introBubbleBox!.x + 1);
     expect(
-      Math.abs(introAvatarBox!.y - introBubbleBox!.y),
-      'intro mascot should align with the top of the bubble'
+      Math.abs(
+        introAvatarBox!.y +
+          introAvatarBox!.height -
+          (introBubbleBox!.y + introBubbleBox!.height)
+      ),
+      'intro mascot should align with the bottom of the bubble'
     ).toBeLessThan(20);
+    if (introBubbleBox!.height > introAvatarBox!.height + 20) {
+      expect(
+        introAvatarBox!.y,
+        'intro mascot should sit below the top of the bubble'
+      ).toBeGreaterThan(introBubbleBox!.y);
+    }
 
     await askChat(page, 'Show me my loans');
 
@@ -294,9 +635,19 @@ test.describe('chat prompts', () => {
       'responder mascot should sit left of its content'
     ).toBeLessThanOrEqual(responderContentBox!.x + 1);
     expect(
-      Math.abs(responderAvatarBox!.y - responderContentBox!.y),
-      'responder mascot should align with the top of its content'
+      Math.abs(
+        responderAvatarBox!.y +
+          responderAvatarBox!.height -
+          (responderContentBox!.y + responderContentBox!.height)
+      ),
+      'responder mascot should align with the bottom of its content'
     ).toBeLessThan(20);
+    if (responderContentBox!.height > responderAvatarBox!.height + 20) {
+      expect(
+        responderAvatarBox!.y,
+        'responder mascot should sit below the top of its content'
+      ).toBeGreaterThan(responderContentBox!.y);
+    }
 
     // Switching customers resets to exactly one fresh intro.
     await page.locator('.profile').click();
@@ -324,8 +675,7 @@ test.describe('chat prompts', () => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my loans');
 
-    await expectCardCount(page, 1);
-    expect(await cardTitles(page)).toEqual(['Loans']);
+    await expect(page.locator('.loan-card')).toHaveCount(1);
 
     const chips = page.locator('.follow-up');
     await expect(chips.first()).toBeVisible({ timeout: 20_000 });
@@ -456,12 +806,11 @@ test.describe('chat prompts', () => {
     await waitForChatSettled(page);
 
     await expect(page.locator('.assistant-turn')).toHaveCount(turnsBefore + 1);
-    await expect.poll(() => cardTitles(page), { timeout: 20_000 }).toContain('Bills');
+    await expect.poll(() => page.locator('.bill-card').count(), { timeout: 20_000 }).toBe(1);
 
-    const titles = await cardTitles(page);
-    expect(titles.filter((title) => title === 'Loans')).toHaveLength(1);
-    expect(titles).toContain('Bills');
-    expect(titles).not.toContain('Overview');
+    await expect(page.locator('.loan-card')).toHaveCount(1);
+    await expect(page.locator('.bill-card')).toHaveCount(1);
+    await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -655,14 +1004,15 @@ test.describe('chat prompts', () => {
     await askChat(page, 'Show me my bills');
 
     await expectCardCount(page, 1);
-    expect(await cardTitles(page)).toEqual(['Bills']);
+    await expect(page.locator('.bill-card')).toHaveCount(1);
+    await expect(page.locator('.bill-card')).toHaveAttribute('data-kind', 'bill');
 
     const lastTurn = page.locator('.assistant-turn').last();
     await expect(lastTurn.locator('.bubble.assistant .richtext')).toHaveCount(2);
 
     const order = await lastTurn.evaluate((turn) => {
       const rich = Array.from(turn.querySelectorAll('.bubble.assistant .richtext'));
-      const cards = turn.querySelector('.chat-cards');
+      const cards = turn.querySelector('.bill-card');
       const intro = rich[0];
       const takeaway = rich[1];
       const follows = (first: Element | undefined, second: Element | undefined): boolean =>
@@ -686,20 +1036,192 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Show me my bills" renders one Bills card and no duplicated totals', async ({ page }) => {
+  test('buffers inline cards until the prose reaches their merchant', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'tool_start',
+        data: { type: 'tool_start', name: 'insight_anomalies', label: '' }
+      },
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_anomalies',
+          accountId: 'acct-checking',
+          payload: {
+            count: 1,
+            findings: [
+              {
+                _id: 'txn-apple-buffered',
+                type: 'outlier',
+                description: 'APPLE STORE',
+                amount: 1299,
+                date: '2026-11-03'
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: { type: 'text', delta: 'I checked your recent activity.' }
+      },
+      {
+        delay: 2500,
+        event: 'text',
+        data: { type: 'text', delta: ' There is a large charge at APPLE STORE.' }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Any suspicious transactions?');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await composer.press('Enter');
+
+    const turn = page.locator('.assistant-turn').last();
+    const prose = turn.locator('.bubble.assistant .richtext');
+
+    // The insight has arrived and text is streaming, but the card's merchant
+    // mention has not been streamed yet, so nothing renders above the prose.
+    await expect(prose).toContainText('checked your recent activity', { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.transaction-card')).toHaveCount(0);
+    await expect(page.locator('.loading-line')).toBeVisible();
+    await expect(prose).toBeVisible();
+
+    // Once the prose reaches the merchant, the buffered card appears inline
+    // while the turn is still pending.
+    await expect(turn.locator('.transaction-card')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.transaction-card')).toContainText('APPLE STORE');
+    expect(
+      await turn
+        .locator('.transaction-card')
+        .first()
+        .evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the buffered transaction renders inside the assistant bubble'
+    ).toBe(true);
+    expect(await prose.count(), 'prose is visible while the turn streams').toBeGreaterThan(0);
+
+    await waitForChatSettled(page);
+    await expect(turn.locator('.transaction-card')).toHaveCount(1);
+    expectNoErrors(errors);
+  });
+
+  test('buffers a merchant card until the prose reaches its name', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'nessie_list_merchants',
+          payload: {
+            count: 1,
+            truncated: false,
+            items: [
+              {
+                _id: 'merchant-whole-foods',
+                name: 'Whole Foods Market',
+                category: 'groceries'
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: { type: 'text', delta: 'I checked where you shop.' }
+      },
+      {
+        delay: 2500,
+        event: 'text',
+        data: { type: 'text', delta: ' Whole Foods Market comes up most often.' }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Where do I shop?');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await composer.press('Enter');
+
+    const turn = page.locator('.assistant-turn').last();
+    const prose = turn.locator('.bubble.assistant .richtext');
+
+    // The insight has arrived but the merchant name has not been streamed, so
+    // the buffered card stays hidden above the prose.
+    await expect(prose).toContainText('checked where you shop', { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.merchant-card')).toHaveCount(0);
+    await expect(page.locator('.loading-line')).toBeVisible();
+
+    // Once the prose reaches the merchant name, the card reveals while pending.
+    await expect(turn.locator('.merchant-card')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.merchant-card')).toContainText('Whole Foods Market');
+    expect(
+      await turn
+        .locator('.merchant-card')
+        .first()
+        .evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the buffered merchant card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    await waitForChatSettled(page);
+    await expect(turn.locator('.merchant-card')).toHaveCount(1);
+    expectNoErrors(errors);
+  });
+
+  test('"Show me my bills" renders one primitive bill card and no duplicated totals', async ({
+    page
+  }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my bills');
 
     await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(titles).toEqual(['Bills']);
-    expectTitlesWithin(titles, ['Bills']);
-    expect(titles).not.toContain('Overview');
+    const bill = page.locator('.bill-card');
+    await expect(bill).toHaveCount(1);
+    await expect(bill).toHaveAttribute('data-kind', 'bill');
+    await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
     await expectNoCardValueDuplicate(page, ['$4,283.59', '$65.59']);
-    await expect(page.locator('.chat-card .badge')).toHaveCount(1);
-    await expect(page.locator('.chat-card .badge')).toContainText('$');
+    await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
     await expectCardStyle(page);
+
+    // The bill card shows the largest bill's payee, amount, and due date, so
+    // the prose must use timing analytically instead of restating those fields.
+    const prose = await assistantText(page);
+    expect(prose, 'prose must not restate the card payee').not.toContain('MIT Bursar');
+    expect(prose, 'prose must not restate the card amount').not.toContain('1,800');
+    expect(prose, 'prose must not restate the card due date').not.toMatch(
+      /2026-12-05|Dec 5/
+    );
+    expect(prose, 'prose uses relative timing').toMatch(
+      /largest payment is due (within the next three weeks|in the coming weeks)/
+    );
+    expect(prose).toContain('Tip:');
     expectNoErrors(errors);
   });
 
@@ -712,6 +1234,7 @@ test.describe('chat prompts', () => {
     const deposits = {
       type: 'insight',
       kind: 'nessie_list_account_deposits',
+      accountId: 'acct-checking',
       payload: {
         count: 3,
         items: [
@@ -742,6 +1265,7 @@ test.describe('chat prompts', () => {
     const withdrawals = {
       type: 'insight',
       kind: 'nessie_list_account_withdrawals',
+      accountId: 'acct-checking',
       payload: {
         count: 3,
         items: [
@@ -807,11 +1331,36 @@ test.describe('chat prompts', () => {
     expect(listText, 'rows show dates').toMatch(/Nov \d/);
     expect(listText, 'rows show amounts').toContain('1,250');
 
+    // The list card stays a standalone card, outside the prose bubble.
+    expect(
+      await lists
+        .first()
+        .evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'transaction-list cards are not folded into the assistant bubble'
+    ).toBe(false);
+
     // No legacy chrome, title, badge, or reason chip.
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(page.locator('.transaction-list-card .card-head')).toHaveCount(0);
     await expect(page.locator('.transaction-list-card .badge')).toHaveCount(0);
     await expect(page.locator('.transaction-list-card .flag, .flag')).toHaveCount(0);
+
+    // Every row links to the owning account, opened in a new tab.
+    const links = lists.locator('.transaction-row a.transaction-link');
+    await expect(links).toHaveCount(rowCount);
+    const hrefs = await links.evaluateAll((elements) =>
+      elements.map((element) => ({
+        href: element.getAttribute('href') ?? '',
+        target: element.getAttribute('target'),
+        rel: element.getAttribute('rel') ?? ''
+      }))
+    );
+    for (const link of hrefs) {
+      expect(link.target).toBe('_blank');
+      expect(link.rel).toContain('noopener');
+      expect(link.href).toMatch(/^\/dashboard\?customer=[^&]+&account=acct-checking&txn=.+/);
+    }
+    await expect(page.locator('.transaction-row .open-icon').first()).toBeVisible();
 
     // The prose introduces the list; the card follows that intro inside the turn.
     const prose = (
@@ -852,13 +1401,13 @@ test.describe('chat prompts', () => {
     await runPrompt(page, 'Show me my credit card rewards');
 
     await expectCardCount(page, { min: 1 });
-    const titles = await cardTitles(page);
+    const kinds = await cardKinds(page);
     const text = await cardText(page);
     const mentionsVenture = /Venture/i.test(text);
-    const hasRewardsTitle = titles.includes('Rewards');
+    const hasRewardCard = kinds.includes('reward');
     expect(
-      hasRewardsTitle || mentionsVenture,
-      `expected a rewards card or Venture account card, got ${JSON.stringify(titles)}`
+      hasRewardCard || mentionsVenture,
+      `expected a rewards card or Venture account card, got ${JSON.stringify(kinds)}`
     ).toBe(true);
 
     await expectNoCardValueDuplicate(page, ['24,850', '$862']);
@@ -866,56 +1415,207 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"What credit cards do I have?" lists only credit-card accounts', async ({ page }) => {
+  test('"What credit cards do I have?" answers in prose without an account list card', async ({
+    page
+  }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'What credit cards do I have?');
 
-    await expectCardCount(page, { min: 1 });
-    const titles = await cardTitles(page);
-    const text = await cardText(page);
+    // An accounts list stays in prose: only a single-account payload renders an
+    // account card, and there is no account-list primitive.
+    await expect(page.locator('.account-card')).toHaveCount(0);
 
-    expect(text, `expected a Venture card, got ${JSON.stringify(titles)}`).toMatch(/Venture/i);
-    expect(text).not.toContain('Everyday Checking');
-    expect(text).not.toContain('Emergency Fund');
-
-    // A list card must be labelled for credit cards, never the generic all-accounts title.
-    if (titles.some((title) => title === 'Accounts' || title === 'Credit cards')) {
-      expect(titles).toContain('Credit cards');
-      expect(titles).not.toContain('Accounts');
-    }
-
-    await expect(page.locator('.chat-card .badge')).toHaveCount(0);
+    const prose = await assistantText(page);
+    expect(prose, 'the prose names the Venture card').toMatch(/Venture/i);
+    expect(prose).not.toContain('Everyday Checking');
+    expect(prose).not.toContain('Emergency Fund');
 
     await expectCardStyle(page);
     expectNoErrors(errors);
   });
 
-  test('"Show me my recurring payments" renders one Recurring payments card', async ({
+  test('"Show me my recurring payments" renders one primitive recurring card', async ({
     page
   }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my recurring payments');
 
-    await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(titles).toEqual(['Recurring payments']);
+    const card = page.locator('.recurring-card');
+    await expect(card).toHaveCount(1);
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'recurring');
 
-    await expect(page.locator('.chat-card .badge')).toHaveCount(0);
+    const text = await card.innerText();
+    expect(text.length, 'the recurring card names the charge').toBeGreaterThan(0);
+    expect(text, 'the average amount is shown').toMatch(/\$\d/);
+    expect(text, 'the last date is shown').toMatch(/Last [A-Z][a-z]{2} \d{1,2}/);
+    // Primitive: no cadence, next-date, subscription, or cancel copy.
+    expect(text.toLowerCase()).not.toMatch(/subscription|cancel|cadence|next|recommend|tip:/);
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .recurring-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the recurring card renders inline inside the prose bubble'
+    ).toBe(true);
+
     await expectCardStyle(page);
     expectNoErrors(errors);
   });
 
-  test('"Where did my money go last month?" renders one Spending card', async ({ page }) => {
+  test('"Where did my money go last month?" renders a primitive spending pie', async ({ page }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Where did my money go last month?');
 
-    await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(titles).toEqual(['Spending']);
+    const pie = page.locator('.pie-chart-card');
+    await expect(pie).toHaveCount(1);
+    await expect(pie).toBeVisible();
+    await expect(pie).toHaveAttribute('data-kind', 'spending-pie');
 
-    await expect(page.locator('.chat-card .badge')).toHaveCount(1);
-    await expect(page.locator('.chat-card .badge')).toContainText('$');
-    await expectCardStyle(page);
+    // The pie is a standalone card, not legacy chat-card chrome.
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .pie-chart-card')).toHaveCount(1);
+    expect(
+      await pie.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the pie is standalone, not folded into the assistant bubble'
+    ).toBe(false);
+
+    // A period label plus one legend row per wedge.
+    const periodText = await pie.locator('.period').innerText();
+    expect(periodText).toMatch(/(January|February|March|April|May|June|July|August|September|October|November|December) \d{4}|Last 3 months/);
+
+    const legendRows = pie.locator('.legend-rows .legend-row');
+    const legendCount = await legendRows.count();
+    expect(legendCount, 'at least one category in the legend').toBeGreaterThan(0);
+    expect(legendCount, 'top 5 plus Other at most').toBeLessThanOrEqual(6);
+
+    const legendText = await pie.locator('.legend').innerText();
+    expect(legendText).toMatch(/\d+%/);
+    expect(legendText).toMatch(/\$/);
+
+    const wedgeCount = await pie.locator('svg .pie-slice').count();
+    expect(wedgeCount, 'one wedge per legend row').toBe(legendCount);
+
+    // Primitive content only: no editorial labels or recommendations baked in.
+    const cardText = (await pie.innerText()).toLowerCase();
+    expect(cardText).not.toMatch(/top category|biggest|you spent|recommend|tip:/);
+    await expect(pie.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+
+    // The prose carries the insight and tip, without dumping the chart values.
+    const prose = (await assistantText(page)).trim();
+    expect(prose.length, 'assistant prose introduces the chart').toBeGreaterThan(0);
+    expect(prose).toMatch(/tip|insight|you can|worth|compare|watch/i);
+
+    const frame = page.locator('.entity-card').filter({ has: pie });
+    await expect(frame).toHaveCount(1);
+    const frameStyle = await frame.evaluate((element) => ({
+      shadow: getComputedStyle(element).boxShadow,
+      accent: getComputedStyle(element, '::before').content,
+      border: Number.parseFloat(getComputedStyle(element).borderTopWidth)
+    }));
+    expect(frameStyle.shadow).not.toBe('none');
+    expect(['none', 'normal'], 'no ::before accent bar').toContain(frameStyle.accent);
+    expect(frameStyle.border).toBeGreaterThanOrEqual(1);
+
+    expectNoErrors(errors);
+  });
+
+  test('buffers the spending pie until its reveal point and keeps it standalone', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const spendingPayload = {
+      months: 3,
+      monthlyTotals: [
+        { month: '2026-09', total: 2100 },
+        { month: '2026-10', total: 2470 },
+        { month: '2026-11', total: 0 }
+      ],
+      monthlyBreakdown: [
+        {
+          month: '2026-09',
+          total: 2100,
+          transactionCount: 18,
+          categories: [{ category: 'housing', total: 2100, share: 1 }]
+        },
+        {
+          month: '2026-10',
+          total: 2470,
+          transactionCount: 20,
+          categories: [
+            { category: 'shopping', total: 1800, share: 0.7287 },
+            { category: 'groceries', total: 670, share: 0.2713 }
+          ]
+        },
+        { month: '2026-11', total: 0, transactionCount: 0, categories: [] }
+      ],
+      categories: [],
+      totalSpend: 4570
+    };
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'tool_start',
+        data: { type: 'tool_start', name: 'insight_spending_breakdown', label: '' }
+      },
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_spending_breakdown',
+          accountId: 'acct-checking',
+          payload: spendingPayload
+        }
+      },
+      {
+        delay: 1500,
+        event: 'text',
+        data: { type: 'text', delta: 'Here is your spending by category.' }
+      },
+      {
+        delay: 1500,
+        event: 'text',
+        data: { type: 'text', delta: ' Shopping is where most of it went.' }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Where did my money go last month?');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await composer.press('Enter');
+
+    const turn = page.locator('.assistant-turn').last();
+    const prose = turn.locator('.bubble.assistant .richtext');
+
+    // The insight arrived before the prose introduced it; the card is buffered.
+    await expect(prose).toContainText('spending by category', { timeout: 10_000 });
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'true');
+    await expect(turn.locator('.pie-chart-card')).toHaveCount(0);
+    await expect(page.locator('.loading-line')).toBeVisible();
+
+    // Once the turn completes the buffered pie appears after the prose.
+    await expect(turn.locator('.pie-chart-card')).toHaveCount(1, { timeout: 10_000 });
+    await waitForChatSettled(page);
+    await expect(page.locator('.chat-panel')).toHaveAttribute('data-streaming', 'false');
+
+    const pie = turn.locator('.pie-chart-card');
+    expect(
+      await pie.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the buffered pie stays a standalone card'
+    ).toBe(false);
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(turn.locator('.bubble.assistant .pie-chart-card')).toHaveCount(0);
+
     expectNoErrors(errors);
   });
 
@@ -928,21 +1628,32 @@ test.describe('chat prompts', () => {
     const insight = {
       type: 'insight',
       kind: 'insight_anomalies',
+      accountId: 'acct-checking',
       payload: {
-        count: 2,
+        count: 3,
         findings: [
           {
+            _id: 'txn-apple',
             type: 'outlier',
             description: 'APPLE STORE',
             amount: 1299,
             date: '2026-11-03'
           },
           {
+            _id: 'txn-netflix',
             type: 'duplicate',
             description: 'NETFLIX.COM',
             amount: 15.49,
             date: '2026-11-02',
             duplicateOf: '2026-11-01'
+          },
+          {
+            _id: 'txn-spotify',
+            type: 'duplicate',
+            description: 'SPOTIFY',
+            amount: 9.99,
+            date: '2026-11-04',
+            duplicateOf: '2026-11-03'
           }
         ]
       }
@@ -959,7 +1670,11 @@ test.describe('chat prompts', () => {
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'both posted this week.'
+        delta: ' and another duplicate at SPOTIFY: '
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'all three posted this week.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -978,8 +1693,7 @@ test.describe('chat prompts', () => {
     await expect(cards.first()).toBeVisible({ timeout: 20_000 });
 
     const count = await cards.count();
-    expect(count, 'render 1–2 single-transaction cards').toBeGreaterThanOrEqual(1);
-    expect(count, 'render 1–2 single-transaction cards').toBeLessThanOrEqual(2);
+    expect(count, 'one card per flagged transaction').toBe(3);
 
     for (let index = 0; index < count; index += 1) {
       await expect(cards.nth(index)).toHaveAttribute('data-kind', 'transaction');
@@ -989,11 +1703,46 @@ test.describe('chat prompts', () => {
     const cardsText = (await cards.allInnerTexts()).join('\n');
     expect(cardsText, 'cards name the merchant').toContain('APPLE STORE');
     expect(cardsText, 'cards name the merchant').toContain('NETFLIX.COM');
+    expect(cardsText, 'cards name the merchant').toContain('SPOTIFY');
     expect(cardsText, 'cards show the amount').toContain('1,299');
     expect(cardsText).not.toContain('Possible duplicate');
     expect(cardsText).not.toContain('Unusual amount');
     await expect(page.locator('.transaction-card .flag, .flag')).toHaveCount(0);
     await expect(page.locator('.transaction-card[data-flag]')).toHaveCount(0);
+
+    // Each anomaly card links to its transaction with the finding _id.
+    const cardLinks = cards.locator('a.transaction-link');
+    await expect(cardLinks).toHaveCount(count);
+    const cardHrefs = await cardLinks.evaluateAll((elements) =>
+      elements.map((element) => ({
+        href: element.getAttribute('href') ?? '',
+        target: element.getAttribute('target'),
+        rel: element.getAttribute('rel') ?? ''
+      }))
+    );
+    for (const link of cardHrefs) {
+      expect(link.target).toBe('_blank');
+      expect(link.rel).toContain('noopener');
+      expect(link.href).toMatch(/^\/dashboard\?customer=[^&]+&account=acct-checking&txn=.+/);
+    }
+    expect(cardHrefs.map((link) => link.href)).toEqual([
+      expect.stringMatching(/txn=txn-apple$/),
+      expect.stringMatching(/txn=txn-netflix$/),
+      expect.stringMatching(/txn=txn-spotify$/)
+    ]);
+
+    // Single transaction rows render inside the assistant bubble, not as
+    // standalone CardFrame cards.
+    const insideBubble = await cards.evaluateAll((elements) =>
+      elements.map((element) => Boolean(element.closest('.bubble.assistant')))
+    );
+    expect(insideBubble.every(Boolean), 'every transaction card sits inside a bubble').toBe(true);
+    await expect(page.locator('.bubble.assistant .transaction-card a.transaction-link')).toHaveCount(
+      count
+    );
+    await expect(page.locator('.chat-card .transaction-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .transaction-card')).toHaveCount(0);
+    await expect(page.locator('.bubble.assistant .transaction-card .open-icon')).toHaveCount(count);
 
     // Exactly one assistant turn owns the cards; no archived card chrome.
     await expect(
@@ -1008,15 +1757,20 @@ test.describe('chat prompts', () => {
     expect(prose).toMatch(/duplicate|large|suspicious/i);
 
     const order = await page.locator('.assistant-turn').last().evaluate((turn) => {
-      const content = turn.querySelector('.assistant-content');
+      const bubble = turn.querySelector('.bubble.assistant.inline-entities');
+      const content = bubble ?? turn.querySelector('.assistant-content');
       if (!content) return [];
       return Array.from(content.children).flatMap((child) => {
+        if (child.classList.contains('richtext')) return ['text'];
+        if (child.classList.contains('transaction-card')) return ['card'];
         if (child.querySelector('.transaction-card')) return ['card'];
         if (child.querySelector('.bubble.assistant .richtext')) return ['text'];
         return [];
       });
     });
-    expect(order, 'text → card → text → card → text ordering').toEqual([
+    expect(order, 'text → card → text → card → text → card → text ordering').toEqual([
+      'text',
+      'card',
       'text',
       'card',
       'text',
@@ -1030,42 +1784,79 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Find an ATM near Arlington" renders a location card with Arlington', async ({
+  test('"Find an ATM near Arlington" renders one primitive location card', async ({
     page
   }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Find an ATM near Arlington');
 
-    await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(
-      titles.some((title) => ['Locations', 'ATMs & branches', 'ATMs', 'Branches'].includes(title)),
-      `expected a locations card, got ${JSON.stringify(titles)}`
-    ).toBe(true);
+    const card = page.locator('.atm-locator-card');
+    await expect(card).toHaveCount(1);
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'location');
 
-    const text = await cardText(page);
+    await expect(card.locator('.name')).toContainText('Arlington');
+    await expect(card.locator('.hours')).not.toBeEmpty();
+
+    const text = await card.innerText();
     expect(text).toContain('Arlington');
+    // Primitive: no distance, recommendation, or directions copy.
+    expect(text.toLowerCase()).not.toMatch(/miles|distance|recommend|tip:|directions/);
+
+    // The map is a server proxy: the image src carries lat/lng but never a token.
+    const map = card.locator('img.atm-map');
+    if ((await map.count()) > 0) {
+      const src = await map.getAttribute('src');
+      expect(src).toMatch(/^\/api\/mapbox\/static\?/);
+      expect(src).toMatch(/lat=-?\d+(?:\.\d+)?/);
+      expect(src).toMatch(/lng=-?\d+(?:\.\d+)?/);
+      expect(src?.toLowerCase()).not.toContain('access_token');
+    } else {
+      await expect(card.locator('.map-fallback')).toHaveText(
+        'Map preview unavailable'
+      );
+    }
+    expect(await card.innerHTML()).not.toContain('access_token');
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .atm-locator-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the ATM locator card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
   });
 
-  test('"Give me a snapshot of my finances" renders an Overview card (max 4)', async ({
+  test('a branch prompt renders an address when the data has one', async ({ page }) => {
+    const errors = collectErrors(page);
+    await runPrompt(page, 'Find a branch in Arlington');
+
+    const card = page.locator('.location-card');
+    await expect(card).toHaveCount(1);
+    await expect(card).toHaveAttribute('data-kind', 'location');
+    await expect(card.locator('.name')).not.toBeEmpty();
+    await expect(card.locator('.address')).not.toBeEmpty();
+
+    expectNoErrors(errors);
+  });
+
+  test('"Give me a snapshot of my finances" renders one primitive cashflow month', async ({
     page
   }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Give me a snapshot of my finances');
 
     await expectCardCount(page, { min: 1, max: 4 });
-    const titles = await cardTitles(page);
-    expect(titles).toContain('Overview');
-    expectTitlesWithin(titles, OVERVIEW_KINDS);
+    await expect(page.locator('.cashflow-card')).toHaveCount(1);
+    await expect(page.locator('.cashflow-card')).toHaveAttribute('data-kind', 'cashflow');
 
     await expectCardStyle(page);
     expectNoErrors(errors);
   });
 
-  test('profile questions return a customer card or text answer', async ({ page }) => {
+  test('profile questions return a primitive profile card or text answer', async ({ page }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my profile');
 
@@ -1077,14 +1868,14 @@ test.describe('chat prompts', () => {
       )
       .toBe(true);
 
-    const titles = await cardTitles(page);
+    const kinds = await cardKinds(page);
     const text = await cardText(page);
     const prose = await assistantText(page);
-    const hasCustomerCard = titles.some((title) => /Account holder/i.test(title));
+    const hasProfileCard = kinds.includes('profile');
     const mentionsMaya = /Maya/i.test(text) || /Maya/i.test(prose);
     expect(
-      hasCustomerCard || mentionsMaya || prose.trim().length > 0,
-      'profile prompt should produce an account-holder card or a text answer'
+      hasProfileCard || mentionsMaya || prose.trim().length > 0,
+      'profile prompt should produce a profile card or a text answer'
     ).toBe(true);
 
     await expectCardStyle(page);
@@ -1104,6 +1895,82 @@ test.describe('chat prompts', () => {
     expect(rendered, 'greeting should produce a visible assistant response').toBe(true);
 
     await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+  test('deep link opens the account activity and highlights the transaction', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+
+    const customersResponse = await page.request.get('/api/customers');
+    const { customers } = (await customersResponse.json()) as {
+      customers: Array<{ id: string; lastName: string }>;
+    };
+    const maya = customers.find((customer) => customer.lastName === 'Chen') ?? customers[0];
+    expect(maya, 'Maya should exist in the fixture customers').toBeTruthy();
+
+    const sessionResponse = await page.request.post('/api/session', {
+      data: { customerId: maya.id }
+    });
+    expect(sessionResponse.ok()).toBe(true);
+
+    const accountsResponse = await page.request.get('/api/accounts');
+    const accountsPayload = (await accountsResponse.json()) as {
+      accounts: Array<{ id: string; type: string }>;
+    };
+    const checking =
+      accountsPayload.accounts.find((account) =>
+        account.type.toLowerCase().includes('checking')
+      ) ?? accountsPayload.accounts[0];
+    expect(checking, 'a checking account should exist').toBeTruthy();
+
+    const detailResponse = await page.request.get(
+      `/api/accounts/${encodeURIComponent(checking.id)}`
+    );
+    const detail = (await detailResponse.json()) as {
+      transactions: Array<{ id: string; description: string }>;
+    };
+    const transaction = detail.transactions[0];
+    expect(transaction?.id, 'the account should have a transaction').toBeTruthy();
+
+    await page.goto(
+      `/dashboard?customer=${encodeURIComponent(maya.id)}&account=${encodeURIComponent(
+        checking.id
+      )}&txn=${encodeURIComponent(transaction.id)}`
+    );
+
+    await expect(page.locator('.view-shell')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
+    await expect(page.locator('.tab[aria-pressed="true"]')).toContainText('Activity');
+
+    const selectorId = transaction.id.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const row = page.locator(`[data-transaction-id="${selectorId}"]`);
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await expect(row).toHaveClass(/highlight/);
+
+    await page.waitForTimeout(4000);
+    await expect(row, 'the highlight persists past the old timeout').toHaveClass(/highlight/);
+    const highlightStyle = await row.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { boxShadow: style.boxShadow, background: style.backgroundColor };
+    });
+    expect(highlightStyle.boxShadow, 'no inset accent bar').not.toContain('inset');
+    expect(highlightStyle.background, 'a tinted background marks the row').not.toBe(
+      'rgba(0, 0, 0, 0)'
+    );
+
+    await expect
+      .poll(
+        async () => {
+          const box = await row.boundingBox();
+          const viewport = page.viewportSize();
+          if (!box || !viewport) return false;
+          return box.y >= -1 && box.y + box.height <= viewport.height + 1;
+        },
+        { message: 'the highlighted row is scrolled into the viewport' }
+      )
+      .toBe(true);
+
     expectNoErrors(errors);
   });
 });
@@ -1298,22 +2165,24 @@ test.describe('Eno mascot', () => {
     await expect(page.locator('.dashboard')).toHaveAttribute('data-theme', 'dark');
 
     await askChat(page, 'Show me my loans');
-    await expectCardCount(page, 1);
-    expect(await cardTitles(page)).toEqual(['Loans']);
+    const loan = page.locator('.loan-card');
+    await expect(loan).toHaveCount(1);
 
-    const surface = await page.locator('.chat-card').first().evaluate((card) => {
-      const style = getComputedStyle(card);
-      const accent = getComputedStyle(card, '::before');
-      return {
-        shadow: style.boxShadow,
-        borderTopWidth: Number.parseFloat(style.borderTopWidth),
-        accentHeight: Number.parseFloat(accent.height)
-      };
-    });
-    expect(surface.shadow, 'dark cards should still lift').not.toBe('none');
+    const surface = await page
+      .locator('.entity-card')
+      .filter({ has: loan })
+      .evaluate((card) => {
+        const style = getComputedStyle(card);
+        const accent = getComputedStyle(card, '::before');
+        return {
+          shadow: style.boxShadow,
+          borderTopWidth: Number.parseFloat(style.borderTopWidth),
+          accentContent: accent.content
+        };
+      });
+    expect(surface.shadow, 'inline cards lose the standalone lift').toBe('none');
     expect(surface.borderTopWidth).toBeGreaterThanOrEqual(1);
-    expect(surface.accentHeight).toBeGreaterThan(2);
-    expect(surface.accentHeight).toBeLessThan(4);
+    expect(['none', 'normal'], 'no ::before accent bar').toContain(surface.accentContent);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -1339,3 +2208,285 @@ test.describe('Eno mascot', () => {
   });
 });
 
+
+test.describe('primitive bill and account cards', () => {
+  test('"Show me my bills" renders one primitive bill card and no legacy chrome', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'The largest bill is City Power: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_upcoming_bills',
+        payload: {
+          asOf: '2026-11-14',
+          days: 30,
+          count: 2,
+          total: 3120,
+          coverageRatio: 1.4,
+          shortfall: 0,
+          bills: [
+            {
+              billId: 'bill-rent',
+              payee: 'Maple Property',
+              nickname: 'Rent',
+              amount: 3000,
+              dueDate: '2026-11-20',
+              daysUntil: 6,
+              status: 'pending',
+              accountId: 'acct-checking'
+            },
+            {
+              billId: 'bill-power',
+              payee: 'City Power',
+              nickname: 'Utilities',
+              amount: 120,
+              dueDate: '2026-11-18',
+              daysUntil: 4,
+              status: 'pending',
+              accountId: 'acct-checking'
+            }
+          ]
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'it is the largest item in the window.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show me my bills');
+
+    const bill = page.locator('.bill-card');
+    await expect(bill).toHaveCount(1, { timeout: 20_000 });
+    await expect(bill).toBeVisible();
+    await expect(bill).toHaveAttribute('data-kind', 'bill');
+
+    const text = await bill.innerText();
+    // The largest bill wins even though it is not the earliest.
+    expect(text).toContain('Maple Property');
+    expect(text).not.toContain('City Power');
+    expect(text, 'amount is shown').toContain('$3,000.00');
+    expect(text, 'due date is shown').toMatch(/Nov 20/);
+    expect(text, 'factual status is shown').toContain('Pending');
+
+    // Primitive: no coverage, total, insight, or recommendation copy.
+    expect(text.toLowerCase()).not.toMatch(/coverage|covered|shortfall|recommend|insight|top bill/);
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    await expect(page.locator('.entity-card .bill-card')).toHaveCount(1);
+    expect(
+      await bill.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the bill card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    // It deep-links to the owning account when the ids are present.
+    const link = bill.locator('a.bill-link');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('href', /^\/dashboard\?customer=[^&]+&account=acct-checking$/);
+    await expect(bill.locator('.open-icon')).toBeVisible();
+
+    expectNoErrors(errors);
+  });
+
+  test('an accounts list stays in prose and renders no account list card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'You have two accounts: Everyday Checking and Venture card.'
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_list_customer_accounts',
+        payload: {
+          count: 2,
+          accounts: [
+            {
+              _id: 'acct-checking',
+              nickname: 'Everyday Checking',
+              type: 'Checking',
+              accountNumber: '•••• 4212',
+              balance: 4218,
+              rewards: 0,
+              customerId: 'cust-test'
+            },
+            {
+              _id: 'acct-venture',
+              nickname: 'Venture',
+              type: 'Credit Card',
+              accountNumber: '•••• 7788',
+              balance: 862,
+              rewards: 24850,
+              customerId: 'cust-test'
+            }
+          ]
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Your checking account covers everyday spending.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'What accounts do I have?');
+
+    await expect(page.locator('.account-card')).toHaveCount(0);
+    // No legacy account-list card either.
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    const prose = (await assistantText(page)).trim();
+    expect(prose.length, 'the prose answers the account question').toBeGreaterThan(0);
+    expect(prose).toMatch(/Everyday Checking|Venture/);
+
+    expectNoErrors(errors);
+  });
+
+  test('a single-account payload renders one account card with a deep link', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is your Everyday Checking account: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'nessie_get_account',
+        payload: {
+          _id: 'acct-checking',
+          nickname: 'Everyday Checking',
+          type: 'Checking',
+          accountNumber: '12345678904212',
+          balance: 4218,
+          rewards: 0,
+          customerId: 'cust-test',
+          extra: 'do not leak'
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'you can open it to review recent activity.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Tell me about my checking account');
+
+    const card = page.locator('.account-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'account');
+
+    const text = await card.innerText();
+    expect(text).toContain('Everyday Checking');
+    expect(text).toContain('Checking');
+    expect(text).toContain('•••• 4212');
+    expect(text, 'balance is shown').toContain('$4,218.00');
+    expect(text, 'a zero rewards balance is not shown as an offer').not.toMatch(/0 points/);
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(card.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the account card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    const link = card.locator('a.account-link');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute(
+      'href',
+      '/dashboard?customer=cust-test&account=acct-checking'
+    );
+    await expect(card.locator('.open-icon')).toBeVisible();
+
+    expectNoErrors(errors);
+  });
+
+  test('a synthetic card SSE event renders the normalized primitive inline', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const intro = 'Your checking account is below.';
+    const events = [
+      `event: text\ndata: ${JSON.stringify({ type: 'text', delta: intro })}`,
+      `event: card\ndata: ${JSON.stringify({
+        type: 'card',
+        card: {
+          id: 1,
+          entityId: 'account:acct-checking',
+          kind: 'account',
+          afterText: intro.length,
+          payload: {
+            accountId: 'acct-checking',
+            nickname: 'Everyday Checking',
+            type: 'Checking',
+            maskedNumber: '•••• 4212',
+            balance: 4218,
+            rewards: 0,
+            customerId: 'cust-test'
+          }
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: ' You can open it to review recent activity.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Tell me about my checking account');
+
+    const card = page.locator('.account-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toContainText('Everyday Checking');
+    await expect(card).toContainText('•••• 4212');
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+
+    expectNoErrors(errors);
+  });
+});

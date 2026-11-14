@@ -7,6 +7,7 @@
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
+  import { GUEST_CUSTOMER_ID, OPEN_ACCOUNT_MESSAGE } from '$lib/chat/guest';
   import { dateLabel, money } from '$lib/format';
   import {
     accountEnding,
@@ -26,6 +27,7 @@
   import ViewShell from './ViewShell.svelte';
   import ChatPanel from './ChatPanel.svelte';
   import CapitalOneLogo from './CapitalOneLogo.svelte';
+  import ClimateWiseWidget from '$lib/climate/ClimateWiseWidget.svelte';
 
   type ChatPanelApi = { ask: (text: string) => Promise<void> };
 
@@ -62,8 +64,8 @@
   );
   let isDark = $derived(effectiveTheme === 'dark');
   let accountOpen = $state(false);
-  let accountButton: HTMLButtonElement;
-  let accountMenuEl: HTMLDivElement;
+  let accountButton = $state<HTMLButtonElement>();
+  let accountMenuEl = $state<HTMLDivElement>();
   let customers = $state<Customer[]>([]);
   let activeCustomerId = $state('');
   let deletingId = $state('');
@@ -88,10 +90,20 @@
   let loans = $state<WalletLoan[]>([]);
   let recentActivity = $state<WalletTransaction[]>([]);
   let snapshotOverview = $state<OverviewSnapshot | null>(null);
+  // Bumped after each successful load, so widgets that fetch their own data (ClimateWise) refetch for the new session.
+  let snapshotVersion = $state(0);
   let snapshotLoading = $state(true);
   let snapshotError = $state('');
+  let accountNotice = $state('');
+  let closeProfileDialog: HTMLDialogElement;
+  let cancelCloseProfile: HTMLButtonElement;
+  let closingCustomer = $state<{ id: string; name: string } | null>(null);
+  let closingProfile = $state(false);
+  let closeProfileError = $state('');
   let snapshotSeq = 0;
   let walletView = $state<{ accountId: string; tab: WalletTab } | null>(null);
+  let focusTransactionId = $state('');
+  let deepLinkHandled = false;
 
   let displayAccounts = $derived.by(() => {
     const rank = (type: string): number => {
@@ -117,8 +129,7 @@
           scheduled:
             scheduled > 0
               ? `${money(scheduled, { decimals: 2 })} in scheduled payments`
-              : undefined,
-          secondaryLabel: credit ? 'Rewards' : 'Account details'
+              : undefined
         };
       });
   });
@@ -184,6 +195,7 @@
 
   async function selectCustomer(id: string): Promise<void> {
     activeCustomerId = id;
+    accountNotice = '';
     accountOpen = false;
     walletView = null;
     await tick();
@@ -237,7 +249,8 @@
       const currentSession = sessionResponse?.ok
         ? await sessionResponse.json() as { customer?: Customer }
         : null;
-      const requestedCustomerId = page.url.searchParams.get('customer') || currentSession?.customer?.id;
+      const requestedCustomerId = page.url.searchParams.get('customer') ||
+        (currentSession?.customer?.id === GUEST_CUSTOMER_ID ? undefined : currentSession?.customer?.id);
       if (requestedCustomerId && !list.some((customer) => customer.id === requestedCustomerId)) {
         const selectedResponse = await fetch(`/api/customers?customer=${encodeURIComponent(requestedCustomerId)}`);
         if (!selectedResponse.ok) throw new Error('Could not load selected customer.');
@@ -303,6 +316,8 @@
       loans = Array.isArray(snapshot.loans) ? snapshot.loans : [];
       recentActivity = Array.isArray(snapshot.recentActivity) ? snapshot.recentActivity : [];
       snapshotOverview = overview;
+      snapshotVersion++;
+      if (seq === snapshotSeq) openDeepLinkedAccount();
     } catch {
       if (seq !== snapshotSeq) return;
       snapshotError = "We couldn't load your accounts.";
@@ -313,11 +328,81 @@
 
   function openAccountView(accountId: string, tab: WalletTab): void {
     if (!accountId) return;
+    accountNotice = '';
     accountOpen = false;
+    focusTransactionId = '';
     walletView = { accountId, tab };
   }
-  let hidden = $state<Record<string, boolean>>({});
+
+  function confirmProfileClosure(): void {
+    if (!activeCustomerId) return;
+    closingCustomer = { id: activeCustomerId, name: activeName };
+    closeProfileError = '';
+    closeProfileDialog.showModal();
+    cancelCloseProfile.focus();
+  }
+
+  async function closeProfile(): Promise<void> {
+    if (closingProfile || !closingCustomer) return;
+    closingProfile = true;
+    closeProfileError = '';
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ customerId: closingCustomer.id })
+      });
+      if (response.status === 204) {
+        window.location.replace('/');
+        return;
+      }
+      const payload = await response.json() as { error?: string };
+      if (payload.error) {
+        closeProfileError = payload.error;
+        return;
+      }
+      throw new Error('Closure was not confirmed');
+    } catch {
+      closeProfileError = "We couldn't confirm closure. Refresh to check whether this profile is still available.";
+    } finally {
+      closingProfile = false;
+    }
+  }
+
+  function openDeepLinkedAccount(): void {
+    if (deepLinkHandled) return;
+    const accountId = page.url.searchParams.get('account') ?? '';
+    const txn = page.url.searchParams.get('txn') ?? '';
+    if (!accountId) return;
+    if (!liveAccounts.some((account) => account.id === accountId)) return;
+    deepLinkHandled = true;
+    focusTransactionId = txn;
+    walletView = { accountId, tab: 'activity' };
+  }
+
+  function closeAccountView(): void {
+    walletView = null;
+    focusTransactionId = '';
+    if (page.url.searchParams.has('account') || page.url.searchParams.has('txn')) {
+      void goto('/dashboard', { replaceState: true, noScroll: true });
+    }
+  }
+
+  async function handleAccountDeleted(accountId: string): Promise<void> {
+    if (walletView?.accountId !== accountId) return;
+    if (primaryCheckingId === accountId) recentActivity = [];
+    liveAccounts = liveAccounts.filter((account) => account.id !== accountId);
+    liveBills = liveBills.filter((bill) => bill.accountId !== accountId);
+    loans = loans.filter((loan) => loan.accountId !== accountId);
+    snapshotOverview = null;
+    closeAccountView();
+    accountNotice = 'Account deleted.';
+    void loadSnapshot(activeCustomerId);
+    await tick();
+    accountButton?.focus();
+  }
   let inChat = $derived(page.params.view === 'chat');
+  let guestChat = $derived(inChat && page.url.searchParams.get('topic') === 'open-account');
   let query = $state('');
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
   let promptSeq = 0;
@@ -358,7 +443,10 @@
     }
   });
 
-  afterNavigate(() => {
+  afterNavigate(({ from }) => {
+    if (guestChat && from?.url.searchParams.get('topic') !== 'open-account') {
+      chatPrompt = { text: OPEN_ACCOUNT_MESSAGE, id: ++promptSeq };
+    }
     if (!previousComposerBounds) return;
 
     const { left, top, height } = composer.getBoundingClientRect();
@@ -427,10 +515,22 @@
       send(query);
     }
   }
+  let customersRequested = false;
+  $effect(() => {
+    if (!guestChat && !customersRequested) {
+      customersRequested = true;
+      void loadCustomers();
+    }
+  });
+
   onMount(() => {
     removedCustomer = lastRemovedCustomer();
-    if (inChat && page.url.searchParams.get('topic') === 'open-account') {
-      query = 'I’d like to open an account';
+    // ClimateWise "Make a plan with Eno" links arrive as /dashboard?ask=<prompt>.
+    const ask = page.url.searchParams.get('ask')?.trim();
+    if (ask) {
+      // Replace the ?ask= history entry so Back doesn't re-send the prompt.
+      chatPrompt = { text: ask, id: ++promptSeq };
+      void goto('/chat', { replaceState: true, keepFocus: true });
     }
 
     try {
@@ -446,8 +546,6 @@
       systemPrefersDark = event.matches;
     };
     media.addEventListener('change', onMediaChange);
-
-    void loadCustomers();
 
     return () => media.removeEventListener('change', onMediaChange);
   });
@@ -483,8 +581,14 @@
     <div class="wallet-band" style:--composer-half-height={`${composerHeight / 2}px`}>
       <div class="wallet-gradient" bind:this={gradient} aria-hidden="true"></div>
       <div class="container header-inner">
-        <a class="brand" href="/dashboard"><CapitalOneLogo label="Capital One dashboard" /></a>
+        <a class="brand" href="/"><CapitalOneLogo label="Capital One home" /></a>
         <div class="header-actions">
+          {#if guestChat}
+            <div class="profile">
+              <span class="avatar" aria-hidden="true">G</span>
+              <span class="profile-name">Guest</span>
+            </div>
+          {:else}
           <div class="account-menu" role="presentation" bind:this={accountMenuEl} onkeydown={handleMenuKeydown}>
             <button
               class="profile"
@@ -529,6 +633,7 @@
               </div>
             {/if}
           </div>
+          {/if}
           <button
             class="theme-toggle"
             aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -556,7 +661,7 @@
           <ChatPanel
             bind:this={chatPanel}
             open={inChat}
-            customerId={activeCustomerId}
+            customerId={guestChat ? GUEST_CUSTOMER_ID : activeCustomerId}
             initialPrompt={chatPrompt}
             bind:canSend
             variant={isDark ? 'dark' : 'light'}
@@ -582,6 +687,7 @@
         <div class="container content">
           <section class="stack" aria-labelledby="accounts-title">
             <h2 id="accounts-title" class="section-title">Your accounts <span class="count">{displayAccounts.length}</span></h2>
+            <div role="status" class="account-notice">{accountNotice}</div>
 
             {#if snapshotError}
               <article class="panel retry-card" aria-live="polite">
@@ -613,22 +719,14 @@
                     {/if}
                   </div>
                   <div class="account-balance">
-                    <div class="balance-label">
-                      {account.kind}
-                      <button class="visibility" aria-label={`${hidden[account.id] ? 'Show' : 'Hide'} ${account.name} balance`} onclick={() => (hidden[account.id] = !hidden[account.id])}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-                          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>
-                          {#if !hidden[account.id]}<path d="m4 20 16-16"/>{/if}
-                        </svg>
-                      </button>
-                    </div>
+                    <div class="balance-label">{account.kind}</div>
                     <div class="balance" aria-live="polite">
-                      {#if hidden[account.id]}<span aria-label="Balance hidden">••••</span>{:else}${dollars}<span class="cents">.{cents}</span>{/if}
+                      ${dollars}<span class="cents">.{cents}</span>
                     </div>
                   </div>
                   <div class="card-actions">
                     <button class="pill" onclick={() => openAccountView(account.id, 'activity')}>{@render arrowIcon()} View activity</button>
-                    <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} {account.secondaryLabel}</button>
+                    <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account settings</button>
                   </div>
                 </article>
               {/each}
@@ -706,11 +804,20 @@
               </div>
               <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
             </article>
+            <ClimateWiseWidget refresh={snapshotVersion} />
             {:else if !snapshotLoading && !snapshotError}
               <article class="panel utility getting-started">
                 <h2>Make yourself at home.</h2>
                 <p class="muted">Questions about banking? Wondering where to start? You don’t need an account to say hello.</p>
                 <button class="link" onclick={() => send('I’m new here. What can I do with Eno?')}>Let’s get acquainted {@render arrowIcon()}</button>
+              </article>
+            {/if}
+            {#if activeCustomerId && activeCustomerId !== GUEST_CUSTOMER_ID && !snapshotLoading && !snapshotError}
+              <article class="panel feature">
+                <div class="feature-main">
+                  <div><h2>Close profile</h2><p class="muted">Close this demo profile and all its accounts.</p></div>
+                  <button class="close-profile-button" onclick={confirmProfileClosure}>Close profile</button>
+                </div>
               </article>
             {/if}
           </section>
@@ -731,9 +838,42 @@
     {/if}
   </div>
 
+  <dialog
+    class="close-profile-dialog"
+    bind:this={closeProfileDialog}
+    aria-labelledby="close-profile-title"
+    aria-describedby="close-profile-description"
+    oncancel={(event) => { if (closingProfile) event.preventDefault(); }}
+  >
+    <h2 id="close-profile-title">Close profile?</h2>
+    <p id="close-profile-description">
+      Closing <strong>{closingCustomer?.name}</strong> permanently deletes all its demo accounts
+      and removes the profile from sign-in. You can’t undo this.
+    </p>
+    {#if closeProfileError}<p role="alert">{closeProfileError}</p>{/if}
+    <div class="close-profile-actions">
+      <form method="dialog">
+        <button class="primary" bind:this={cancelCloseProfile} disabled={closingProfile}>Cancel</button>
+      </form>
+      <button class="close-profile-button" disabled={closingProfile} onclick={closeProfile}>
+        {closingProfile ? 'Closing profile…' : 'Close profile'}
+      </button>
+    </div>
+  </dialog>
+
   {#if walletView}
-    <ViewShell title="Account details" subtitle={activeName} onBack={() => (walletView = null)}>
-      <AccountDetailView accountId={walletView.accountId} initialTab={walletView.tab} />
+    {@const cardActivity = walletView.tab === 'activity' && displayAccounts.some(
+      (account) => account.id === walletView?.accountId && account.credit
+    )}
+    <ViewShell title={walletView.tab === 'details' ? 'Account settings' : 'Account details'} subtitle={activeName} onBack={closeAccountView}
+      {cardActivity} profileName={activeFirstName}>
+      <AccountDetailView
+        accountId={walletView.accountId}
+        initialTab={walletView.tab}
+        {cardActivity}
+        {focusTransactionId}
+        onAccountDeleted={handleAccountDeleted}
+      />
     </ViewShell>
   {/if}
 </div>
@@ -808,7 +948,7 @@
   }
   .brand { display: inline-flex; flex: none; padding: 3px 8px; margin-left: -8px; border-radius: 8px; color: var(--dark, #fff) var(--light, #013d5b); }
   .brand :global(svg) { display: block; width: 122px; height: 44px; }
-  .link, .visibility { background: transparent; border: 0; padding: 0; }
+  .link { background: transparent; border: 0; padding: 0; }
   a.link:hover, footer a:hover { text-decoration: underline; }
   button.link:hover { color: var(--ink); }
   .profile, .return-dashboard {
@@ -916,10 +1056,6 @@
     border-bottom: 1px solid var(--border);
   }
   .composer { position: relative; z-index: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 8px 24px #102b421c; }
-  .composer:focus-within {
-    border-color: color-mix(in srgb, var(--link) 65%, var(--border));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 15%, transparent), 0 8px 24px #102b421c;
-  }
   .composer-field {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -1018,6 +1154,7 @@
   .activity-amount, .bill-amount { flex: none; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .activity-amount.deposit { color: #568825; }
   .account, .panel { box-shadow: var(--shadow); }
+  .account-notice:empty { position: absolute; }
   .panel { border: 1px solid var(--border); }
   .account {
     display: grid;
@@ -1038,16 +1175,13 @@
   .rose { --account-start: #54253b; --account-end: #924536; }
   .account-top h2 { font-size: 21px; font-weight: 550; }
   .account-top h2 span { font-size: 12px; margin-left: 4px; white-space: nowrap; }
-  .balance-label { display: flex; gap: 5px; align-items: center; font-size: 12px; }
-  .visibility { display: grid; place-items: center; border-radius: 50%; width: 29px; height: 29px; }
-  .visibility:hover { background: #ffffff25; }
+  .balance-label { font-size: 12px; }
   .account :is(a, button):focus-visible { outline-color: #fff; }
   .balance, .reward-amount { font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.055em; }
   .balance { font-size: clamp(26px, 4vw, 36px); line-height: 1; font-weight: 450; }
   .cents { color: #ffffffe0; font-size: .69em; letter-spacing: -.03em; }
   .card-actions, .panel-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .account-balance { text-align: right; }
-  .balance-label { justify-content: flex-end; }
   .card-actions { grid-column: 1 / -1; }
   .card-actions .pill { width: 10rem; max-width: 100%; }
   .pill, .primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 13px; min-height: 38px; font-size: 13px; font-weight: 650; }
@@ -1061,6 +1195,27 @@
   .panel { background: var(--surface); border-radius: 16px; overflow: hidden; }
   .feature { display: flex; flex-direction: column; }
   .feature-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px; flex: 1; }
+  .close-profile-button {
+    padding: 9px 14px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: #a22731;
+    color: white;
+    font-weight: 650;
+  }
+  .close-profile-dialog {
+    width: min(440px, calc(100% - 32px));
+    margin: auto;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .close-profile-dialog::backdrop { background: #0b182399; }
+  .close-profile-dialog p { margin-top: 12px; }
+  .close-profile-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .close-profile-actions button:disabled { opacity: 0.65; cursor: default; }
   .products .feature-main { align-items: flex-start; }
   .products p { margin-top: 5px; }
   .reward { background: var(--banner); }

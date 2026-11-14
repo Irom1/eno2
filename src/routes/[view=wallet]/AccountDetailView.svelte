@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { money, dateLabel } from '$lib/format';
   import {
     accountBalanceLabel,
@@ -11,6 +12,7 @@
     type WalletTransaction
   } from '$lib/wallet';
   import DetailSheet from './DetailSheet.svelte';
+  import CreditCardActivity from './CreditCardActivity.svelte';
 
   type Tab = 'activity' | 'details' | 'bills' | 'loans';
   type ActivityFilter = 'all' | 'deposits' | 'withdrawals';
@@ -18,6 +20,9 @@
   interface Props {
     accountId: string;
     initialTab: Tab;
+    focusTransactionId?: string;
+    cardActivity?: boolean;
+    onAccountDeleted: (accountId: string) => void;
   }
 
   interface DetailPayload {
@@ -28,7 +33,7 @@
     loans?: WalletLoan[];
   }
 
-  let { accountId, initialTab }: Props = $props();
+  let { accountId, initialTab, focusTransactionId, cardActivity = false, onAccountDeleted }: Props = $props();
 
   let tab = $state<Tab>('activity');
   let filter = $state<ActivityFilter>('all');
@@ -43,6 +48,11 @@
   let selectedTransaction = $state<WalletTransaction | null>(null);
   let selectedBill = $state<WalletBill | null>(null);
   let selectedLoan = $state<WalletLoan | null>(null);
+  let highlightId = $state('');
+  let deleteDialog: HTMLDialogElement;
+  let cancelDeleteButton: HTMLButtonElement;
+  let deleting = $state(false);
+  let deleteError = $state('');
 
   let credit = $derived(isCredit(account?.type ?? ''));
   let heroKind = $derived(
@@ -100,6 +110,28 @@
     return String(value);
   }
 
+  function confirmAccountDeletion(): void {
+    deleteError = '';
+    deleteDialog.showModal();
+    cancelDeleteButton.focus();
+  }
+
+  async function deleteAccount(): Promise<void> {
+    if (deleting || account?.id !== accountId) return;
+    const id = accountId;
+    deleting = true;
+    deleteError = '';
+    try {
+      const response = await fetch(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (response.status !== 204) throw new Error('Deletion was not confirmed');
+      onAccountDeleted(id);
+    } catch {
+      deleteError = "We couldn't confirm the deletion. Close this dialog and refresh the dashboard to check whether the account is still there.";
+    } finally {
+      deleting = false;
+    }
+  }
+
   async function load(id: string): Promise<void> {
     const seq = ++requestSeq;
     loading = true;
@@ -130,10 +162,46 @@
     selectedTransaction = null;
     selectedBill = null;
     selectedLoan = null;
+    highlightId = '';
     void load(id);
+  });
+
+  $effect(() => {
+    const focus = focusTransactionId ?? '';
+    const currentTab = tab;
+    const isLoading = loading;
+    const rows = transactions;
+    if (!focus || currentTab !== 'activity' || isLoading) return;
+    if (!rows.some((transaction) => transaction.id === focus)) return;
+
+    let cancelled = false;
+    void tick().then(() => {
+      if (cancelled) return;
+      const row = document.querySelector<HTMLElement>(
+        `[data-transaction-id="${CSS.escape(focus)}"]`
+      );
+      if (!row) return;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+      highlightId = focus;
+    });
+
+    return () => {
+      cancelled = true;
+    };
   });
 </script>
 
+{#if cardActivity && account && tab === 'activity'}
+  <CreditCardActivity
+    {account} {customer} {transactions} {bills} {highlightId} {focusTransactionId}
+    onDetails={() => (tab = 'details')}
+    onBills={() => (tab = 'bills')}
+    onTransaction={(transaction) => (selectedTransaction = transaction)}
+    onBill={(bill) => (selectedBill = bill)}
+  />
+{:else}
+<div class:inset={cardActivity}>
 {#if loading && !account}
   <section class="state-card" aria-live="polite">
     <p>Loading account…</p>
@@ -192,7 +260,12 @@
             <h3>{dateLabel(date)}</h3>
             <div class="rows">
               {#each rows as transaction (transaction.id)}
-                <button class="tx-row" onclick={() => (selectedTransaction = transaction)}>
+                <button
+                  class="tx-row"
+                  class:highlight={highlightId === transaction.id}
+                  data-transaction-id={transaction.id}
+                  onclick={() => (selectedTransaction = transaction)}
+                >
                   <span class="tx-main">
                     <strong>{transaction.description || 'Transaction'}</strong>
                     <small>{transactionLabel(transaction.kind)} · {label(transaction.status)}</small>
@@ -222,6 +295,10 @@
         <div><dt>Account holder</dt><dd>{customer ? `${customer.firstName} ${customer.lastName}`.trim() : '—'}</dd></div>
         <div><dt>Address</dt><dd>{customerAddress}</dd></div>
       </dl>
+      <div class="account-settings">
+        <h3>Account settings</h3>
+        <button class="danger-button" onclick={confirmAccountDeletion}>Delete account</button>
+      </div>
     </section>
   {:else if tab === 'bills'}
     <section class="tab-panel" aria-label="Bills">
@@ -267,6 +344,33 @@
     </section>
   {/if}
 {/if}
+
+</div>
+{/if}
+
+<dialog
+  class="delete-dialog"
+  bind:this={deleteDialog}
+  aria-labelledby="delete-account-title"
+  aria-describedby="delete-account-description"
+  oncancel={(event) => { if (deleting) event.preventDefault(); }}
+  onkeydown={(event) => { if (event.key === 'Escape') event.stopPropagation(); }}
+>
+  <h2 id="delete-account-title">Delete account?</h2>
+  <p id="delete-account-description">
+    Delete <strong>{account?.nickname || account?.type}</strong> ending in {ending}?
+    This permanently removes the demo account. You can’t undo it.
+  </p>
+  {#if deleteError}<p role="alert">{deleteError}</p>{/if}
+  <div class="delete-actions">
+    <form method="dialog">
+      <button class="cancel-button" bind:this={cancelDeleteButton} disabled={deleting}>Cancel</button>
+    </form>
+    <button class="danger-button" disabled={deleting || !!deleteError} onclick={deleteAccount}>
+      {deleting ? 'Deleting account…' : 'Delete account'}
+    </button>
+  </div>
+</dialog>
 
 {#if selectedTransaction}
   <DetailSheet title="Transaction" onClose={() => (selectedTransaction = null)}>
@@ -316,6 +420,40 @@
 {/if}
 
 <style>
+  .account-settings {
+    display: grid;
+    justify-items: start;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .account-settings h3, .delete-dialog h2 { font-size: 17px; }
+  .delete-dialog {
+    width: min(440px, calc(100% - 32px));
+    margin: auto;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .delete-dialog::backdrop { background: #0b182399; }
+  .delete-dialog p { margin-top: 12px; }
+  .delete-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .danger-button, .cancel-button {
+    padding: 9px 14px;
+    border-radius: 8px;
+    font-weight: 650;
+  }
+  .danger-button { border: 1px solid transparent; background: #a22731; color: white; }
+  .cancel-button { border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
+  .delete-actions button:disabled { opacity: 0.65; cursor: default; }
+  .inset {
+    width: min(1000px, 100%);
+    margin-inline: auto;
+    padding: 24px 20px 48px;
+  }
   .state-card {
     display: grid;
     gap: 12px;
@@ -418,6 +556,10 @@
     text-align: left;
   }
   .tx-row:hover, .list-row:hover { background: var(--page); }
+  .tx-row.highlight,
+  .tx-row.highlight:hover {
+    background: color-mix(in srgb, var(--link) 22%, transparent);
+  }
   .tx-main, .list-main, .tx-amount, .list-side { display: grid; gap: 2px; min-width: 0; }
   .tx-main strong, .list-main strong { font-size: 14px; font-weight: 600; }
   .tx-main small, .list-main small, .tx-amount small, .list-side small { color: var(--muted); font-size: 11px; }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { money } from '$lib/format.js';
-  import { asRecord } from '$lib/chat/cards.js';
+  import { asRecord } from './cards.js';
   import ChatCardShell from './ChatCardShell.svelte';
 
   interface Props {

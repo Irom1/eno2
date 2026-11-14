@@ -2,32 +2,45 @@
   import { tick } from 'svelte';
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
-  import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
   import {
-    anchorTransactionCards,
+    accountCard,
+    anchorEntityCards,
     anomalyExplanation,
     anomalyTransactionCards,
+    billCard,
+    cashflowCard,
+    goalCard,
+    loanCard,
+    locationCard,
+    merchantCard,
     mergeEntityCards,
     mergeTransactionListCards,
+    profileCard,
+    recurringCard,
+    rewardCard,
+    spendingPieCard,
     transactionListCard,
     type EntityCard,
+    type SpendingPieEntityCard,
     type TransactionListEntityCard
   } from '$lib/chat/entityCards.js';
-  import { inlineBlocks } from '$lib/chat/inline.js';
+  import { inlineBlocks, revealInlineCards } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
   import { STARTER_PROMPTS } from '$lib/chat/starters.js';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
   import {
     friendlyToolLabel,
     initialThinking,
     pushThinkingStep,
+    THINKING_COMPOSING,
     type ThinkingState
   } from '$lib/chat/thinking.js';
-  import { visibleCards } from '$lib/chat/relevance.js';
+  import { classifyIntents } from '$lib/chat/intents.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
+  import { groupInlineCards } from '$lib/chat/cardGroups.js';
   import FollowUps from './FollowUps.svelte';
-  import TransactionCard from './inline-cards/TransactionCard.svelte';
-  import TransactionListCard from './inline-cards/TransactionListCard.svelte';
+  import ChatCardView from './inline-cards/ChatCardView.svelte';
 
   interface Props {
     open: boolean;
@@ -44,7 +57,6 @@
     text: string;
     prompt?: string;
     pending?: boolean;
-    cards?: ChatCard[];
     inlineCards?: EntityCard[];
     intro?: boolean;
   }
@@ -70,7 +82,10 @@
   let messageSeq = 0;
 
   function introMessage(): ChatMessage {
-    return { id: ++messageSeq, role: 'assistant', text: INTRO, intro: true, pending: false };
+    const text = customerId === GUEST_CUSTOMER_ID
+      ? "Hi, I'm Eno 2.0. I can help you explore how to open an account."
+      : INTRO;
+    return { id: ++messageSeq, role: 'assistant', text, intro: true, pending: false };
   }
 
   let messages = $state<ChatMessage[]>([introMessage()]);
@@ -84,14 +99,14 @@
   let logEl: HTMLDivElement;
 
   const suggestions = $derived.by(() => {
-    if (streaming) return [];
+    if (streaming || customerId === GUEST_CUSTOMER_ID) return [];
     const hasUserMessage = messages.some((message) => message.role === 'user');
     if (!hasUserMessage) return [...STARTER_PROMPTS];
     const last = [...messages].reverse().find((message) => message.role === 'assistant');
     if (!last || last.pending) return [];
-    const shown = visibleCards(last.cards ?? [], last.prompt ?? '');
-    if (!last.text && shown.length === 0) return [];
-    return followUpsFor(shown, last.prompt ?? '').slice(0, 3);
+    const cards = last.inlineCards ?? [];
+    if (!last.text && cards.length === 0) return [];
+    return followUpsFor(cards, last.prompt ?? '').slice(0, 3);
   });
 
   function scrollLog(): void {
@@ -177,6 +192,43 @@
     return messages.find((message) => message.id === id);
   }
 
+  /** Keep one card per kind in a turn: later insights replace, never stack. */
+  function replaceInlineCard(message: ChatMessage, incoming: EntityCard): void {
+    const current = message.inlineCards ?? [];
+    const exists = current.some((card) => card.kind === incoming.kind);
+    message.inlineCards = exists
+      ? current.map((card) => (card.kind === incoming.kind ? incoming : card))
+      : [...current, incoming];
+    cardSeq = Math.max(cardSeq, incoming.id);
+  }
+
+  const SUPPORTED_CARD_KINDS = new Set<EntityCard['kind']>([
+    'transaction',
+    'transaction-list',
+    'spending-pie',
+    'bill',
+    'account',
+    'loan',
+    'location',
+    'recurring',
+    'reward',
+    'goal',
+    'cashflow',
+    'merchant',
+    'profile'
+  ]);
+
+  /** Ignore unknown future card kinds instead of rendering a broken card. */
+  function isSupportedCardKind(kind: string): kind is EntityCard['kind'] {
+    return SUPPORTED_CARD_KINDS.has(kind as EntityCard['kind']);
+  }
+
+  function positiveTotalRewards(payload: unknown): boolean {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+    const total = (payload as Record<string, unknown>).totalRewards;
+    return typeof total === 'number' && Number.isFinite(total) && total > 0;
+  }
+
   /** Fill empty assistant prose with a deterministic explanation for its cards. */
   function ensureExplanation(message: ChatMessage): void {
     const cards = message.inlineCards ?? [];
@@ -248,24 +300,14 @@
           }
           case 'insight': {
             if (typeof data.kind !== 'string') break;
-            const payload = data.payload;
-            const fingerprint = `${data.kind}:${JSON.stringify(payload)}`;
-            const existing = message.cards ?? [];
-            if (
-              existing.some(
-                (card) => `${card.tool}:${JSON.stringify(card.payload)}` === fingerprint
-              )
-            ) {
-              break;
+            // Cards are about to render; the model still owes us prose. Surface
+            // that phase so the wait between the card and the answer is legible.
+            if (message.pending && !message.text.trim()) {
+              thinking = pushThinkingStep(thinking, THINKING_COMPOSING);
             }
-            if (!message.cards) message.cards = [];
-            message.cards.push({
-              id: ++cardSeq,
-              kind: chatCardKind(data.kind),
-              tool: data.kind,
-              payload,
-              afterText: message.text.length
-            });
+            const payload = data.payload;
+            const accountId = typeof data.accountId === 'string' ? data.accountId : '';
+            const intents = classifyIntents(message.prompt ?? '');
             if (data.kind === 'insight_anomalies') {
               // If the tool result arrives before any prose, anchor the cards at
               // the end of the text so the answer reads first and the cited
@@ -273,15 +315,188 @@
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const startId = cardSeq + 1;
-              const incoming = anomalyTransactionCards(payload, anchor, startId);
+              const incoming = anomalyTransactionCards(payload, anchor, startId, {
+                accountId,
+                customerId
+              });
               cardSeq += incoming.length;
               message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
             }
-            if (chatCardKind(data.kind) === 'transactions') {
+            if (data.kind === 'insight_spending_breakdown') {
+              // One primitive pie card per turn: a later spending insight in the
+              // same turn replaces the earlier one rather than stacking charts.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = spendingPieCard(payload, anchor, cardSeq + 1);
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card): card is SpendingPieEntityCard => card.kind === 'spending-pie'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'spending-pie' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (data.kind === 'insight_upcoming_bills') {
+              // One primitive bill card per turn. The prose names the largest
+              // bill; a later bills insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = billCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'bill'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'bill' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (data.kind === 'nessie_get_account') {
+              // Accounts are single-entity cards; an all-accounts list stays in
+              // prose, and a later account insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = accountCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'account'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'account' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (data.kind === 'nessie_list_account_loans') {
+              // One primitive loan card per turn: the largest balance wins, and
+              // a later loan insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = loanCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'loan'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'loan' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (
+              data.kind === 'find_nearby_atms' ||
+              data.kind === 'find_nearby_branches'
+            ) {
+              // One primitive location card per turn: the first result is shown,
+              // and a later location insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = locationCard(payload, anchor, cardSeq + 1, {
+                customerId,
+                type: data.kind === 'find_nearby_atms' ? 'atm' : 'branch'
+              });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'location'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'location' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (data.kind === 'insight_recurring_charges') {
+              // One primitive recurring-charge card per turn: the largest
+              // average amount wins, and a later insight replaces the card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = recurringCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'recurring'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'recurring' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (
+              intents.has('rewards') &&
+              (data.kind === 'nessie_list_customer_accounts' ||
+                (data.kind === 'insight_financial_overview' && positiveTotalRewards(payload)))
+            ) {
+              // One primitive reward card per turn: the highest credit-account
+              // reward, or the overview total. Later rewards replace it.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = rewardCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (data.kind === 'insight_goal_projection') {
+              // One primitive goal card per turn; a later projection replaces it.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = goalCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (
+              data.kind === 'insight_financial_overview' &&
+              (intents.has('cashflow') || intents.has('overview'))
+            ) {
+              // One primitive cashflow month per turn: the latest complete
+              // month, replaced rather than stacked if the insight repeats.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = cashflowCard(payload, anchor, cardSeq + 1);
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (
+              data.kind === 'nessie_list_merchants' ||
+              data.kind === 'nessie_get_merchant'
+            ) {
+              // One primitive merchant per turn: the first valid merchant, with
+              // a later merchant insight replacing the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = merchantCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (data.kind === 'nessie_get_customer') {
+              // One primitive profile per turn, and only for a single-customer
+              // payload; a customer list stays in prose. Later profiles replace.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = profileCard(payload, anchor, cardSeq + 1);
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (
+              data.kind === 'nessie_list_account_deposits' ||
+              data.kind === 'nessie_list_account_withdrawals' ||
+              data.kind === 'nessie_list_account_transactions'
+            ) {
               // Deposits and withdrawals in one turn share a single merged list.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
-              const incoming = transactionListCard(payload, anchor, cardSeq + 1);
+              const incoming = transactionListCard(payload, anchor, cardSeq + 1, {
+                accountId,
+                customerId
+              });
               if (incoming) {
                 const existing = message.inlineCards?.find(
                   (card): card is TransactionListEntityCard =>
@@ -296,6 +511,39 @@
                 cardSeq = Math.max(cardSeq, merged.id);
               }
             }
+            scrollLog();
+            break;
+          }
+          case 'card': {
+            // Server-side present_card result: a normalized EntityCard payload.
+            const raw = data.card;
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) break;
+            const record = raw as Record<string, unknown>;
+            if (typeof record.kind !== 'string' || !isSupportedCardKind(record.kind)) break;
+            if (typeof record.entityId !== 'string' || !record.entityId) break;
+            if (!record.payload || typeof record.payload !== 'object') break;
+
+            const incoming = { ...record } as unknown as EntityCard;
+            if (typeof incoming.id !== 'number' || !Number.isFinite(incoming.id)) {
+              incoming.id = ++cardSeq;
+            } else {
+              cardSeq = Math.max(cardSeq, incoming.id);
+            }
+            if (
+              typeof incoming.afterText !== 'number' ||
+              !Number.isFinite(incoming.afterText)
+            ) {
+              incoming.afterText = message.text.length;
+            }
+
+            const current = message.inlineCards ?? [];
+            const index = current.findIndex(
+              (card) => card.entityId === incoming.entityId
+            );
+            message.inlineCards =
+              index >= 0
+                ? current.map((card, position) => (position === index ? incoming : card))
+                : [...current, incoming];
             scrollLog();
             break;
           }
@@ -401,8 +649,10 @@
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const arrangedCards = anchorTransactionCards(message.text, message.inlineCards ?? [])}
-        {@const blocks = inlineBlocks(message.text, arrangedCards)}
+        {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [])}
+        {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
+        {@const blocks = inlineBlocks(message.text, readyCards)}
+        {@const groups = groupInlineCards(blocks)}
         {@const hasBlocks = blocks.length > 0}
         {@const isThinking = message.pending && !hasBlocks}
         {#if hasBlocks || message.pending}
@@ -427,21 +677,23 @@
                   </div>
                 </div>
               {/if}
-              {#each blocks as block, index (block.type + index)}
-                {#if block.type === 'text'}
-                  {#if block.text.trim()}
-                    <div class="bubble assistant">
-                      <div class="richtext">{@html renderMarkdown(block.text)}</div>
-                    </div>
-                  {/if}
+              {#each groups as group}
+                {#if group.type === 'inline'}
+                  <div class="bubble assistant inline-entities">
+                    {#each group.blocks as block, blockIndex (blockIndex)}
+                      {#if block.type === 'text'}
+                        {#if block.text.trim()}
+                          <div class="richtext">{@html renderMarkdown(block.text)}</div>
+                        {/if}
+                      {:else}
+                        {#each block.cards as card (card.id)}
+                          <ChatCardView {card} inline />
+                        {/each}
+                      {/if}
+                    {/each}
+                  </div>
                 {:else}
-                  {#each block.cards as card (card.id)}
-                    {#if card.kind === 'transaction'}
-                      <TransactionCard {card} />
-                    {:else if card.kind === 'transaction-list'}
-                      <TransactionListCard {card} />
-                    {/if}
-                  {/each}
+                  <ChatCardView card={group.card} />
                 {/if}
               {/each}
               {#if message.pending && hasBlocks}
@@ -511,6 +763,20 @@
     border: 1px solid var(--border);
     border-radius: 18px 18px 18px 4px;
   }
+  /*
+   * Single-entity cards render inside the assistant bubble. CardFrame is owned
+   * by a child component, so restyle it globally within the bubble: same border,
+   * no lift shadow, no accent, and capped by the bubble width.
+   */
+  .bubble.assistant :global(.entity-card) {
+    width: 100%;
+    max-width: 100%;
+    margin: 6px 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    box-shadow: none;
+  }
   .assistant-turn {
     align-self: flex-start;
     width: 100%;
@@ -520,7 +786,11 @@
     align-items: flex-start;
     gap: 10px;
   }
-  .assistant-turn > :global(.eno-thinking) { margin-top: 2px; }
+  .assistant-turn > :global(.eno-thinking) {
+    align-self: flex-end;
+    margin-top: 0;
+    margin-bottom: 2px;
+  }
   .assistant-content {
     flex: 1;
     min-width: 0;

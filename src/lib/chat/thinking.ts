@@ -4,6 +4,8 @@
  */
 
 export const THINKING_START = 'Understanding your question';
+/** Shown once cards are on screen but the prose has not arrived yet. */
+export const THINKING_COMPOSING = 'Putting your answer together…';
 
 export interface ThinkingState {
   /** Completed steps, oldest first (at most three). */

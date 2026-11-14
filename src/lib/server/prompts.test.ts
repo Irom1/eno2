@@ -47,16 +47,64 @@ describe("buildSystemInstruction", () => {
       'Exception: when an inline single-entity card introduces a merchant or payee, name that merchant or payee in the sentence that introduces its card; still do not restate its amount, date, status, or row.'
     );
     expect(instruction).toContain(
-      'Every answer must include at least one explanation or insight sentence.'
+      'Answer in two to five sentences or a short bullet list, including one insight and one tip.'
+    );
+    expect(instruction).toContain(
+      'Every answer must include at least one insight and one practical tip.'
+    );
+    expect(instruction).toContain(
+      'For a spending-by-category answer, write one short intro sentence before calling insight_spending_breakdown so the category chart follows it, then add a takeaway/tip after the chart; do not restate the chart\'s amounts or shares.'
+    );
+    expect(instruction).toContain(
+      'Cards are simple, primitive data displays: one entity or one basic series.'
+    );
+    expect(instruction).toContain(
+      'Do not rely on a card to carry analysis, rankings, recommendations, or combined insights.'
+    );
+    expect(instruction).toContain(
+      'Prefer the smallest primitive card(s) needed, and put the novel insight, comparison, and tip in the prose.'
+    );
+    expect(instruction).toContain(
+      'For a single bill or account, use one primitive card; never render an account list. Leave totals, coverage, and account comparisons in the prose.'
+    );
+    expect(instruction).toContain(
+      'For a single loan, location, or recurring charge, use one primitive card and keep lists, comparisons, and the tip in the prose; the card shows only the factual data.'
+    );
+    expect(instruction).toContain(
+      "Do not state a recurring charge's cadence or next date unless a tool returns them."
+    );
+    expect(instruction).toContain(
+      'For rewards, a savings goal, or monthly cashflow, show one primitive card with one balance, target, or month; keep comparisons, progress narratives, and advice in the prose, and do not repeat the card\'s values.'
+    );
+    expect(instruction).toContain(
+      'For merchants and profiles, show one primitive card at most: one merchant or one customer.'
+    );
+    expect(instruction).toContain(
+      'Keep merchant lists and multiple customers in the prose, never put account or contact identifiers in the card, and keep the insight and tip in the prose.'
+    );
+    expect(instruction).toContain(
+      'Do not ask for or describe a broad “everything” card.'
+    );
+    expect(instruction).toContain(
+      'The insight explains what the data means or what stands out.'
+    );
+    expect(instruction).toContain(
+      'The tip is a safe, concrete next step, phrased as an option (“you can …”) rather than an instruction (“you should …”).'
     );
     expect(instruction).toContain(
       'Never return only a card or a bare tool result.'
     );
     expect(instruction).toContain(
+      'Do not repeat information already visible in a card: amounts, balances, dates, names, statuses, or rows.'
+    );
+    expect(instruction).toContain(
       'You have a suspiciously large transaction at APPLE and a possible duplicate transaction at Netflix.'
     );
     expect(instruction).toContain(
-      'The transaction card shows only the transaction; put the reason in the prose.'
+      'Put the reason in the prose; the transaction card shows only the transaction details.'
+    );
+    expect(instruction).toContain(
+      'call present_card({kind,id}) before the sentence that mentions it. Call it at most twice per turn, only for single entities, never for lists or when the id is unknown. Do not describe the card or repeat its data.'
     );
     expect(instruction).not.toContain('or no prose.');
     expect(instruction).toContain(
@@ -64,6 +112,15 @@ describe("buildSystemInstruction", () => {
     );
     expect(instruction).toContain(
       'Good: "This is your only card." / "You\'re close to your next reward."'
+    );
+    expect(instruction).toContain(
+      'An amount, date, status, or row should appear only as part of analysis, never as a bare restatement.'
+    );
+    expect(instruction).toContain(
+      'Bad: "The largest is MIT Bursar, due 2026-12-05." (the card already shows that bill and due date)'
+    );
+    expect(instruction).toContain(
+      'Good: "The largest payment is due within the next three weeks." (analysis/timing, not a restatement)'
     );
     expect(instruction).toContain(
       'Cards render inline with your prose. When a card will help, write one short introductory sentence before calling the tool, then let the card render, then add a concise takeaway that explains what stands out.'
