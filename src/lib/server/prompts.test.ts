@@ -22,7 +22,7 @@ describe("buildSystemInstruction", () => {
       "For \"last month\" spending, use insight_spending_breakdown and quote the monthlyBreakdown entry for that month (categories + total)."
     );
     expect(instruction).toContain(
-      "For spending, anomalies, and recurring-charge questions, default to the checking account unless the customer names a specific card or account. Do not analyze every account."
+      "For spending, anomalies, loans, and recurring-charge questions, default to the checking account unless the customer names a specific card or account. Do not analyze every account. For loans, call nessie_list_account_loans once on the checking account; do not repeat it for other accounts."
     );
     expect(instruction).toContain(
       "Recurring obligations are not anomalies. Do not present rent, utilities, or subscriptions as unusual just because they are large."
@@ -160,6 +160,33 @@ describe("buildSystemInstruction", () => {
     );
     expect(instruction).toContain(
       '- insight_top_transactions for the biggest purchases in a category or at a merchant; returns the exact rows for the transaction list card.'
+    );
+    expect(instruction).toContain(
+      '- insight_top_merchants for where the customer shops most; returns the top merchant for a merchant card.'
+    );
+    expect(instruction).toContain(
+      "For a spending pie, do not restate the period, total, category amounts, shares, or transaction count. Explain what the mix means (fixed vs discretionary) and give one next step."
+    );
+    expect(instruction).toContain(
+      "For a loan card, do not restate the loan's balance or monthly payment. Compare which loan is larger, how many loans there are, or the fixed obligation; the card shows the factual fields."
+    );
+    expect(instruction).toContain(
+      "For a rewards question, do not state the points or miles total; the reward card shows it. Say which card earns them and how to redeem them."
+    );
+    expect(instruction).toContain(
+      "For a cashflow card, say whether the month was cash-flow positive or negative and what it means; do not restate the month or the inflow/outflow/net values."
+    );
+    expect(instruction).toContain(
+      "If the customer asks about a savings goal and no target is set, say you don't see a goal set and ask for a target amount. Do not invent a target or show a goal card."
+    );
+    expect(instruction).toContain(
+      "For a top-merchant question, use insight_top_merchants and show one merchant card; do not use the spending pie or a transaction list."
+    );
+    expect(instruction).toContain(
+      'Bad: "The auto loan has an $18,500 balance and $412 monthly payment; the student loan has $12,400 and $180."'
+    );
+    expect(instruction).toContain(
+      'Good: "You have two loans; the auto loan carries the larger balance and payment. Both add a fixed monthly obligation."'
     );
     expect(instruction).toContain("Capital One's virtual assistant");
     expect(instruction).toContain("Use the category breakdown as returned.");

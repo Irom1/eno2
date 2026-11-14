@@ -1265,6 +1265,81 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('"Where do I shop most?" renders one merchant card, not a pie or transaction list', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    await mockChatStream(page, [
+      {
+        delay: 100,
+        event: 'tool_start',
+        data: { type: 'tool_start', name: 'insight_top_merchants', label: '' }
+      },
+      {
+        delay: 100,
+        event: 'insight',
+        data: {
+          type: 'insight',
+          kind: 'insight_top_merchants',
+          accountId: 'acct-checking',
+          payload: {
+            count: 12,
+            months: 3,
+            items: [
+              {
+                _id: 'merchant:whole-foods-market',
+                name: 'Whole Foods Market',
+                category: 'groceries',
+                transactionCount: 9,
+                total: 540
+              }
+            ]
+          }
+        }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: { type: 'text', delta: 'Here is where you shop most:' }
+      },
+      {
+        delay: 150,
+        event: 'text',
+        data: {
+          type: 'text',
+          delta: ' Your most frequent merchant is Whole Foods Market.'
+        }
+      },
+      {
+        delay: 1200,
+        event: 'done',
+        data: { type: 'done', sessionId: 'test-session' }
+      }
+    ]);
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Where do I shop most?');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await composer.press('Enter');
+
+    const turn = page.locator('.assistant-turn').last();
+    const prose = turn.locator('.bubble.assistant .richtext');
+
+    await expect(prose).toContainText('most frequent merchant', { timeout: 10_000 });
+    await waitForChatSettled(page);
+
+    await expect(turn.locator('.merchant-card')).toHaveCount(1);
+    await expect(turn.locator('.merchant-card').first()).toContainText('Whole Foods Market');
+    await expect(turn.locator('.pie-chart-card')).toHaveCount(0);
+    await expect(turn.locator('.transaction-list-card')).toHaveCount(0);
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+
+    expectNoErrors(errors);
+  });
+
   test('"Show me my bills" renders one primitive bill card and no duplicated totals', async ({
     page
   }) => {

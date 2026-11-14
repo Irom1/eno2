@@ -20,6 +20,7 @@ import {
   rewardCard,
   spendingPieCard,
   spendingPiePeriod,
+  topMerchantCard,
   transactionHref,
   transactionListCard,
   type AccountEntityCard,
@@ -1851,6 +1852,56 @@ describe('merchantCard', () => {
     expect(merchantCard({ _id: 'm-1' }, 0, 1)).toBeNull();
     expect(merchantCard({ name: 'No Id' }, 0, 1)).toBeNull();
     expect(merchantCard('nope', 0, 1)).toBeNull();
+  });
+});
+
+describe('topMerchantCard', () => {
+  it('builds one merchant card from the top merchant row', () => {
+    const card = topMerchantCard(
+      {
+        count: 12,
+        months: 3,
+        items: [
+          {
+            _id: 'merchant:whole-foods-market',
+            name: 'Whole Foods Market',
+            category: 'groceries',
+            transactionCount: 9,
+            total: 540
+          },
+          { _id: 'merchant:trader-joes', name: "Trader Joe's", category: 'groceries' }
+        ]
+      },
+      21,
+      4,
+      { customerId: 'cust-maya' }
+    );
+
+    expect(card).toEqual({
+      id: 4,
+      entityId: 'merchant:merchant:whole-foods-market',
+      kind: 'merchant',
+      afterText: 21,
+      payload: {
+        merchantId: 'merchant:whole-foods-market',
+        name: 'Whole Foods Market',
+        category: 'groceries',
+        customerId: 'cust-maya'
+      }
+    });
+  });
+
+  it('falls back to a stable id and returns null without a top row', () => {
+    expect(
+      topMerchantCard({ items: [{ name: 'Corner Cafe', category: 'dining' }] }, 0, 1)?.payload
+    ).toEqual({
+      merchantId: 'top-merchant:Corner Cafe',
+      name: 'Corner Cafe',
+      category: 'dining'
+    });
+    expect(topMerchantCard({ items: [] }, 0, 1)).toBeNull();
+    expect(topMerchantCard({ count: 0 }, 0, 1)).toBeNull();
+    expect(topMerchantCard(null, 0, 1)).toBeNull();
   });
 });
 

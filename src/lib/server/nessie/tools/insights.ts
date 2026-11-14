@@ -640,6 +640,80 @@ export function buildTopTransactions(
 }
 
 /* ------------------------------------------------------------------ */
+/* Top merchants                                                       */
+/* ------------------------------------------------------------------ */
+
+export interface TopMerchantItem {
+  _id: string;
+  name: string;
+  category: string;
+  transactionCount: number;
+  total: number;
+}
+
+export interface TopMerchantsResult {
+  count: number;
+  months: number;
+  items: TopMerchantItem[];
+}
+
+/**
+ * Group withdrawals by normalized merchant description and rank by how often
+ * the customer visited, then by spend. `count` is the number of unique
+ * merchants; `items` is the top `limit` rows for the merchant card.
+ */
+export function buildTopMerchants(
+  transactions: readonly Transaction[],
+  options: { months: number; limit?: number; asOf: Date },
+): TopMerchantsResult {
+  const months = Math.max(1, Math.floor(options.months));
+  const currentMonth = monthStartUTC(options.asOf);
+  const start = addMonthsUTC(currentMonth, -(months - 1));
+  const end = addMonthsUTC(currentMonth, 1);
+
+  const groups = new Map<string, { description: string; transactionCount: number; total: number }>();
+  for (const tx of transactions) {
+    if (tx.kind !== "withdrawal") continue;
+    if (tx.date.getTime() < start.getTime() || tx.date.getTime() >= end.getTime()) continue;
+    const key = normalizeText(tx.description);
+    if (!key) continue;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.transactionCount += 1;
+      existing.total += tx.amount;
+    } else {
+      groups.set(key, {
+        description: truncateText(tx.description, 160),
+        transactionCount: 1,
+        total: tx.amount,
+      });
+    }
+  }
+
+  const limit = Math.max(1, Math.min(50, Math.floor(options.limit ?? 5)));
+  const ranked = [...groups.entries()]
+    .map(([key, group]) => ({ key, ...group }))
+    .sort(
+      (a, b) =>
+        b.transactionCount - a.transactionCount ||
+        b.total - a.total ||
+        a.description.localeCompare(b.description),
+    );
+
+  return {
+    count: ranked.length,
+    months,
+    items: ranked.slice(0, limit).map((group) => ({
+      _id: `merchant:${group.key.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`,
+      name: group.description,
+      category: categorizeDescription(group.description),
+      transactionCount: group.transactionCount,
+      total: toMoney(group.total),
+    })),
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Recurring charges                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -950,6 +1024,42 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         limit,
         asOf: todayUTC(),
       }));
+    },
+  );
+
+  server.registerTool(
+    "insight_top_merchants",
+    {
+      description:
+        "Most frequent withdrawal merchants over the last N calendar months, grouped by description and sorted by transaction count then total spend. Returns one row per merchant so a single merchant card can render.",
+      annotations: READ_ONLY_ANNOTATIONS,
+      inputSchema: {
+        accountId: idParam,
+        months: z
+          .number()
+          .int()
+          .min(1)
+          .max(12)
+          .optional()
+          .describe("Number of calendar months to include (default 3)"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe("Maximum merchant rows to return (default 5)"),
+      },
+    },
+    async ({ accountId, months, limit }) => {
+      const transactions = await fetchTransactions(client, accountId);
+      return ok(
+        buildTopMerchants(transactions, {
+          months: months ?? 3,
+          limit,
+          asOf: todayUTC(),
+        }),
+      );
     },
   );
 
@@ -1280,6 +1390,7 @@ export const INSIGHT_TOOL_NAMES = [
   "insight_financial_overview",
   "insight_spending_breakdown",
   "insight_top_transactions",
+  "insight_top_merchants",
   "insight_upcoming_bills",
   "insight_recurring_charges",
   "insight_anomalies",

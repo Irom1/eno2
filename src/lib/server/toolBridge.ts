@@ -133,6 +133,7 @@ export const TOOL_LABELS: Readonly<Record<string, string>> = Object.freeze({
   insight_financial_overview: "Gathering your overview",
   insight_spending_breakdown: "Reviewing spending",
   insight_top_transactions: "Comparing your purchases",
+  insight_top_merchants: "Reviewing where you shop",
   insight_upcoming_bills: "Checking upcoming bills",
   insight_recurring_charges: "Finding subscriptions",
   insight_anomalies: "Looking for odd charges",
@@ -252,6 +253,9 @@ export function summarizeToolResult(name: string, data: unknown): string {
     }
     case "insight_top_transactions": {
       return `${num(payload.count)} matching transactions`;
+    }
+    case "insight_top_merchants": {
+      return `${num(payload.count)} merchants`;
     }
     case "insight_goal_projection": {
       const months = payload.monthsToTarget;

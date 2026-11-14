@@ -20,4 +20,9 @@ describe('shouldInferTransactionList', () => {
     expect(infer('Show me my largest transactions')).toBe(false);
     expect(infer('What are my biggest purchases?')).toBe(false);
   });
+
+  it('rejects merchant questions even when they mention transactions', () => {
+    expect(infer('Where do I shop most?')).toBe(false);
+    expect(infer('Show my top merchant transactions')).toBe(false);
+  });
 });

@@ -155,27 +155,103 @@ describe("mockAgent", () => {
     expect(text).not.toContain("2026-11-20");
   });
 
-  it("uses the latest complete month for spending answers", async () => {
+  it("gives a qualitative spending insight instead of restating the pie card", async () => {
     const { text } = await run("Where did my money go?", async (name) => {
       expect(name).toBe("insight_spending_breakdown");
       return ok(spendingPayload);
     });
 
-    expect(text).toContain("October 2026");
-    expect(text).toContain("$2,470");
-    expect(text).toContain("shopping");
-    expect(text).toContain("$1,800");
-    expect(text).toContain("20 transactions");
+    expect(text).toContain("Discretionary spending drives most of the latest full month");
+    expect(text).toContain("those categories are the best place to look for savings.");
     const nextStep = "You can open a category in Activity to see the transactions behind it.";
     expect(text).toContain(nextStep);
+    expect(text).not.toContain("$2,470");
+    expect(text).not.toContain("$1,800");
+    expect(text).not.toContain("59%");
+    expect(text).not.toContain("October 2026");
+    expect(text).not.toContain("November 2026");
+    expect(text).not.toContain("20 transactions");
     expect(text).not.toContain("Tip:");
     expect(text).not.toContain("Insight:");
-    const advice = text.slice(text.indexOf(nextStep));
-    expect(advice).not.toContain("$2,470");
-    expect(advice).not.toContain("$1,800");
     expect(text).not.toContain("estimated");
-    expect(text).not.toContain("descriptions");
-    expect(text).not.toContain("November 2026");
+  });
+
+  it("reads a housing-led month as fixed cost with room to adjust elsewhere", () => {
+    const text = composeFastAnswer(
+      "insight_spending_breakdown",
+      {
+        monthlyTotals: [
+          { month: "2026-09", total: 2470 },
+          { month: "2026-10", total: 2470 }
+        ],
+        monthlyBreakdown: [
+          {
+            month: "2026-10",
+            total: 2470,
+            transactionCount: 20,
+            categories: [{ category: "housing", total: 1450, share: 0.587 }]
+          }
+        ],
+        categories: []
+      },
+      new Date("2026-11-14T12:00:00Z"),
+      "Where did my money go last month?"
+    );
+    expect(text).toContain("Most of the latest full month is fixed housing cost");
+    expect(text).toContain(
+      "You can open a category in Activity to see the transactions behind it."
+    );
+  });
+
+  it("does not append a spending next step when there is no spending data", () => {
+    const text = composeFastAnswer(
+      "insight_spending_breakdown",
+      { monthlyTotals: [], monthlyBreakdown: [], categories: [] },
+      new Date("2026-11-14T12:00:00Z"),
+      "Where did my money go?"
+    );
+    expect(text).toBe("I couldn't find any spending in the last three months for this account.");
+  });
+
+  it("describes cashflow direction without restating the card values", () => {
+    const payload = {
+      monthlyCashflow: [
+        { month: "2026-09", inflow: 6000, outflow: 5000, net: 1000 },
+        { month: "2026-10", inflow: 6000, outflow: 5200, net: 800 }
+      ]
+    };
+    const text = composeFastAnswer(
+      "insight_financial_overview",
+      payload,
+      new Date("2026-11-14T12:00:00Z"),
+      "How is my cash flow?"
+    );
+    expect(text).toContain("Your latest month is cash-flow positive");
+    expect(text).toContain("income ahead of spending");
+    expect(text).toContain("moving the surplus to savings");
+    expect(text).not.toContain("2026-10");
+    expect(text).not.toContain("6,000");
+    expect(text).not.toContain("5,200");
+    expect(text).not.toContain("800");
+  });
+
+  it("flags a negative cashflow month without quoting the amounts", () => {
+    const text = composeFastAnswer(
+      "insight_financial_overview",
+      {
+        monthlyCashflow: [
+          { month: "2026-09", inflow: 6000, outflow: 5000, net: 1000 },
+          { month: "2026-10", inflow: 5000, outflow: 5600, net: -600 }
+        ]
+      },
+      new Date("2026-11-14T12:00:00Z"),
+      "What is my net cash this month?"
+    );
+    expect(text).toContain("Your latest month is cash-flow negative");
+    expect(text).toContain("spending ahead of income");
+    expect(text).toContain("review the largest outflows in the app");
+    expect(text).not.toContain("5,600");
+    expect(text).not.toContain("600");
   });
 
   it("explains every anomaly card without restating card data", async () => {
@@ -568,7 +644,7 @@ describe("mockAgent", () => {
     expect(text).toContain("Open any transaction to see its full details.");
   });
 
-  it("composes a loans answer from live loan rows", async () => {
+  it("compares loans without restating balances or payments", async () => {
     const { text } = await run("Show me my loans", async (name) => {
       expect(name).toBe("nessie_list_account_loans");
       return ok({
@@ -580,10 +656,99 @@ describe("mockAgent", () => {
       });
     });
 
-    expect(text).toContain("Auto Loan");
-    expect(text).toContain("Student Loan");
-    expect(text).toContain("$30,900");
-    expect(text).toContain("$592");
+    expect(text).toContain("You have 2 loans: Auto Loan and Student Loan.");
+    expect(text).toContain("The Auto Loan has the larger balance and monthly payment.");
+    expect(text).toContain("Together they make up a fixed monthly obligation.");
+    expect(text).toContain("Open the loan details to see the payment schedule.");
+    expect(text).not.toContain("$18,500");
+    expect(text).not.toContain("$12,400");
+    expect(text).not.toContain("$30,900");
+    expect(text).not.toContain("$412");
+    expect(text).not.toContain("$180");
+    expect(text).not.toContain("$592");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
     expect(text).not.toMatch(/No loans/i);
+  });
+
+  it("handles a single loan without quoting its balance", () => {
+    const text = composeFastAnswer(
+      "nessie_list_account_loans",
+      { count: 1, items: [{ type: "Auto Loan", amount: 18500, monthlyPayment: 412 }] },
+      new Date("2026-11-14T12:00:00Z"),
+      "Show me my loans"
+    );
+    expect(text).toContain("You have one active loan, the Auto Loan.");
+    expect(text).toContain("It’s your only fixed loan payment.");
+    expect(text).not.toContain("$18,500");
+    expect(text).not.toContain("$412");
+    expect(text).toContain("Open the loan details to see the payment schedule.");
+  });
+
+  it("compares a loan that wins only one of balance or payment", () => {
+    const text = composeFastAnswer(
+      "nessie_list_account_loans",
+      {
+        count: 2,
+        items: [
+          { type: "Auto Loan", amount: 18500, monthlyPayment: 180 },
+          { type: "Student Loan", amount: 12400, monthlyPayment: 412 }
+        ]
+      },
+      new Date("2026-11-14T12:00:00Z"),
+      "Show me my loans"
+    );
+    expect(text).toContain(
+      "The Auto Loan has the larger balance, while the Student Loan has the larger monthly payment."
+    );
+    expect(text).not.toContain("$18,500");
+    expect(text).not.toContain("$412");
+  });
+
+  it("routes where-you-shop questions to the top merchants tool", () => {
+    const session = createSession(customer, accounts);
+    const intent = routeIntent("Where do I shop most?");
+    expect(intent.tool).toBe("insight_top_merchants");
+    expect(intent.args(session)).toEqual({ accountId: "acct-1", months: 3, limit: 5 });
+  });
+
+  it("names the top merchant without restating pie or list data", async () => {
+    const { text } = await run("Where do I shop most?", async (name) => {
+      expect(name).toBe("insight_top_merchants");
+      return ok({
+        count: 12,
+        months: 3,
+        items: [
+          {
+            _id: "merchant:whole-foods-market",
+            name: "Whole Foods Market",
+            category: "groceries",
+            transactionCount: 9,
+            total: 540
+          }
+        ]
+      });
+    });
+
+    expect(text).toContain("Here is where you shop most:");
+    expect(text).toContain("Your most frequent merchant is Whole Foods Market");
+    expect(text).toContain("more visits than any other merchant in the last 3 months");
+    expect(text).toContain("You can review merchant activity in the app.");
+    expect(text).not.toContain("$540");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
+  });
+
+  it("composes an empty top-merchants answer", () => {
+    const text = composeFastAnswer(
+      "insight_top_merchants",
+      { count: 0, months: 3, items: [] },
+      new Date("2026-11-14T12:00:00Z"),
+      "Where do I shop most?"
+    );
+    expect(text).toContain(
+      "I couldn’t find any merchant activity in the last three months."
+    );
+    expect(text).toContain("You can review merchant activity in the app.");
   });
 });

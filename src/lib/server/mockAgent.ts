@@ -57,21 +57,6 @@ function money(value: unknown): string {
   })}`;
 }
 
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December"
-];
-
 /**
  * Safe, concrete next steps per known intent, written as natural prose rather
  * than labeled tips. They never restate card data (amounts, balances, dates,
@@ -87,6 +72,7 @@ const INTENT_NEXT_STEPS: Record<string, string> = {
     "If you don’t recognize a charge, you can review and dispute it in the app.",
   insight_recurring_charges:
     "You can review subscriptions you no longer use in the app.",
+  insight_top_merchants: "You can review merchant activity in the app.",
   nessie_list_account_loans: "Open the loan details to see the payment schedule.",
   nessie_list_account_deposits: "Open any transaction to see its full details.",
   nessie_list_account_withdrawals: "Open any transaction to see its full details.",
@@ -108,15 +94,12 @@ const DEFAULT_NEXT_STEP = "You can review the related details in your account ac
 function withNextStep(name: string, text: string): string {
   if (typeof text !== "string" || text.trim().length === 0) return text;
   if (name === "insight_anomalies" && /^Nothing unusual/i.test(text)) return text;
+  if (name === "insight_spending_breakdown" && /^I couldn't find any spending/i.test(text)) {
+    return text;
+  }
   const nextStep = INTENT_NEXT_STEPS[name] ?? DEFAULT_NEXT_STEP;
   if (text.includes(nextStep)) return text;
   return `${text} ${nextStep}`;
-}
-
-function monthLabel(key: string): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(key);
-  if (!match) return key;
-  return `${MONTHS[Number(match[2]) - 1] ?? match[2]} ${match[1]}`;
 }
 
 function checkingAccountId(session: Session): string {
@@ -198,6 +181,16 @@ export function routeIntent(message: string): {
       args: (session) => ({ customerId: session.customer.id })
     };
   }
+  if (/\b(?:where do i shop most|shop most|top merchant|favorite merchant|most frequent merchant)\b/.test(text)) {
+    return {
+      tool: "insight_top_merchants",
+      args: (session) => ({
+        accountId: checkingAccountId(session),
+        months: 3,
+        limit: 5
+      })
+    };
+  }
   if (/\bspend|where|money|categor/.test(text)) {
     return {
       tool: "insight_spending_breakdown",
@@ -264,20 +257,17 @@ function spendingAnswer(data: unknown, now: Date): string {
   const categories = (Array.isArray(categorySource) ? categorySource : [])
     .map(rec)
     .sort((a, b) => num(b.total) - num(a.total));
-  const top = categories[0];
-  const monthTotal = monthBreakdown ? num(monthBreakdown.total) : num(latest.total);
-  const categoryLine = top
-    ? `The largest category was ${String(top.category)} at ${money(top.total)} (${Math.round(
-        num(top.share) * 100
-      )}% of ${monthBreakdown ? "that month" : "spending"}).`
-    : "";
-  const countLine = monthBreakdown
-    ? `That month had ${num(monthBreakdown.transactionCount)} transactions.`
-    : `Across the full three-month window you made ${num(
-        payload.transactionCount
-      )} transactions totaling ${money(payload.totalSpend)}.`;
+  const topCategory = String(categories[0]?.category ?? "").toLowerCase();
 
-  return `In ${monthLabel(latest.month)} you spent ${money(monthTotal)}. ${categoryLine} ${countLine}`;
+  // The pie card already shows the period, total, category amounts, and shares.
+  // The prose adds only a qualitative read of what the mix means.
+  if (topCategory === "housing") {
+    return "Most of the latest full month is fixed housing cost, so the smaller day-to-day categories are where you have the most room to adjust.";
+  }
+  if (topCategory === "dining" || topCategory === "shopping") {
+    return "Discretionary spending drives most of the latest full month, so those categories are the best place to look for savings.";
+  }
+  return "A few categories drive most of the latest full month, so the smaller day-to-day ones are where you have the most room to adjust.";
 }
 
 /** Join merchant names into a natural list: A; A and B; A, B, and C. */
@@ -446,20 +436,69 @@ function topTransactionsAnswer(data: unknown): string {
   return `I found ${count} ${scope}transactions in the last ${months} months, shown largest first.`;
 }
 
+function loanType(loan: AnyRecord): string {
+  const label = String(loan.type ?? loan.description ?? "").trim();
+  return label || "loan";
+}
+
 function loansAnswer(data: unknown): string {
   const payload = rec(data);
   const loans = Array.isArray(payload.items) ? payload.items.map(rec) : [];
   if (loans.length === 0) {
     return "I don't see any active loans on this account.";
   }
-  const total = loans.reduce((sum, loan) => sum + num(loan.amount), 0);
-  const monthly = loans.reduce((sum, loan) => sum + num(loan.monthlyPayment), 0);
-  const names = loans
-    .map((loan) => String(loan.type ?? loan.description ?? "Loan"))
-    .join(", ");
-  return `You have ${loans.length} loans: ${names}. Their balances total ${money(
-    total
-  )}, with ${money(monthly)} due monthly.`;
+
+  if (loans.length === 1) {
+    const only = loanType(loans[0] ?? {});
+    return `You have one active loan, the ${only}. It’s your only fixed loan payment.`;
+  }
+
+  // The loan card shows the factual balance and monthly payment of the largest
+  // loan, so prose compares the obligations instead of restating amounts.
+  const names = loans.map(loanType);
+  const byBalance = [...loans].sort((a, b) => num(b.amount) - num(a.amount))[0] ?? {};
+  const byPayment = [...loans].sort(
+    (a, b) => num(b.monthlyPayment) - num(a.monthlyPayment)
+  )[0] ?? {};
+  const balanceType = loanType(byBalance);
+  const paymentType = loanType(byPayment);
+  const comparison =
+    balanceType === paymentType
+      ? `The ${balanceType} has the larger balance and monthly payment.`
+      : `The ${balanceType} has the larger balance, while the ${paymentType} has the larger monthly payment.`;
+
+  return `You have ${loans.length} loans: ${joinNames(names)}. ${comparison} Together they make up a fixed monthly obligation.`;
+}
+
+function topMerchantsAnswer(data: unknown): string {
+  const payload = rec(data);
+  const items = Array.isArray(payload.items) ? payload.items.map(rec) : [];
+  const months = num(payload.months) || 3;
+  if (items.length === 0) {
+    return "I couldn’t find any merchant activity in the last three months.";
+  }
+  const name = String(items[0]?.name ?? "").trim();
+  if (!name) {
+    return "Your most frequent merchant is shown here, based on how often you visited it.";
+  }
+  return `Your most frequent merchant is ${name}, with more visits than any other merchant in the last ${months} months. That makes it the clearest picture of your everyday spending.`;
+}
+
+function cashflowAnswer(data: unknown, now: Date): string {
+  const payload = rec(data);
+  const buckets = (Array.isArray(payload.monthlyCashflow) ? payload.monthlyCashflow : [])
+    .map(rec)
+    .filter((bucket): bucket is AnyRecord & { month: string } => typeof bucket.month === "string");
+  if (buckets.length === 0) {
+    return "I don't see enough cash flow history here yet.";
+  }
+  const currentKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const complete = buckets.filter((bucket) => bucket.month < currentKey);
+  const latest = complete[complete.length - 1] ?? buckets[buckets.length - 1] ?? {};
+  if (num(latest.net) > 0) {
+    return "Your latest month is cash-flow positive, with income ahead of spending. You can build on that by moving the surplus to savings.";
+  }
+  return "Your latest month is cash-flow negative, with spending ahead of income. You can review the largest outflows in the app.";
 }
 
 function transactionsAnswer(data: unknown): string {
@@ -504,6 +543,8 @@ export function composeAnswer(name: string, data: unknown, now: Date, message: s
       return recurringAnswer(data);
     case "insight_anomalies":
       return anomaliesAnswer(data);
+    case "insight_top_merchants":
+      return topMerchantsAnswer(data);
     case "nessie_list_account_loans":
       return loansAnswer(data);
     case "nessie_list_account_deposits":
@@ -516,6 +557,9 @@ export function composeAnswer(name: string, data: unknown, now: Date, message: s
     case "find_nearby_branches":
       return branchAnswer(data, extractLocation(message, "22207"));
     case "insight_financial_overview":
+      return /\b(?:cash ?flow|inflow|outflow|net cash)\b/i.test(message)
+        ? cashflowAnswer(data, now)
+        : overviewAnswer(data);
     default:
       return overviewAnswer(data);
   }
@@ -567,6 +611,8 @@ export function composeIntro(name: string): string {
       return "Here are your biggest matching transactions:";
     case "insight_recurring_charges":
       return "Here are the subscriptions I found:";
+    case "insight_top_merchants":
+      return "Here is where you shop most:";
     case "nessie_list_account_deposits":
     case "nessie_list_account_withdrawals":
     case "nessie_list_account_transactions":

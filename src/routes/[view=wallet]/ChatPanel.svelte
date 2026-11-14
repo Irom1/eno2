@@ -19,6 +19,7 @@
     recurringCard,
     rewardCard,
     spendingPieCard,
+    topMerchantCard,
     transactionListCard,
     type EntityCard,
     type SpendingPieEntityCard,
@@ -323,9 +324,13 @@
               cardSeq += incoming.length;
               message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
             }
-            if (data.kind === 'insight_spending_breakdown') {
+            if (
+              data.kind === 'insight_spending_breakdown' &&
+              !intents.has('merchants')
+            ) {
               // One primitive pie card per turn: a later spending insight in the
               // same turn replaces the earlier one rather than stacking charts.
+              // A merchant question is answered by one merchant card, not a pie.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const incoming = spendingPieCard(payload, anchor, cardSeq + 1);
@@ -467,6 +472,14 @@
               const incoming = cashflowCard(payload, anchor, cardSeq + 1);
               if (incoming) replaceInlineCard(message, incoming);
             }
+            if (data.kind === 'insight_top_merchants') {
+              // The answer is a single merchant card for the top merchant, not a
+              // pie or a transaction list.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = topMerchantCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
             if (
               data.kind === 'nessie_list_merchants' ||
               data.kind === 'nessie_get_merchant'
@@ -515,9 +528,10 @@
                 cardSeq = Math.max(cardSeq, merged.id);
               }
             }
-            if (data.kind === 'insight_top_transactions') {
+            if (data.kind === 'insight_top_transactions' && !intents.has('merchants')) {
               // Its rows are already the exact ranked/filtered set, so a list
-              // card is always accurate here.
+              // card is always accurate here. A merchant question uses the
+              // merchant card instead of a transaction list.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const incoming = transactionListCard(payload, anchor, cardSeq + 1, {

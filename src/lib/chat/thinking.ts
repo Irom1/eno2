@@ -35,6 +35,7 @@ const RULES: readonly Rule[] = [
   { match: ['anomal'], label: 'Scanning for unusual activity' },
   { match: ['spend'], label: 'Reviewing your spending' },
   { match: ['top_transactions'], label: 'Finding your biggest purchases' },
+  { match: ['top_merchants'], label: 'Reviewing where you shop' },
   { match: ['reward'], label: 'Checking your rewards' },
   { match: ['goal'], label: 'Projecting your savings goal' },
   { match: ['merchant'], label: 'Looking at where you shop' },

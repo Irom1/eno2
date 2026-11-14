@@ -1416,6 +1416,42 @@ export function merchantCard(
   }
 }
 
+/**
+ * Build one merchant card from `insight_top_merchants`. The tool returns the
+ * ranked merchant rows, but the answer is a single card for the top merchant,
+ * so the first item is synthesized into a one-item merchant payload.
+ */
+export function topMerchantCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): MerchantEntityCard | null {
+  try {
+    if (!isRecord(payload) || !Array.isArray(payload.items)) return null;
+    const item = payload.items[0];
+    if (!isRecord(item)) return null;
+
+    const name = trimmedString(item.name);
+    if (!name) return null;
+
+    const rawId = item._id ?? item.id;
+    const idText =
+      (typeof rawId === 'string' || typeof rawId === 'number') &&
+      String(rawId).trim().length > 0
+        ? String(rawId).trim()
+        : '';
+    const merchantId = idText || `top-merchant:${name}`;
+    const category = optionalTrimmed(item.category);
+
+    const synthesized: Record<string, unknown> = { _id: merchantId, name };
+    if (category) synthesized.category = category;
+    return merchantCard({ items: [synthesized] }, afterText, startId, context);
+  } catch {
+    return null;
+  }
+}
+
 function profileLocation(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
   const city = trimmedString(value.city);
