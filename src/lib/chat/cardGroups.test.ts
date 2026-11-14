@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityCard } from './entityCards.js';
 import type { InlineBlock } from './inline.js';
-import { groupInlineCards, isInlineCardKind, type InlineRenderGroup } from './cardGroups.js';
+import { groupInlineCards, isInlineCard, isInlineCardKind, type InlineRenderGroup } from './cardGroups.js';
 
 function single(id: number): EntityCard {
   return {
@@ -27,6 +27,36 @@ function pie(id: number): EntityCard {
     entityId: 'spending-pie',
     kind: 'spending-pie',
     payload: { period: 'October 2026', total: 100, slices: [{ label: 'Food', amount: 100, share: 1 }] }
+  };
+}
+
+function atm(id: number): EntityCard {
+  return {
+    id,
+    entityId: `location:atm-${id}`,
+    kind: 'location',
+    payload: {
+      locationId: `atm-${id}`,
+      name: 'Arlington ATM',
+      address: '',
+      type: 'atm',
+      lat: 38.88,
+      lng: -77.1
+    }
+  };
+}
+
+function branch(id: number): EntityCard {
+  return {
+    id,
+    entityId: `location:branch-${id}`,
+    kind: 'location',
+    payload: {
+      locationId: `branch-${id}`,
+      name: 'Clarendon Branch',
+      address: '3100 Clarendon Blvd, Arlington, VA',
+      type: 'branch'
+    }
   };
 }
 
@@ -93,6 +123,35 @@ describe('groupInlineCards', () => {
     ]);
   });
 
+  it('emits ATM location cards standalone, leaving the prose as its own inline group', () => {
+    expect(shape(groupInlineCards([text('Nearby: '), cards(atm(5))]))).toEqual([
+      { inline: [{ text: 'Nearby: ' }] },
+      { card: 5 }
+    ]);
+  });
+
+  it('keeps branch location cards inline with the prose', () => {
+    expect(shape(groupInlineCards([text('Nearby: '), cards(branch(6))]))).toEqual([
+      { inline: [{ text: 'Nearby: ' }, { cards: [6] }] }
+    ]);
+  });
+
+  it('keeps order around a standalone ATM card', () => {
+    expect(
+      shape(
+        groupInlineCards([
+          text('Nearby: '),
+          cards(single(1), atm(7), single(8)),
+          text('And one bill: ')
+        ])
+      )
+    ).toEqual([
+      { inline: [{ text: 'Nearby: ' }, { cards: [1] }] },
+      { card: 7 },
+      { inline: [{ cards: [8] }, { text: 'And one bill: ' }] }
+    ]);
+  });
+
   it('splits a mixed cards block in order', () => {
     expect(shape(groupInlineCards([text('Mix: '), cards(single(1), list(2), single(3))]))).toEqual([
       { inline: [{ text: 'Mix: ' }, { cards: [1] }] },
@@ -120,5 +179,13 @@ describe('groupInlineCards', () => {
     expect(isInlineCardKind('spending-pie')).toBe(false);
     expect(isInlineCardKind('transaction')).toBe(true);
     expect(isInlineCardKind('bill')).toBe(true);
+  });
+
+  it('classifies ATM locations as standalone and branches as inline', () => {
+    expect(isInlineCard(atm(9))).toBe(false);
+    expect(isInlineCard(branch(10))).toBe(true);
+    expect(isInlineCard(single(11))).toBe(true);
+    expect(isInlineCard(list(12))).toBe(false);
+    expect(isInlineCard(pie(13))).toBe(false);
   });
 });

@@ -34,56 +34,71 @@
   const label = $derived(`ATM, ${payload.name}`);
 </script>
 
-<CardFrame {label}>
-  <div class="atm-locator-card" data-kind="location">
-    <div class="name">{payload.name}</div>
-    {#if distance !== null}
-      <div class="distance">{distance.toFixed(1)} mi away</div>
-    {/if}
-    {#if payload.hours}
-      <div class="hours">{payload.hours}</div>
-    {/if}
-    {#if mapSrc && !mapFailed}
-      <img
-        class="atm-map"
-        src={mapSrc}
-        alt={`Map showing ${payload.name}`}
-        loading="lazy"
-        onerror={() => (mapFailed = true)}
-      />
-    {:else}
-      <div class="map-fallback" role="status">Map preview unavailable</div>
-    {/if}
-    {#if appleUrl || googleUrl}
-      <div class="map-actions">
-        {#if appleUrl}
-          <a
-            class="map-link"
-            href={appleUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Open in Apple Maps
-            <OpenIcon />
-          </a>
-        {/if}
-        {#if googleUrl}
-          <a
-            class="map-link"
-            href={googleUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Open in Google Maps
-            <OpenIcon />
-          </a>
-        {/if}
-      </div>
-    {/if}
-  </div>
-</CardFrame>
+<!--
+  The ATM locator is a standalone card (not inside the prose bubble). The map
+  card holds only the primitive data plus the Mapbox preview; the Apple/Google
+  actions sit below the card, outside both the card and the bubble.
+-->
+<div class="atm-locator">
+  <CardFrame {label}>
+    <div class="atm-locator-card" data-kind="location">
+      <div class="name">{payload.name}</div>
+      {#if distance !== null}
+        <div class="distance">{distance.toFixed(1)} mi away</div>
+      {/if}
+      {#if payload.hours}
+        <div class="hours">{payload.hours}</div>
+      {/if}
+      {#if mapSrc && !mapFailed}
+        <img
+          class="atm-map"
+          src={mapSrc}
+          alt={`Map showing ${payload.name}`}
+          loading="lazy"
+          onerror={() => (mapFailed = true)}
+        />
+      {:else}
+        <div class="map-fallback" role="status">Map preview unavailable</div>
+      {/if}
+    </div>
+  </CardFrame>
+  {#if appleUrl || googleUrl}
+    <div class="atm-actions">
+      {#if appleUrl}
+        <a
+          class="atm-action"
+          href={appleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open in Apple Maps
+          <OpenIcon />
+        </a>
+      {/if}
+      {#if googleUrl}
+        <a
+          class="atm-action"
+          href={googleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open in Google Maps
+          <OpenIcon />
+        </a>
+      {/if}
+    </div>
+  {/if}
+</div>
 
 <style>
+  .atm-locator {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
   .atm-locator-card {
     min-width: 0;
   }
@@ -116,29 +131,43 @@
     border-radius: 8px;
     background: color-mix(in srgb, var(--surface) 80%, var(--ink) 8%);
   }
-  .map-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 14px;
-    margin-top: 6px;
+  /* Matches the CardFrame max width in .assistant-content: two equal columns. */
+  .atm-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 88%;
+    max-width: 88%;
   }
-  .map-link {
+  .atm-action {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
-    color: var(--accent, #2f7d95);
+    min-height: 34px;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--ink);
     font-size: 11.5px;
     font-weight: 600;
+    text-align: center;
     text-decoration: none;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
   }
-  .map-link:hover,
-  .map-link:focus-visible {
+  .atm-action:only-child {
+    grid-column: 1 / -1;
+  }
+  .atm-action:hover,
+  .atm-action:focus-visible {
     text-decoration: underline;
   }
-  .map-link :global(.open-icon) {
+  .atm-action :global(.open-icon) {
     width: 12px;
     height: 12px;
+    flex: none;
   }
   .map-fallback {
     display: flex;
