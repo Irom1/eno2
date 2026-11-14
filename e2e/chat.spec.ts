@@ -1813,6 +1813,33 @@ test.describe('chat prompts', () => {
     expect(src?.toLowerCase()).not.toContain('access_token');
     expect(await card.innerHTML()).not.toContain('access_token');
     expect(await card.innerHTML()).not.toContain('mapbox');
+
+    // The map is still the OpenStreetMap embed, while the explicit external
+    // links open Apple Maps and Google Maps (no OSM page link).
+    const apple = card.getByRole('link', { name: 'Open in Apple Maps', exact: true });
+    await expect(apple).toHaveCount(1);
+    const appleHref = await apple.getAttribute('href');
+    expect(appleHref).not.toBeNull();
+    expect(new URL(appleHref as string).host).toBe('maps.apple.com');
+    expect(appleHref).toContain('ll=');
+    expect(appleHref).toContain('q=');
+    await expect(apple).toHaveAttribute('target', '_blank');
+    expect(await apple.getAttribute('rel')).toContain('noopener');
+
+    const google = card.getByRole('link', { name: 'Open in Google Maps', exact: true });
+    await expect(google).toHaveCount(1);
+    const googleHref = await google.getAttribute('href');
+    expect(googleHref).not.toBeNull();
+    const googleUrl = new URL(googleHref as string);
+    expect(googleUrl.host).toBe('www.google.com');
+    expect(googleUrl.pathname).toBe('/maps/search/');
+    expect(googleUrl.searchParams.get('api')).toBe('1');
+    expect(googleUrl.searchParams.get('query')).toContain(',');
+    await expect(google).toHaveAttribute('target', '_blank');
+    expect(await google.getAttribute('rel')).toContain('noopener');
+
+    await expect(card.getByRole('link', { name: 'Open in OpenStreetMap' })).toHaveCount(0);
+    expect(await card.innerText()).not.toContain('Open in OpenStreetMap');
     await expect(page.locator('.location-card')).toHaveCount(0);
 
     await expect(page.locator('.chat-card')).toHaveCount(0);

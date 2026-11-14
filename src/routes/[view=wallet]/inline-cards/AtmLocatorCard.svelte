@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LocationEntityCard } from '$lib/chat/entityCards.js';
-  import { osmEmbedUrl, osmPageUrl } from '$lib/chat/osm.js';
+  import { appleMapsUrl, googleMapsUrl, osmEmbedUrl } from '$lib/chat/osm.js';
   import CardFrame from './CardFrame.svelte';
   import OpenIcon from './OpenIcon.svelte';
 
@@ -18,7 +18,10 @@
     typeof payload.lng === 'number' && Number.isFinite(payload.lng) ? payload.lng : null
   );
   const embedSrc = $derived(lat !== null && lng !== null ? osmEmbedUrl(lat, lng) : null);
-  const pageUrl = $derived(lat !== null && lng !== null ? osmPageUrl(lat, lng) : null);
+  const appleUrl = $derived(lat !== null && lng !== null ? appleMapsUrl(lat, lng, payload.name) : null);
+  const googleUrl = $derived(
+    lat !== null && lng !== null ? googleMapsUrl(lat, lng, payload.name) : null
+  );
   const distance = $derived(
     typeof payload.distanceMiles === 'number' && Number.isFinite(payload.distanceMiles)
       ? payload.distanceMiles
@@ -43,16 +46,31 @@
         title={`Map showing ${payload.name}`}
         loading="lazy"
       ></iframe>
-      {#if pageUrl}
-        <a
-          class="map-link"
-          href={pageUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open in OpenStreetMap
-          <OpenIcon />
-        </a>
+      {#if appleUrl || googleUrl}
+        <div class="map-actions">
+          {#if appleUrl}
+            <a
+              class="map-link"
+              href={appleUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open in Apple Maps
+              <OpenIcon />
+            </a>
+          {/if}
+          {#if googleUrl}
+            <a
+              class="map-link"
+              href={googleUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open in Google Maps
+              <OpenIcon />
+            </a>
+          {/if}
+        </div>
       {/if}
     {:else}
       <div class="map-fallback" role="status">Map preview unavailable</div>
@@ -93,11 +111,17 @@
     border-radius: 8px;
     background: color-mix(in srgb, var(--surface) 80%, var(--ink) 8%);
   }
+  .map-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    margin-top: 6px;
+  }
   .map-link {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    margin-top: 6px;
     color: var(--accent, #2f7d95);
     font-size: 11.5px;
     font-weight: 600;

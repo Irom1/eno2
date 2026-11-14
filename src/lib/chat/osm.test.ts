@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { osmEmbedUrl, osmPageUrl, validCoordinates } from './osm';
+import { appleMapsUrl, googleMapsUrl, osmEmbedUrl, validCoordinates } from './osm';
 
 describe('validCoordinates', () => {
   it('accepts finite in-range pairs', () => {
@@ -48,15 +48,67 @@ describe('osmEmbedUrl', () => {
   });
 });
 
-describe('osmPageUrl', () => {
-  it('builds a marker URL with a zoomed map fragment', () => {
-    expect(osmPageUrl(42.3656347, -71.1040018)).toBe(
-      'https://www.openstreetmap.org/?mlat=42.3656347&mlon=-71.1040018#map=16/42.3656347/-71.1040018'
+describe('appleMapsUrl', () => {
+  it('builds an Apple Maps URL with coordinates, label and zoom', () => {
+    const url = appleMapsUrl(42.3656347, -71.1040018, 'Arlington ATM');
+    expect(url).not.toBeNull();
+    expect(url).toMatch(/^https:\/\/maps\.apple\.com\/\?/);
+
+    const query = new URL(url as string).searchParams;
+    expect(query.get('ll')).toBe('42.3656347,-71.1040018');
+    expect(query.get('q')).toBe('Arlington ATM');
+    expect(query.get('z')).toBe('16');
+  });
+
+  it('escapes reserved characters in the label', () => {
+    const query = new URL(appleMapsUrl(1, 2, 'ATM & Bank / Main') as string).searchParams;
+    expect(query.get('q')).toBe('ATM & Bank / Main');
+    expect(appleMapsUrl(1, 2, 'ATM & Bank / Main')).toContain(
+      `q=${encodeURIComponent('ATM & Bank / Main')}`
+    );
+  });
+
+  it('falls back to an ATM label when none is provided', () => {
+    const query = new URL(appleMapsUrl(10, 20) as string).searchParams;
+    expect(query.get('q')).toBe('ATM');
+  });
+
+  it('returns null for invalid coordinates', () => {
+    expect(appleMapsUrl(91, 0)).toBeNull();
+    expect(appleMapsUrl(0, 181)).toBeNull();
+    expect(appleMapsUrl(Number.NaN, 0)).toBeNull();
+    expect(appleMapsUrl(0, Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe('googleMapsUrl', () => {
+  it('builds a Google Maps search URL with label and coordinates', () => {
+    const url = googleMapsUrl(42.3656347, -71.1040018, 'Arlington ATM');
+    expect(url).not.toBeNull();
+    expect(url).toMatch(/^https:\/\/www\.google\.com\/maps\/search\/\?/);
+
+    const query = new URL(url as string).searchParams;
+    expect(query.get('api')).toBe('1');
+    expect(query.get('query')).toBe('Arlington ATM 42.3656347,-71.1040018');
+  });
+
+  it('omits the label prefix when none is provided', () => {
+    const query = new URL(googleMapsUrl(10, 20) as string).searchParams;
+    expect(query.get('query')).toBe('10,20');
+  });
+
+  it('escapes reserved characters in the label', () => {
+    const query = new URL(googleMapsUrl(1, 2, 'ATM & Bank / Main') as string).searchParams;
+    expect(query.get('query')).toBe('ATM & Bank / Main 1,2');
+    expect(googleMapsUrl(1, 2, 'ATM & Bank / Main')).toContain(
+      `query=${encodeURIComponent('ATM & Bank / Main 1,2')}`
     );
   });
 
   it('returns null for invalid coordinates', () => {
-    expect(osmPageUrl(91, 0)).toBeNull();
-    expect(osmPageUrl(0, Number.NaN)).toBeNull();
+    expect(googleMapsUrl(91, 0)).toBeNull();
+    expect(googleMapsUrl(0, 181)).toBeNull();
+    expect(googleMapsUrl(Number.NaN, 0)).toBeNull();
+    expect(googleMapsUrl(0, Number.POSITIVE_INFINITY)).toBeNull();
   });
 });
