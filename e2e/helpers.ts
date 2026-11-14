@@ -186,10 +186,11 @@ export async function assistantText(page: Page): Promise<string> {
 /**
  * Primitive card style contract: no legacy `.chat-card` chrome or eyebrow
  * labels. Single-entity cards render inline inside the assistant bubble, with
- * no lift shadow, no accent strip, and a width capped by the bubble. Multi or
- * series cards (`transaction-list`, `spending-pie`) stay standalone: a framed
- * `.entity-card` surface with lift, a border, left alignment, and the same 88%
- * column cap as the Eno chat bubble.
+ * no lift shadow, no accent strip, and a width capped by the bubble. Account
+ * and loan product cards are the single inline surface and have no extra
+ * `.entity-card` frame. Multi or series cards (`transaction-list`,
+ * `spending-pie`) stay standalone: a framed `.entity-card` surface with lift, a
+ * border, left alignment, and the same 88% column cap as the Eno chat bubble.
  */
 export async function expectCardStyle(page: Page): Promise<void> {
   await expect(

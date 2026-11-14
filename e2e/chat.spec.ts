@@ -168,7 +168,7 @@ test.describe('chat prompts', () => {
     expect(text.toLowerCase()).not.toMatch(/credit score|recommend|insight|coverage|tip:/);
 
     await expect(page.locator('.chat-card')).toHaveCount(0);
-    await expect(page.locator('.entity-card .loan-card')).toHaveCount(1);
+    await expect(page.locator('.entity-card .loan-card')).toHaveCount(0);
     expect(
       await loan.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
       'the loan card renders inline inside the prose bubble'
@@ -2805,21 +2805,24 @@ test.describe('Eno mascot', () => {
     const loan = page.locator('.loan-card');
     await expect(loan).toHaveCount(1);
 
-    const surface = await page
-      .locator('.entity-card')
-      .filter({ has: loan })
-      .evaluate((card) => {
-        const style = getComputedStyle(card);
-        const accent = getComputedStyle(card, '::before');
-        return {
-          shadow: style.boxShadow,
-          borderTopWidth: Number.parseFloat(style.borderTopWidth),
-          accentContent: accent.content
-        };
-      });
+    const surface = await loan.evaluate((card) => {
+      const style = getComputedStyle(card);
+      const accent = getComputedStyle(card, '::before');
+      return {
+        shadow: style.boxShadow,
+        backgroundColor: style.backgroundColor,
+        accentContent: accent.content,
+        inAssistantBubble: Boolean(card.closest('.bubble.assistant'))
+      };
+    });
     expect(surface.shadow, 'inline cards lose the standalone lift').toBe('none');
-    expect(surface.borderTopWidth).toBeGreaterThanOrEqual(1);
+    expect(surface.backgroundColor, 'product card keeps its own surface').not.toMatch(
+      /rgba\(0, 0, 0, 0\)|transparent/
+    );
     expect(['none', 'normal'], 'no ::before accent bar').toContain(surface.accentContent);
+    expect(surface.inAssistantBubble, 'the product card is the single inline surface').toBe(
+      true
+    );
 
     await expectCardStyle(page);
     expectNoErrors(errors);
