@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { creditScoreRating, demoCreditScore } from './creditWise';
 
 describe('demo CreditWise scores', () => {
+  it('keeps Maya Chen at 762', () => {
+    expect(demoCreditScore('maya', { firstName: 'Maya', lastName: 'Chen' })).toBe(762);
+    expect(creditScoreRating(762).label).toBe('Very good');
+  });
   it('spans 300–850 and keeps a profile consistent across reloads', () => {
     const scores = Array.from({ length: 10000 }, (_, index) => demoCreditScore(`customer-${index}`));
     expect(Math.min(...scores)).toBe(300);

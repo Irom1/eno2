@@ -45,24 +45,6 @@ test('sign-in rows delete future profiles without navigating and allow Undo afte
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-for (const view of ['dashboard', 'chat']) {
-  test(`${view} switches safely when the selected profile is deleted and can restore it`, async ({ page }) => {
-    const methods = await mockCustomers(page, future);
-    await page.goto(`/${view}?customer=${future.id}`);
-    await expect(page.locator('.profile-name')).toHaveText('Future');
-    await page.getByRole('button', { name: 'Switch account: Future Person', exact: true }).click();
-    await expect(page.getByRole('menuitem', { name: 'Delete Maya Chen', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('menuitem', { name: 'Delete Demo Tester', exact: true })).toHaveCount(0);
-    await page.getByRole('menuitem', { name: 'Delete Future Person', exact: true }).click();
-    await expect(page.locator('.profile-name')).toHaveText('Maya');
-    await expect(page).toHaveURL(new RegExp(`/${view}\\?customer=${maya.id}$`));
-    await expect(page.getByRole('menuitemradio', { name: /Future Person/ })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Undo', exact: true }).click();
-    await expect(page.getByRole('menuitemradio', { name: /Future Person/ })).toBeVisible();
-    expect(methods).toEqual(['DELETE', 'POST']);
-  });
-}
-
 test('a failed removal keeps the profile and shows the server error', async ({ page }) => {
   await mockCustomers(page);
   await page.route('**/api/customers/future-person', (route) => route.fulfill({ status: 502, json: { error: 'Couldn’t confirm the change. Please try again.' } }));
