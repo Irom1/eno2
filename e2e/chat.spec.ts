@@ -2117,7 +2117,7 @@ test.describe('chat prompts', () => {
         count: 5,
         duplicateCount: 2,
         outlierCount: 3,
-        summary: 'There are several unusually large purchases and several possible duplicates.',
+        summary: 'I found several unusually large purchases and several possible duplicates.',
         findings: [
           {
             _id: 'txn-netflix',
@@ -2183,7 +2183,7 @@ test.describe('chat prompts', () => {
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
         delta:
-          'There are several unusually large purchases and several possible duplicates. NETFLIX on your Venture card and LOCAL BOOKSTORE on your Everyday Checking each look like possible duplicates. APPLE ELECTRONICS PURCHASE on your Everyday Checking, OVERSEAS ELECTRONICS PURCHASE on your Venture card, and EXPRESS AIR FREIGHT on your Everyday Checking are unusually large purchases. If you don’t recognize a charge, you can review and dispute it in the app.'
+          'I found several unusually large purchases and several possible duplicates. NETFLIX on your Venture card and LOCAL BOOKSTORE on your Everyday Checking each look like possible duplicates. APPLE ELECTRONICS PURCHASE on your Everyday Checking, OVERSEAS ELECTRONICS PURCHASE on your Venture card, and EXPRESS AIR FREIGHT on your Everyday Checking are unusually large purchases. If you don’t recognize a charge, you can review and dispute it in the app.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -2209,7 +2209,7 @@ test.describe('chat prompts', () => {
 
     const prose = (await assistantText(page)).trim();
     expect(prose).toContain(
-      'There are several unusually large purchases and several possible duplicates.'
+      'I found several unusually large purchases and several possible duplicates.'
     );
     expect(prose).toContain(
       'NETFLIX on your Venture card and LOCAL BOOKSTORE on your Everyday Checking each look like possible duplicates.'

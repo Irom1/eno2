@@ -247,8 +247,7 @@ export function summarizeAnomalyPatterns(duplicateCount: number, outlierCount: n
   if (duplicateCount === 1) parts.push("a possible duplicate");
   else if (duplicateCount > 1) parts.push("several possible duplicates");
   if (parts.length === 0) return "Nothing unusual stood out.";
-  if (parts.length === 1) return `There is ${parts[0]}.`;
-  return `There are ${parts[0]} and ${parts[1]}.`;
+  return `I found ${parts.join(" and ")}.`;
 }
 
 /** Shared by detection and demo seeding so smaller examples remain detectable. */

@@ -313,14 +313,14 @@ describe("mockAgent", () => {
           count: findings.length,
           duplicateCount: 2,
           outlierCount: 3,
-          summary: "There are several unusually large purchases and several possible duplicates.",
+          summary: "I found several unusually large purchases and several possible duplicates.",
           findings
         });
       }
     );
 
     expect(text).toContain(
-      "There are several unusually large purchases and several possible duplicates."
+      "I found several unusually large purchases and several possible duplicates."
     );
     expect(text).toContain("NETFLIX.COM on your Venture card");
     expect(text).toContain("LOCAL BOOKSTORE on your Everyday Checking");
@@ -364,7 +364,7 @@ describe("mockAgent", () => {
         count: 2,
         duplicateCount: 1,
         outlierCount: 1,
-        summary: "There is an unusually large purchase and a possible duplicate.",
+        summary: "I found an unusually large purchase and a possible duplicate.",
         findings: [
           {
             type: "duplicate",
@@ -383,7 +383,7 @@ describe("mockAgent", () => {
       })
     );
 
-    expect(text).toContain("There is an unusually large purchase and a possible duplicate.");
+    expect(text).toContain("I found an unusually large purchase and a possible duplicate.");
     expect(text).toContain("NETFLIX is a possible duplicate.");
     expect(text).toContain("APPLE STORE is an unusually large purchase.");
     expect(text).not.toContain("on your");
