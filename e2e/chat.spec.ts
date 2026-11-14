@@ -1862,15 +1862,58 @@ test.describe('chat prompts', () => {
     await expect(google).toHaveAttribute('target', '_blank');
     expect(await google.getAttribute('rel')).toContain('noopener');
 
-    // Both buttons are equal-width halves of the 88% card row (8px gap).
-    const [frameBox, appleBox, googleBox] = await Promise.all([
-      card.locator('xpath=..').boundingBox(),
+    // The actions are text-only: no OpenIcon glyph inside either button.
+    for (const [name, link] of [
+      ['Apple', apple],
+      ['Google', google]
+    ] as const) {
+      await expect(
+        link.locator('svg, .open-icon'),
+        `the ${name} action has no icon`
+      ).toHaveCount(0);
+    }
+
+    // Taller tap targets (at least 42px tall).
+    const [appleBox, googleBox] = await Promise.all([
       apple.boundingBox(),
       google.boundingBox()
     ]);
-    expect(frameBox, 'the map card is laid out').not.toBeNull();
     expect(appleBox, 'the Apple Maps button is laid out').not.toBeNull();
     expect(googleBox, 'the Google Maps button is laid out').not.toBeNull();
+    expect(
+      appleBox!.height,
+      'the Apple Maps button is at least 42px tall'
+    ).toBeGreaterThanOrEqual(42);
+    expect(
+      googleBox!.height,
+      'the Google Maps button is at least 42px tall'
+    ).toBeGreaterThanOrEqual(42);
+
+    // Hover is a background highlight, never an underline.
+    const idleBackground = await apple.evaluate(
+      (element) => getComputedStyle(element).backgroundColor
+    );
+    await apple.hover();
+    await expect
+      .poll(
+        () =>
+          apple.evaluate(
+            (element) => getComputedStyle(element).textDecorationLine
+          ),
+        { message: 'the hovered action has no underline' }
+      )
+      .toBe('none');
+    const hoveredBackground = await apple.evaluate(
+      (element) => getComputedStyle(element).backgroundColor
+    );
+    expect(
+      hoveredBackground,
+      'the hovered action gets a link-tinted background'
+    ).not.toBe(idleBackground);
+
+    // Both buttons are equal-width halves of the 88% card row (8px gap).
+    const frameBox = await card.locator('xpath=..').boundingBox();
+    expect(frameBox, 'the map card is laid out').not.toBeNull();
     expect(
       Math.abs(appleBox!.width - googleBox!.width),
       'the two action buttons have equal widths'

@@ -2,7 +2,6 @@
   import type { LocationEntityCard } from '$lib/chat/entityCards.js';
   import { appleMapsUrl, googleMapsUrl } from '$lib/chat/maps.js';
   import CardFrame from './CardFrame.svelte';
-  import OpenIcon from './OpenIcon.svelte';
 
   interface Props {
     card: LocationEntityCard;
@@ -72,7 +71,6 @@
           rel="noopener noreferrer"
         >
           Open in Apple Maps
-          <OpenIcon />
         </a>
       {/if}
       {#if googleUrl}
@@ -83,7 +81,6 @@
           rel="noopener noreferrer"
         >
           Open in Google Maps
-          <OpenIcon />
         </a>
       {/if}
     </div>
@@ -144,30 +141,35 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    min-height: 34px;
-    padding: 7px 9px;
+    min-height: 44px;
+    padding: 10px 10px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
     color: var(--ink);
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 600;
     text-align: center;
     text-decoration: none;
     overflow-wrap: anywhere;
     box-sizing: border-box;
+    transition: background-color 160ms ease, border-color 160ms ease,
+      color 160ms ease, box-shadow 160ms ease;
   }
   .atm-action:only-child {
     grid-column: 1 / -1;
   }
   .atm-action:hover,
   .atm-action:focus-visible {
-    text-decoration: underline;
+    background: color-mix(in srgb, var(--link) 14%, var(--surface));
+    border-color: color-mix(in srgb, var(--link) 55%, var(--border));
+    color: var(--link);
+    text-decoration: none;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--link) 16%, transparent);
   }
-  .atm-action :global(.open-icon) {
-    width: 12px;
-    height: 12px;
-    flex: none;
+  .atm-action:focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 1px;
   }
   .map-fallback {
     display: flex;
