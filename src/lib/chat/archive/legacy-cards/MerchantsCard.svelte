@@ -31,7 +31,7 @@
   }
 </script>
 
-<ChatCardShell title="Merchants" badge={all.length ? `${all.length}` : undefined}>
+<ChatCardShell title="Merchants">
   {#if items.length === 0}
     <p class="empty">No merchants to show.</p>
   {:else}

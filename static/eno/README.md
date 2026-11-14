@@ -1,22 +1,32 @@
-# Eno mascot assets
+# Eno logo assets
 
-Six 1000 × 1000 transparent PNGs of Eno, the Capital One assistant mascot.
+Two 1000 × 1000 transparent PNGs of Eno, the Capital One assistant mascot. The
+file name describes the mode the logo is used in.
 
-| Variant | Pose | File |
+| Mode | Artwork | File |
 | --- | --- | --- |
-| Light blue | Wave — right arm raised | `eno-light-wave.png` |
-| Light blue | Open — right arm extended | `eno-light-open.png` |
-| Light blue | Reach — right arm mid-raised | `eno-light-reach.png` |
-| Navy | Wave — right arm raised | `eno-navy-wave.png` |
-| Navy | Open — right arm extended | `eno-navy-open.png` |
-| Navy | Reach — right arm mid-raised | `eno-navy-reach.png` |
+| Light | Navy body | `eno_logo_light.png` |
+| Dark | Light blue body | `eno_logo_dark.png` |
 
 ## Palette
 
-- Light blue body: `#89bde2`
+- Light-blue body: `#89bde2`
 - Navy body: `#043d58`
-- Smile: `#d45858` (light) / `#cc2424` (navy)
+- Smile: `#d45858` (light-blue) / `#cc2424` (navy)
 - Background: transparent
+
+## Variant mapping
+
+The artwork is chosen for contrast against its surface:
+
+- `light` is the **navy** artwork, used on **light** surfaces (light mode).
+- `dark` is the **light-blue** artwork, used on **dark** surfaces (dark mode).
+
+In the wallet page this is:
+
+```svelte
+<Eno variant={isDark ? 'dark' : 'light'} size={96} />
+```
 
 ## Usage
 
@@ -27,27 +37,22 @@ Via the reusable component:
   import Eno from '$lib/components/Eno.svelte';
 </script>
 
-<Eno variant="light" pose="wave" size={96} />
+<Eno variant="light" size={96} />
 ```
 
 Or directly with an `<img>`:
 
 ```svelte
-<img src="/eno/eno-navy-open.png" alt="" width="96" height="96" />
+<img src="/eno/eno_logo_light.png" alt="" width="96" height="96" />
 ```
 
 Use `alt=""` (or the component's `alt` prop) when the mascot is decorative.
 
 ## Thinking animation
 
-While the assistant is working, `EnoThinking.svelte` cycles through the three
-poses in this order:
+While the assistant is working, `EnoThinking.svelte` renders a single logo with
+a subtle breathing pulse (a 1.8s `translateY`/`scale` loop). There is no frame
+swapping, so the image never flickers. Both logos are preloaded once on mount so
+theme switches never flash a blank image.
 
-1. `wave` — 520ms
-2. `open` — 160ms (brief intermediate)
-3. `reach` — 520ms
-
-The short middle frame keeps the loop lively without being distracting. Users
-who prefer reduced motion see only the static first frame (`wave`), with no
-bobbing or crossfade.
-
+Users who prefer reduced motion see the static logo with no animation.

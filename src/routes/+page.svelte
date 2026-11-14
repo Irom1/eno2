@@ -1,6 +1,37 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import Eno from '$lib/components/Eno.svelte';
   import CapitalOneLogo from './[view=wallet]/CapitalOneLogo.svelte';
+
+  const productsList = [
+    { label: 'Credit cards', href: 'https://www.capitalone.com/credit-cards/' },
+    { label: 'Checking accounts', href: 'https://www.capitalone.com/bank/checking-accounts/' },
+    { label: 'Savings accounts', href: 'https://www.capitalone.com/bank/savings-accounts/' },
+    { label: 'Certificates of deposit (CDs)', href: 'https://www.capitalone.com/bank/cds/online-cds/' },
+    { label: 'Auto financing', href: 'https://www.capitalone.com/cars/' }
+  ];
+
+  const features = [
+    {
+      id: 'eno',
+      icon: '✦',
+      title: 'AI-first banking',
+      description: 'Ask Eno about your money in your own words. Powered by Gemini.'
+    },
+    {
+      id: 'climate',
+      icon: '↗',
+      title: 'ClimateWise™',
+      description: 'A concept for seeing the environmental impact of everyday purchases.'
+    },
+    {
+      id: 'insights',
+      title: 'Wallet insights',
+      description: 'Spot spending patterns, see upcoming bills, and keep track of rewards.'
+    }
+  ];
+
+  let products = $state<HTMLDetailsElement>();
 
   type Theme = 'light' | 'dark' | 'system';
   interface Customer {
@@ -15,6 +46,7 @@
   let ready = $state(false);
   let systemPrefersDark = $state(false);
   let isDark = $derived(theme === 'dark' || (theme === 'system' && systemPrefersDark));
+  const themeLabel = $derived(isDark ? 'Switch to light mode' : 'Switch to dark mode');
   let accountsOpen = $state(false);
   let customers = $state<Customer[]>([]);
   let customersLoading = $state(true);
@@ -42,6 +74,7 @@
 
   async function toggleAccounts(): Promise<void> {
     accountsOpen = !accountsOpen;
+    if (accountsOpen && products) products.open = false;
     if (accountsOpen) {
       await tick();
       accountList?.querySelector<HTMLElement>('a, button')?.focus();
@@ -55,6 +88,7 @@
   }
 
   function handleWindowKeydown(event: KeyboardEvent): void {
+    closeProducts(event);
     if (accountsOpen && event.key === 'Escape') {
       event.preventDefault();
       accountsOpen = false;
@@ -88,11 +122,18 @@
     void loadCustomers();
     return () => media.removeEventListener('change', onMediaChange);
   });
+  function closeProducts(event: KeyboardEvent) {
+    if (event.key === 'Escape' && products?.open) {
+      products.open = false;
+      if (products.contains(document.activeElement)) products.querySelector('summary')?.focus();
+    }
+  }
 </script>
 
 <svelte:head>
-  <title>Eno 2.0 | Capital One</title>
-  <meta name="description" content="A forward looking banking experience. Sign up or choose your account to explore your Capital One dashboard with Eno 2.0." />
+  <title>Eno 2.0 | A new day in banking</title>
+  <meta name="description" content="Explore conversational banking and get to know your wallet with the Eno 2.0 demo." />
+  <link rel="preload" href="/rolling-hills.svg" as="image" />
 </svelte:head>
 
 {#snippet arrowIcon()}
@@ -101,61 +142,53 @@
 
 <svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
 
-<div class="landing" data-theme={theme}>
-  <div class="identity container">
-    <a class="brand" href="/" aria-label="Capital One | Eno 2.0 home">
-      <CapitalOneLogo label="Capital One" />
-      <span class="brand-divider" aria-hidden="true">|</span>
-      <span class="eno-mark"><img src="/images/eno-character.png" alt="Eno character" width="1254" height="1254" /></span>
-      <span class="eno-name">Eno <span>2.0</span></span>
-    </a>
-  </div>
+<div class="site landing" class:dark={isDark} data-theme={theme}>
+  <header>
+    <nav aria-label="Main navigation">
+      <details bind:this={products}>
+        <summary>Explore products <span class="chevron" aria-hidden="true"></span></summary>
+        <ul>
+          {#each productsList as product (product.href)}
+            <li>
+              <a
+                href={product.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={product.label + ' (opens in a new tab)'}
+              >{product.label} <span aria-hidden="true">↗</span></a>
+            </li>
+          {/each}
+        </ul>
+      </details>
 
-  <main class="container">
-    <div class="welcome">
-      <h1>A forward looking<br />banking experience</h1>
-      <p class="intro">Your accounts, your everyday spending, your next big move.<br class="desktop-break" /> Bring it all together, with a little help from Eno.</p>
-    </div>
-
-    <section class="entry-options" aria-label="Get started">
-      <a class="entry-card sign-up" href="/signup" aria-labelledby="signup-title" aria-describedby="signup-description">
-        <span class="card-top">
-          <span class="entry-icon" aria-hidden="true">
-            <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="10" r="5" /><path d="M4 27v-3a9 9 0 0 1 16-5m6-6v10m-5-5h10" /></svg>
-          </span>
-          <span class="card-label">NEW HERE?</span>
-        </span>
-        <span class="card-copy">
-          <span class="entry-title" id="signup-title">Sign up</span>
-          <span class="entry-description" id="signup-description">A fresh start for your finances.<br />Let’s take the first step together.</span>
-        </span>
-        <span class="card-bottom"><span>Get started</span><span class="action-icon">{@render arrowIcon()}</span></span>
+      <a class="brand" href="/" aria-label="Capital One and Eno 2.0 home">
+        <CapitalOneLogo label="Capital One" />
+        <span class="divider"></span>
+        <Eno variant={isDark ? "dark" : "light"} size={39} alt="" />
+        <span>Eno 2.0</span>
       </a>
 
-      <div class="sign-in-area" bind:this={signInArea}>
-        <button
-          class="entry-card sign-in"
-          disabled={!ready}
-          bind:this={signInButton}
-          aria-labelledby="signin-title"
-          aria-describedby="signin-description"
-          aria-expanded={accountsOpen}
-          aria-controls="account-list"
-          onclick={toggleAccounts}
-        >
-          <span class="card-top">
-            <span class="entry-icon" aria-hidden="true">
-              <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="6" width="22" height="20" rx="4" /><path d="M5 12h22m-16 8h5" /></svg>
-            </span>
-            <span class="card-label">ALREADY WITH US?</span>
-          </span>
-          <span class="card-copy">
-            <span class="entry-title" id="signin-title">Sign in</span>
-            <span class="entry-description" id="signin-description">Welcome back. Pick up where<br />you and your money left off.</span>
-          </span>
-          <span class="card-bottom"><span>Choose your account</span><span class="action-icon" class:expanded={accountsOpen}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></span></span>
+      <div class="nav-actions">
+        <button type="button" class="theme-toggle" aria-label={themeLabel} aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+            {#if isDark}
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+            {:else}
+              <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" />
+            {/if}
+          </svg>
         </button>
-
+        <div class="sign-in-area" bind:this={signInArea}>
+        <button type="button" class="sign-in" disabled={!ready} bind:this={signInButton} aria-label="Sign in" aria-expanded={accountsOpen} aria-controls="account-list" onclick={toggleAccounts}>
+          <span class="profile" aria-hidden="true">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 21v-2a8 6 0 0 1 16 0v2Z" />
+            </svg>
+          </span>
+          Sign in
+        </button>
         <div class="account-list" id="account-list" bind:this={accountList} hidden={!accountsOpen}>
           <p class="list-heading">Choose your account</p>
           {#if customersLoading}
@@ -179,160 +212,359 @@
             </nav>
           {/if}
         </div>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="intro">
+        <h1 id="hero-title">A new day in banking</h1>
+        <p>Find out what’s <em>really</em> in your wallet.</p>
+      </div>
+
+      <div class="features">
+        {#each features as feature (feature.id)}
+          <article id={feature.id} tabindex="-1">
+            <span class="feature-icon {feature.id}" aria-hidden="true">
+              {#if feature.id === 'insights'}
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 8V6a2 2 0 0 0-2-2H6a3 3 0 0 0 0 6h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a3 3 0 0 1-3-3V7" />
+                  <path d="M21 13h-4a2 2 0 0 0 0 4h4m-4-2h.01" />
+                </svg>
+              {:else}
+                {feature.icon}
+              {/if}
+            </span>
+            <h2>{feature.title}</h2>
+            <p>{feature.description}</p>
+          </article>
+        {/each}
+      </div>
+
+      <div class="foreground">
+        <img class="hills" src="/rolling-hills.svg" alt="" width="1440" height="340" />
+        <a class="account-link" href="/signup" aria-label="Sign up">
+          I’d like to open an account <span aria-hidden="true">↑</span>
+        </a>
       </div>
     </section>
-
-    <p class="welcome-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 10h8m-8 4h5" /><path d="M20 11.5a8 8 0 0 1-8 8H4l1.5-4A8 8 0 1 1 20 11.5Z" /></svg>A little clarity. A little confidence. A little Eno.</p>
   </main>
 
-  <footer class="container">
-    <p>demo only, <a href="https://github.com/Irom1/eno2">github link here</a></p>
-    <button
-      class="theme-toggle"
-      disabled={!ready}
-      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      aria-pressed={isDark}
-      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      onclick={toggleTheme}
-    >
-      {#if isDark}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
-      {:else}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" /></svg>
-      {/if}
-    </button>
+  <footer>
+    <p>Independent demo, unaffiliated with Capital One. HackUMass 2026 project.</p>
+    <a href="https://github.com/Irom1/eno2">View on GitHub <span aria-hidden="true">↗</span></a>
   </footer>
 </div>
 
 <style>
-  :global(body:has(.landing)) { margin: 0; }
-  .landing {
-    --dark: ;
-    --light: initial;
-    --page: var(--dark, #10191f) var(--light, #f4f6f8);
-    --surface: var(--dark, #18252d) var(--light, #fff);
-    --ink: var(--dark, #ecf3f6) var(--light, #142632);
-    --muted: var(--dark, #b1c3cc) var(--light, #50636e);
-    --border: var(--dark, #31444f) var(--light, #dae3e8);
-    --link: var(--dark, #9fdbf0) var(--light, #075e80);
-    --glow: var(--dark, #21475f) var(--light, #c6e5fc);
+  :global(body) { margin: 0; }
+
+  .site {
+    box-sizing: border-box;
     min-height: 100svh;
+    padding: 0 clamp(12px, 2.4vw, 36px);
+    --page: #fafbf8;
+    --ink: #102b39;
+    --muted: #40555b;
+    --brand: #153e59;
+    --surface: #fff;
+    --border: #bdcdd0;
+    --hover: #eaf5f8;
+    --avatar: #e7f1f5;
+    --focus: #174b67;
+    background: var(--page);
+    color: var(--ink);
+    font-family: Inter, system-ui, sans-serif;
+  }
+
+  .site.dark {
+    color-scheme: dark;
+    --page: #101c27;
+    --ink: #f3f7fc;
+    --muted: #c2d1dc;
+    --brand: #d5eeff;
+    --surface: #1d2e3e;
+    --border: #465f72;
+    --hover: #2b465b;
+    --avatar: #294960;
+    --focus: #a8dcf6;
+  }
+
+  header, main, footer { max-width: 1440px; margin-inline: auto; }
+
+  header > nav {
+    min-height: 84px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    padding-inline: clamp(4px, 1.6vw, 24px);
+  }
+
+  a { color: inherit; text-decoration: none; }
+  a:focus-visible, button:focus-visible, summary:focus-visible, article:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 4px;
+  }
+
+  details { position: relative; justify-self: start; z-index: 1; }
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    list-style: none;
+    cursor: pointer;
+    font-weight: 550;
+  }
+  summary::-webkit-details-marker { display: none; }
+  .chevron {
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid;
+    border-bottom: 1.5px solid;
+    transform: translateY(-2px) rotate(45deg);
+  }
+  details[open] .chevron { transform: translateY(2px) rotate(225deg); }
+  details ul {
+    position: absolute;
+    top: calc(100% + 14px);
+    left: 0;
+    width: max-content;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 10px 28px #1637461f;
+  }
+  details li a { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 8px; }
+  details li a:hover { background: var(--hover); }
+
+  .brand, .sign-in { display: inline-flex; align-items: center; }
+  .brand { gap: 8px; white-space: nowrap; color: var(--brand); font-size: 1.15rem; font-weight: 750; }
+  .brand :global(svg) { width: 108px; height: auto; }
+  .divider { width: 1px; height: 29px; margin-inline: 5px; background: var(--border); }
+  .nav-actions { display: flex; align-items: center; gap: 8px; justify-self: end; }
+  .theme-toggle {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .sign-in {
+    gap: 8px;
+    min-height: 44px;
+    padding-inline: 5px 14px;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .profile {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    background: var(--avatar);
+    color: var(--brand);
+    border-radius: 50%;
+  }
+  .theme-toggle:hover, .sign-in:hover { background: var(--hover); }
+
+  .hero {
+    box-sizing: border-box;
+    min-height: clamp(650px, calc(100svh - 145px), 820px);
+    border-radius: clamp(22px, 3.1vw, 44px);
+    overflow: hidden;
+    isolation: isolate;
+    display: grid;
+    grid-template-rows: 1fr auto 1fr;
+    justify-items: center;
+    text-align: center;
+    background:
+      radial-gradient(ellipse at 18% 72%, #fff2bd 0%, transparent 54%),
+      linear-gradient(173deg, #78bffa 0%, #a8d9f7 33%, #ffdfbd 66%, #edac9c 100%);
+  }
+
+  .dark .hero {
+    background: radial-gradient(ellipse at 18% 75%, #504468, transparent 65%), linear-gradient(165deg, #132946, #244769);
+  }
+  .dark .intro p, .dark article p { color: var(--muted); }
+  .dark article { background: #182e43; border-color: #50708a; }
+  .dark .hills { filter: brightness(0.58) saturate(0.78); }
+
+  .intro {
+    align-self: center;
+    padding: 32px 16px;
+    translate: 0 16px;
+  }
+
+  .foreground {
+    position: relative;
+    isolation: isolate;
+    justify-self: stretch;
+    z-index: 1;
+    display: grid;
+    place-items: end center;
+    box-sizing: border-box;
+    padding: 24px 12px clamp(60px, 10vh, 104px);
+  }
+
+  .hills {
+    position: absolute;
+    z-index: -1;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 85%;
+    pointer-events: none;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2.7rem, 6.5vw, 6rem);
+    line-height: 1;
+    letter-spacing: -0.065em;
+    font-weight: 780;
+    text-wrap: balance;
+  }
+  .intro p {
+    margin: 18px 0 0;
+    color: #234352;
+    font-size: clamp(1.05rem, 2.1vw, 1.65rem);
+    text-wrap: balance;
+  }
+
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(12px, 2vw, 24px);
+    width: min(calc(100% - 32px), 880px);
+  }
+  article {
     display: flex;
     flex-direction: column;
-    color: var(--ink);
-    background: radial-gradient(ellipse 58% 47% at 50% 28%, color-mix(in srgb, var(--glow) 42%, transparent), transparent 100%), var(--page);
-    color-scheme: var(--dark, dark) var(--light, light);
-    font: 15px/1.5 Inter, system-ui, sans-serif;
+    align-items: flex-start;
+    padding: clamp(16px, 2vw, 26px);
+    border: 1px solid #ffffffb5;
+    border-radius: 24px;
+    background: #f6fcfbdc;
+    box-shadow: 0 8px 24px #263e3e0d;
+    text-align: left;
   }
-  .landing[data-theme='dark'] { --dark: initial; --light: ; }
-  @media (prefers-color-scheme: dark) {
-    .landing[data-theme='system'] { --dark: initial; --light: ; }
+  article:target { outline: 2px solid var(--focus); outline-offset: 4px; }
+  .feature-icon {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    background: #dbe3fe;
+    color: #333b9c;
+    font-size: 1.55rem;
+    line-height: 1;
+    font-weight: 700;
   }
-  .landing * { box-sizing: border-box; }
-  .container { width: min(1136px, calc(100% - 64px)); margin-inline: auto; }
-  a { color: inherit; text-decoration: none; }
-  button { font: inherit; color: inherit; cursor: pointer; }
-  a, button { -webkit-tap-highlight-color: transparent; }
-  :is(a, button):focus-visible { outline: 3px solid var(--link); outline-offset: 5px; }
-  p { margin: 0; }
-  svg { width: 22px; height: 22px; flex: none; }
-  .identity { display: flex; justify-content: center; padding-block: 32px 8px; }
-  .brand { display: inline-flex; align-items: center; gap: 18px; padding: 4px; border-radius: 8px; color: var(--dark, #fff) var(--light, #013d5b); }
-  .brand :global(svg) { display: block; width: 200px; height: 72px; }
-  .brand-divider { margin-inline: 10px; color: var(--muted); font-size: 50px; font-weight: 200; }
-  .eno-mark { position: relative; flex: none; width: 56px; height: 64px; }
-  .eno-mark img { position: absolute; top: 46%; left: 53%; width: 80px; height: auto; max-width: none; transform: translate(-50%, -50%); }
-  .eno-name { color: var(--ink); font-size: 48px; font-weight: 600; letter-spacing: -.04em; white-space: nowrap; }
-  .eno-name span { color: var(--link); font-weight: 450; }
-  .theme-toggle { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: transparent; }
-  .theme-toggle:hover { background: var(--surface); }
-  .theme-toggle svg { width: 19px; height: 19px; }
-  main { flex: 1; display: flex; flex-direction: column; justify-content: center; padding-block: 40px 44px; }
-  .welcome { text-align: center; }
-  h1 { margin: 0 0 18px; font-size: clamp(32px, 4.2vw, 54px); line-height: 1.14; font-weight: 600; letter-spacing: -.045em; }
-  .intro { color: var(--muted); font-size: 16px; line-height: 1.7; }
-  .entry-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; width: min(816px, 100%); margin: 40px auto 0; }
-  .entry-card { display: flex; flex-direction: column; justify-content: space-between; gap: 28px; width: 100%; min-height: 302px; padding: 28px 30px 22px; border: 1px solid transparent; border-radius: 20px; text-align: left; transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; }
-  .entry-card:hover { transform: translateY(-3px); box-shadow: 0 12px 28px #051b2a18; }
-  .sign-up { color: #fff; background: radial-gradient(ellipse at 100% 0, #ffffff12, transparent 70%), linear-gradient(118deg, #062f4c, #126379); }
-  .sign-in { height: 100%; color: var(--ink); background: var(--surface); border-color: var(--border); }
-  .sign-in:hover, .sign-in[aria-expanded='true'] { border-color: var(--link); }
-  .card-top, .card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .entry-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #ffffff40; border-radius: 12px; background: #ffffff0a; }
-  .entry-icon svg { width: 28px; height: 28px; }
-  .sign-in .entry-icon { color: var(--link); border-color: var(--border); background: var(--page); }
-  .card-label { font-size: 10px; letter-spacing: .12em; font-weight: 600; }
-  .sign-up .card-label { color: #c8e8f0; }
-  .sign-in .card-label { color: var(--muted); }
-  .card-copy { display: grid; gap: 9px; }
-  .entry-title { font-size: 32px; line-height: 1.2; letter-spacing: -.035em; font-weight: 600; }
-  .entry-description { font-size: 14px; line-height: 1.65; }
-  .sign-up .entry-description { color: #d0e5ed; }
-  .sign-in .entry-description { color: var(--muted); }
-  .card-bottom { padding-top: 17px; border-top: 1px solid #ffffff30; font-size: 13px; font-weight: 600; }
-  .sign-in .card-bottom { border-color: var(--border); color: var(--link); }
-  .action-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #ffffff18; }
-  .sign-in .action-icon { background: var(--page); transition: transform 180ms ease; }
-  .action-icon.expanded { transform: rotate(180deg); }
-  .action-icon svg { width: 18px; height: 18px; }
-  .sign-in-area { position: relative; min-width: 0; }
-  .account-list { position: absolute; z-index: 5; top: calc(100% + 10px); inset-inline: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 14px 40px #051b2a30; }
+  .climate { background: #dcf0d2; color: #286035; }
+  .insights { background: #ffe8bd; color: #7a4712; }
+  h2 { margin: 14px 0 6px; font-size: clamp(1.05rem, 2vw, 1.38rem); letter-spacing: -0.035em; }
+  article p { margin: 0; color: #36515a; font-size: 0.95rem; line-height: 1.5; }
+
+  .account-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    box-sizing: border-box;
+    width: min(100%, 360px);
+    padding: 7px 7px 7px 20px;
+    border-radius: 99px;
+    background: #102321;
+    color: white;
+    font-weight: 650;
+    box-shadow: 0 8px 30px #14302155;
+  }
+  .account-link:hover { background: #203f36; }
+  .account-link span {
+    display: grid;
+    place-items: center;
+    flex: 0 0 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #b6ed78;
+    color: #102321;
+    font-size: 1.45rem;
+    line-height: 1;
+  }
+
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px 16px;
+    padding: 18px 8px;
+    color: var(--muted);
+    text-align: center;
+    font-size: 0.85rem;
+  }
+  footer p { margin: 0; }
+  footer a { text-decoration: underline; text-underline-offset: 3px; }
+
+  @media (max-width: 690px) {
+    header > nav { grid-template-columns: 1fr auto; gap: 12px; padding-block: 12px; min-height: 0; }
+    .brand { grid-area: 1 / 1; }
+    .nav-actions { grid-area: 1 / 2; }
+    details { grid-column: 1 / -1; padding-block: 5px; font-size: 0.9rem; }
+    .hero { min-height: 0; grid-template-rows: auto auto auto; }
+    .intro { padding-top: 48px; }
+    .features {
+      grid-template-columns: 1fr;
+      max-width: 420px;
+    }
+    article { display: grid; grid-template-columns: 42px 1fr; gap: 4px 12px; }
+    .feature-icon { grid-row: span 2; }
+    h2 { margin: 0; }
+    article { padding-bottom: 16px; }
+    .foreground { min-height: 175px; }
+  }
+
+  @media (max-width: 390px) {
+    header > nav { grid-template-columns: 1fr auto; }
+    .brand { grid-area: 1 / 1 / 2 / -1; }
+    .nav-actions { grid-area: 2 / 2; }
+    details { grid-area: 2 / 1; }
+  }
+
+  @media (max-width: 440px) {
+    .brand { font-size: 1rem; gap: 4px; }
+    .brand :global(svg) { width: 84px; }
+    .brand :global(img) { width: 28px; height: 28px; }
+    .sign-in { padding-inline: 4px 9px; font-size: 0.85rem; }
+    .profile { width: 28px; height: 28px; }
+  }
+
+  .sign-in-area { position: relative; }
+  button.sign-in { color: inherit; background: transparent; font: inherit; font-weight: 650; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .account-list { position: absolute; top: calc(100% + 12px); right: 0; z-index: 10; width: min(320px, calc(100vw - 48px)); padding: 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 12px 30px #16374626; text-align: left; }
   .account-list[hidden] { display: none; }
-  .list-heading { padding: 16px 18px 12px; color: var(--muted); font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
-  .list-message { padding: 18px; color: var(--muted); font-size: 14px; }
-  .retry { display: inline-flex; align-items: center; gap: 8px; padding: 0; margin-top: 12px; background: transparent; border: 0; color: var(--link); font-weight: 600; }
-  .retry svg { width: 16px; height: 16px; }
-  .account-links { display: grid; max-height: 260px; overflow-y: auto; padding: 6px; }
-  .account-choice { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; }
-  .account-choice:hover { background: var(--page); }
-  .account-choice:focus-visible { outline-offset: -2px; }
-  .avatar { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 50%; background: var(--page); color: var(--link); font-weight: 650; }
-  .account-name { display: grid; gap: 2px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .account-name strong { font-size: 14px; font-weight: 600; }
-  .account-name small { color: var(--muted); font-size: 12px; }
-  .account-choice > svg { width: 17px; height: 17px; color: var(--link); }
-  .welcome-note { display: flex; justify-content: center; align-items: center; gap: 9px; margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
-  .welcome-note svg { width: 17px; height: 17px; color: var(--link); }
-  footer { position: relative; display: flex; align-items: center; justify-content: center; min-height: 84px; padding: 22px 52px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; text-align: center; }
-  footer a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
-  footer a:hover { color: var(--ink); }
-  footer .theme-toggle { position: absolute; right: 0; }
-  @media (min-width: 1600px) {
-    .entry-options { width: min(900px, 100%); }
-    .entry-card { min-height: 330px; padding: 32px; }
-  }
-  @media (max-width: 640px) {
-    .container { width: calc(100% - 36px); }
-    .identity { padding-block: 24px 8px; }
-    .brand { gap: 8px; }
-    .brand :global(svg) { width: clamp(88px, 27.5vw, 118px); height: auto; }
-    .brand-divider { margin-inline: 3px; font-size: 32px; }
-    .eno-mark { width: clamp(30px, 9.5vw, 40px); height: 46px; }
-    .eno-mark img { width: clamp(39px, 12vw, 51px); }
-    .eno-name { font-size: clamp(23px, 7.4vw, 30px); }
-    main { padding-block: 30px 36px; }
-    .intro { font-size: 14px; max-width: 340px; margin-inline: auto; }
-    .desktop-break { display: none; }
-    .entry-options { gap: 14px; margin-top: 30px; }
-    .entry-card { gap: 24px; padding: 20px 18px 16px; min-height: 280px; border-radius: 16px; }
-    .card-label { display: none; }
-    .entry-title { font-size: 27px; }
-    .entry-description { font-size: 13px; }
-    .entry-description br { display: none; }
-    .card-bottom { font-size: 12px; }
-    .action-icon { width: 27px; height: 27px; flex: none; }
-  }
-  @media (max-width: 420px) {
-    .entry-options { grid-template-columns: 1fr; }
-    .entry-card { min-height: 238px; gap: 20px; padding: 22px; }
-    .sign-in { height: auto; }
-    .card-label { display: block; }
-    .account-list { position: relative; top: auto; margin-top: 10px; }
-    .welcome-note { font-size: 11px; gap: 6px; }
-    footer { font-size: 11px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .entry-card, .sign-in .action-icon { transition: none; }
-    .entry-card:hover { transform: none; }
-  }
+  .list-heading { margin: 8px 10px 12px; color: var(--muted); font-size: 12px; }
+  .account-links { display: grid; gap: 3px; max-height: min(340px, 55dvh); overflow-y: auto; }
+  .account-choice { display: flex; align-items: center; gap: 11px; padding: 11px; border-radius: 10px; }
+  .account-choice:hover { background: var(--hover); }
+  .avatar { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; color: var(--brand); background: var(--avatar); font-weight: 650; }
+  .account-name { flex: 1; min-width: 0; }.account-name strong { display: block; font-size: 14px; }.account-name small { display: block; color: var(--muted); font-size: 12px; }
+  .account-choice :global(svg), .retry :global(svg) { width: 18px; height: 18px; flex: none; }
+  .list-message { margin: 0; padding: 10px; color: var(--muted); font-size: 13px; }.list-message p { margin: 0 0 10px; }
+  .retry { display: inline-flex; align-items: center; gap: 8px; padding: 6px 0; border: 0; color: var(--brand); background: transparent; font: inherit; cursor: pointer; }
 </style>

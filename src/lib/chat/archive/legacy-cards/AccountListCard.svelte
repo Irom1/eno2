@@ -46,7 +46,7 @@
   }
 </script>
 
-<ChatCardShell {title} badge={items.length ? `${items.length}` : undefined}>
+<ChatCardShell {title}>
   {#if items.length === 0}
     <p class="empty">{filter === 'credit' ? 'No credit cards.' : 'No accounts to show.'}</p>
   {:else}

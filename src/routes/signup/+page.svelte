@@ -233,7 +233,7 @@
       <div class="messages">
         {#each messages as message (message.id)}
           <div class="message" class:from-you={message.role === 'you'}>
-            {#if message.role === 'eno'}<span class="message-avatar"><Eno variant={isDark ? 'navy' : 'light'} size={40} alt="Eno" /></span>{/if}
+            {#if message.role === 'eno'}<span class="message-avatar"><Eno variant={isDark ? 'dark' : 'light'} size={40} alt="Eno" /></span>{/if}
             <div class="message-content">
               <span class="sender">{message.role === 'eno' ? 'Eno' : 'You'}{#if message.role === 'eno' && speechSupported}<button class="read-aloud" aria-label="Read Eno message aloud" title="Read aloud" onclick={() => speak(message.text)}>{@render speaker()}</button>{/if}</span>
               <div class="bubble"><p>{message.text}</p>
@@ -259,7 +259,7 @@
             </div>
           </div>
         {/each}
-        {#if busy}<div class="message typing" role="status" aria-label={submitting ? 'Eno is creating your profile' : 'Eno is typing'}><span class="message-avatar"><EnoThinking active={busy} variant={isDark ? 'navy' : 'light'} size={40} /></span><div><span class="sender">Eno</span><span class="typing-dots"><i></i><i></i><i></i></span></div></div>{/if}
+        {#if busy}<div class="message typing" role="status" aria-label={submitting ? 'Eno is creating your profile' : 'Eno is typing'}><span class="message-avatar"><EnoThinking active={busy} variant={isDark ? 'dark' : 'light'} size={40} /></span><div><span class="sender">Eno</span><span class="typing-dots"><i></i><i></i><i></i></span></div></div>{/if}
       </div>
     </div>
     <div class="composer-area">

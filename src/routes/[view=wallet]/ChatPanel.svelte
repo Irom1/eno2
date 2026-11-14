@@ -3,13 +3,25 @@
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
   import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
-  import { filterCardDuplication } from '$lib/chat/dedupe.js';
+  import {
+    anomalyTransactionCards,
+    mergeEntityCards,
+    type EntityCard
+  } from '$lib/chat/entityCards.js';
+  import { inlineBlocks } from '$lib/chat/inline.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
-  import { allowedKindsFor, classifyIntents, isCreditOnlyPrompt, visibleCards } from '$lib/chat/relevance.js';
+  import { STARTER_PROMPTS } from '$lib/chat/starters.js';
+  import {
+    friendlyToolLabel,
+    initialThinking,
+    pushThinkingStep,
+    type ThinkingState
+  } from '$lib/chat/thinking.js';
+  import { visibleCards } from '$lib/chat/relevance.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
-  import ChatCardRenderer from './chat-cards/ChatCardRenderer.svelte';
   import FollowUps from './FollowUps.svelte';
+  import TransactionCard from './inline-cards/TransactionCard.svelte';
 
   interface Props {
     open: boolean;
@@ -17,7 +29,6 @@
     initialPrompt: { text: string; id: number } | null;
     onClose: () => void;
     canSend: boolean;
-    hasMessages: boolean;
     variant?: EnoVariant;
   }
 
@@ -28,6 +39,8 @@
     prompt?: string;
     pending?: boolean;
     cards?: ChatCard[];
+    inlineCards?: EntityCard[];
+    intro?: boolean;
   }
 
   let {
@@ -36,7 +49,6 @@
     initialPrompt,
     onClose,
     canSend = $bindable(),
-    hasMessages = $bindable(),
     variant = 'light'
   }: Props = $props();
 
@@ -45,19 +57,36 @@
   let bootPromise: Promise<boolean> | null = null;
   let bootTarget = '';
   let sessionCustomerId = $state('');
-  let messages = $state<ChatMessage[]>([]);
+
+  const INTRO =
+    "Hi there — I'm Eno 2.0. I can help with spending, bills, balances, loans, and rewards. Ask me anything, or pick a question to get started.";
+
+  let messageSeq = 0;
+
+  function introMessage(): ChatMessage {
+    return { id: ++messageSeq, role: 'assistant', text: INTRO, intro: true, pending: false };
+  }
+
+  let messages = $state<ChatMessage[]>([introMessage()]);
   let streaming = $state(false);
   let status = $state('');
-  let messageSeq = 0;
+  let thinking = $state<ThinkingState>(initialThinking());
   let requestSeq = 0;
   let cardSeq = 0;
   let lastPromptId = 0;
   let inFlightPromptId = 0;
   let logEl: HTMLDivElement;
 
-  const lastAssistantId = $derived(
-    [...messages].reverse().find((message) => message.role === 'assistant')?.id
-  );
+  const suggestions = $derived.by(() => {
+    if (streaming) return [];
+    const hasUserMessage = messages.some((message) => message.role === 'user');
+    if (!hasUserMessage) return [...STARTER_PROMPTS];
+    const last = [...messages].reverse().find((message) => message.role === 'assistant');
+    if (!last || last.pending) return [];
+    const shown = visibleCards(last.cards ?? [], last.prompt ?? '');
+    if (!last.text && shown.length === 0) return [];
+    return followUpsFor(shown, last.prompt ?? '').slice(0, 3);
+  });
 
   function scrollLog(): void {
     void tick().then(() => {
@@ -88,7 +117,7 @@
     if (ready) {
       requestSeq += 1;
       streaming = false;
-      messages = [];
+      messages = [introMessage()];
       status = '';
       try {
         await fetch('/api/session', { method: 'DELETE' });
@@ -138,15 +167,6 @@
     if (ok) await send(value);
   }
 
-  function statusFor(name: string): string {
-    if (name.includes('bill')) return "Checking what's due…";
-    if (name.includes('spend')) return 'Looking at your spending…';
-    if (name.includes('anomal')) return 'Scanning for anything unusual…';
-    if (name.includes('atm') || name.includes('branch')) return 'Finding nearby locations…';
-    if (name.includes('overview')) return 'Reviewing your accounts…';
-    return 'Looking that up…';
-  }
-
   function findMessage(id: number): ChatMessage | undefined {
     return messages.find((message) => message.id === id);
   }
@@ -169,7 +189,8 @@
     messages.push({ id: userId, role: 'user', text: value });
     messages.push({ id: assistantId, role: 'assistant', text: '', prompt: value, pending: true });
     streaming = true;
-    status = 'Thinking…';
+    thinking = initialThinking();
+    status = '';
     scrollLog();
 
     try {
@@ -202,9 +223,12 @@
               scrollLog();
             }
             break;
-          case 'tool_start':
-            status = statusFor(typeof data.name === 'string' ? data.name : '');
+          case 'tool_start': {
+            const name = typeof data.name === 'string' ? data.name : '';
+            const label = typeof data.label === 'string' ? data.label : '';
+            thinking = pushThinkingStep(thinking, friendlyToolLabel(name, label));
             break;
+          }
           case 'insight': {
             if (typeof data.kind !== 'string') break;
             const payload = data.payload;
@@ -222,8 +246,20 @@
               id: ++cardSeq,
               kind: chatCardKind(data.kind),
               tool: data.kind,
-              payload
+              payload,
+              afterText: message.text.length
             });
+            if (data.kind === 'insight_anomalies') {
+              // If the tool result arrives before any prose, anchor the cards at
+              // the end of the text so the answer reads first and the cited
+              // charges follow it. If an intro already exists, anchor inline.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const startId = cardSeq + 1;
+              const incoming = anomalyTransactionCards(payload, anchor, startId);
+              cardSeq += incoming.length;
+              message.inlineCards = mergeEntityCards(message.inlineCards ?? [], incoming);
+            }
             scrollLog();
             break;
           }
@@ -277,7 +313,6 @@
 
   $effect(() => {
     canSend = ready && !streaming;
-    hasMessages = messages.length > 0;
   });
 
   $effect(() => {
@@ -318,113 +353,96 @@
   class="chat-panel"
   role="region"
   aria-label="Eno 2.0"
+  data-streaming={streaming}
   inert={!open}
 >
-  <header class="chat-header">
-    <div class="chat-heading">
-      <EnoThinking {variant} size={34} />
-      <h2>Eno 2.0</h2>
-    </div>
-  </header>
-
   <div class="chat-log" aria-live="polite" aria-label="Conversation" bind:this={logEl}>
-    {#if messages.length === 0}
-      <div class="empty-state">
-        <EnoThinking {variant} size={104} />
-        <p class="empty-title">Hi — I can look at your spending, bills, and accounts.</p>
-        {#if booting || !ready}
-          <p class="status-line">{status || 'Connecting…'}</p>
-        {/if}
-      </div>
-    {/if}
-
     {#each messages as message (message.id)}
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
       {:else}
-        {@const allowedKinds = allowedKindsFor(classifyIntents(message.prompt ?? ''))}
-        {@const creditOnly = isCreditOnlyPrompt(message.prompt ?? '')}
-        {@const shownCards = visibleCards(message.cards ?? [], message.prompt ?? '')}
-        {@const hasCards = shownCards.length > 0}
-        {@const displayText =
-          hasCards && message.pending ? '' : filterCardDuplication(message.text, shownCards)}
-        {@const showText = displayText.length > 0}
-        {#if showText || message.pending || hasCards}
-          <div class="assistant-turn">
-            {#if showText || message.pending}
-              <div class="bubble assistant">
-                {#if message.pending && !showText}
+        {@const blocks = inlineBlocks(message.text, message.inlineCards ?? [])}
+        {@const hasBlocks = blocks.length > 0}
+        {@const isThinking = message.pending && !hasBlocks}
+        {#if hasBlocks || message.pending}
+          <div class="assistant-turn" class:intro={message.intro}>
+            <EnoThinking {variant} active={message.pending} size={40} />
+            <div class="assistant-content">
+              {#if isThinking}
+                <div class="bubble assistant">
                   <div class="thinking-row">
-                    <EnoThinking {variant} active size={40} />
-                    <p class="status-line">{status || 'Looking that up…'}</p>
+                    <ol class="thinking-steps" aria-label="Eno is working">
+                      {#each thinking.steps as step, index (step + index)}
+                        <li class="step done">
+                          <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                          <span>{step}</span>
+                        </li>
+                      {/each}
+                      <li class="step current status-line">
+                        <span class="step-dot" aria-hidden="true"></span>
+                        <span>{thinking.current || 'Looking that up'}</span>
+                      </li>
+                    </ol>
                   </div>
+                </div>
+              {/if}
+              {#each blocks as block, index (block.type + index)}
+                {#if block.type === 'text'}
+                  {#if block.text.trim()}
+                    <div class="bubble assistant">
+                      <div class="richtext">{@html renderMarkdown(block.text)}</div>
+                    </div>
+                  {/if}
+                {:else}
+                  {#each block.cards as card (card.id)}
+                    {#if card.kind === 'transaction'}
+                      <TransactionCard {card} />
+                    {/if}
+                  {/each}
                 {/if}
-                {#if showText}
-                  <div class="richtext">{@html renderMarkdown(displayText)}</div>
-                {/if}
-              </div>
-            {/if}
-            {#if hasCards}
-              <div class="chat-cards">
-                {#each shownCards as card (card.id)}
-                  <ChatCardRenderer
-                    {card}
-                    allowedKinds={allowedKinds.size > 0 ? allowedKinds : undefined}
-                    accountFilter={creditOnly ? 'credit' : 'all'}
-                  />
-                {/each}
-              </div>
-            {/if}
-            {#if message.id === lastAssistantId && !message.pending && !streaming && (message.text || hasCards)}
-              <FollowUps
-                suggestions={followUpsFor(shownCards, message.prompt ?? '')}
-                disabled={!canSend}
-                onSelect={(prompt) => void send(prompt)}
-              />
-            {/if}
+              {/each}
+              {#if message.intro && (booting || !ready)}
+                <p class="status-line intro-status">{status || 'Connecting…'}</p>
+              {/if}
+            </div>
           </div>
         {/if}
       {/if}
     {/each}
+
+    {#if suggestions.length > 0}
+      <div class="chat-followups-row">
+        <span class="chat-followups-spacer" aria-hidden="true"></span>
+        <div class="chat-followups">
+          <FollowUps
+            {suggestions}
+            disabled={!canSend}
+            onSelect={(prompt) => void send(prompt)}
+          />
+        </div>
+      </div>
+    {/if}
   </div>
-
-
 </div>
 
 <style>
   .chat-panel {
     height: 100%;
+    min-height: 0;
     color: var(--ink);
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
-  .chat-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 16px 18px;
-    border-bottom: 1px solid var(--border);
-  }
-  .chat-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .chat-heading h2 {
-    margin: 0;
-    font-size: 15px;
-    line-height: 1.3;
-    font-weight: 650;
-    letter-spacing: -0.015em;
-  }
   .chat-log {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 18px;
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
-  .empty-state { display: grid; justify-items: start; gap: 14px; margin: auto 0 0; }
-  .empty-title { font-weight: 600; line-height: 1.4; }
   .bubble {
     max-width: 88%;
     padding: 10px 14px;
@@ -449,19 +467,78 @@
     width: 100%;
     min-width: 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
   }
-  .chat-cards {
-    display: grid;
+  .assistant-turn > :global(.eno-thinking) { margin-top: 2px; }
+  .assistant-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .chat-followups-row {
+    display: flex;
+    align-items: flex-start;
     gap: 10px;
     width: 100%;
     min-width: 0;
-    max-width: 100%;
-    margin-top: 8px;
+  }
+  .chat-followups-spacer {
+    flex: none;
+    width: 40px;
+  }
+  .chat-followups {
+    flex: 1;
+    min-width: 0;
+    max-width: 88%;
+    margin-top: 0;
   }
   .status-line { color: var(--muted); font-size: 14px; }
-  .thinking-row { display: flex; align-items: center; gap: 10px; }
-  .thinking-row .status-line { margin: 0; }
+  .thinking-row { display: flex; align-items: flex-start; gap: 10px; }
+  .thinking-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: var(--muted);
+  }
+  .step.current { color: var(--ink); font-weight: 600; }
+  .step-check { width: 13px; height: 13px; flex: none; color: var(--link); }
+  .step-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--link);
+    flex: none;
+    animation: step-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes step-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: scale(0.85);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .step-dot { animation: none; }
+  }
   .richtext { line-height: 1.5; }
   .richtext :global(p) { margin: 0 0 8px; }
   .richtext :global(p:last-child) { margin-bottom: 0; }

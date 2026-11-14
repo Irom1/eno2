@@ -35,7 +35,6 @@
 
 <ChatCardShell
   title={title}
-  badge={!single && all.length ? `${all.length}` : undefined}
 >
   {#if items.length === 0}
     <p class="empty">No {single ? 'transaction' : kind === 'deposit' ? 'deposits' : 'withdrawals'} to show.</p>

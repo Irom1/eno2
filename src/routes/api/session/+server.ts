@@ -93,7 +93,8 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
 
 export async function GET({ cookies }: RequestEvent): Promise<Response> {
   const session = getSession(cookies.get(SESSION_COOKIE));
-  if (!session) return json({ error: 'No active session' }, { status: 401 });
+  // Discovering the current visitor is valid before a demo customer is chosen.
+  if (!session) return json({ customer: null, accounts: [] });
   return json(publicSession(session));
 }
 

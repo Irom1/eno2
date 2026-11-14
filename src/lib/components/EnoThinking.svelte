@@ -1,10 +1,5 @@
 <script lang="ts">
-  import {
-    ENO_FRAMES,
-    enoSrc,
-    nextEnoFrame,
-    type EnoVariant
-  } from '$lib/eno.js';
+  import { enoSrc, type EnoVariant } from '$lib/eno.js';
 
   interface Props {
     active?: boolean;
@@ -14,43 +9,15 @@
 
   let { active = false, variant = 'light', size = 40 }: Props = $props();
 
-  let frame = $state(0);
-  let reducedMotion = $state(false);
-
-  // Client-only: track the user's motion preference, including live changes.
+  // Preload both logos once on mount so theme switches never flash a blank
+  // image while the new source decodes.
   $effect(() => {
     if (typeof window === 'undefined') return;
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    reducedMotion = query.matches;
-    const onChange = (event: MediaQueryListEvent): void => {
-      reducedMotion = event.matches;
-    };
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  });
-
-  // Advance through the frames while thinking. The index is a local variable so
-  // writing `frame` never re-triggers this effect.
-  $effect(() => {
-    if (!active || reducedMotion) {
-      frame = 0;
-      return;
+    const variants: EnoVariant[] = ['light', 'dark'];
+    for (const name of variants) {
+      const preload = new Image();
+      preload.src = enoSrc(name);
     }
-
-    let index = 0;
-    let timer: ReturnType<typeof setTimeout>;
-    frame = index;
-
-    const schedule = (): void => {
-      timer = setTimeout(() => {
-        index = nextEnoFrame(index);
-        frame = index;
-        schedule();
-      }, ENO_FRAMES[index].duration);
-    };
-    schedule();
-
-    return () => clearTimeout(timer);
   });
 </script>
 
@@ -62,58 +29,46 @@
   style:width="{size}px"
   style:height="{size}px"
 >
-  {#each ENO_FRAMES as item, index (item.pose)}
-    <img
-      src={enoSrc(variant, item.pose)}
-      alt=""
-      width={size}
-      height={size}
-      draggable="false"
-      decoding="async"
-      data-frame={index}
-      data-pose={item.pose}
-      data-visible={index === frame ? 'true' : 'false'}
-    />
-  {/each}
+  <img
+    src={enoSrc(variant)}
+    alt=""
+    width={size}
+    height={size}
+    loading="eager"
+    decoding="async"
+    draggable="false"
+  />
 </div>
 
 <style>
   .eno-thinking {
-    position: relative;
     display: inline-block;
     flex: none;
     vertical-align: middle;
   }
-  .eno-thinking.thinking {
-    animation: eno-bob 1.6s ease-in-out infinite;
-  }
   .eno-thinking img {
-    position: absolute;
-    inset: 0;
+    display: block;
     width: 100%;
     height: 100%;
     object-fit: contain;
-    opacity: 0;
-    transition: opacity 80ms linear;
   }
-  .eno-thinking img[data-visible='true'] {
-    opacity: 1;
+  .eno-thinking.thinking img {
+    animation: eno-pulse 1.8s ease-in-out infinite;
+    transform-origin: 50% 60%;
   }
-  @keyframes eno-bob {
+  @keyframes eno-pulse {
     0%,
     100% {
-      transform: translateY(0);
+      transform: translateY(0) scale(1);
     }
     50% {
-      transform: translateY(-2px);
+      transform: translateY(-2px) scale(1.03);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .eno-thinking.thinking {
+    .eno-thinking.thinking img {
       animation: none;
-    }
-    .eno-thinking img {
-      transition: none;
+      transform: none;
     }
   }
 </style>

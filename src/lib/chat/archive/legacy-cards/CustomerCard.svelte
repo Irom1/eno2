@@ -32,7 +32,6 @@
 
 <ChatCardShell
   title={items.length > 1 ? 'Account holders' : 'Account holder'}
-  badge={items.length > 1 ? `${items.length}` : undefined}
 >
   {#if items.length === 0}
     <p class="empty">No account holder details to show.</p>
