@@ -95,7 +95,8 @@ Buffering details:
 | `src/routes/[view=wallet]/inline-cards/BillCard.svelte` | `card: BillEntityCard` | Shipped | One bill: payee, due date, amount, status chip. Optional deep link to the owning account. No coverage, total, or recommendation text. |
 | `src/routes/[view=wallet]/inline-cards/AccountCard.svelte` | `card: AccountEntityCard` | Shipped | One account: nickname, type, masked number, balance, rewards when positive. Whole card deep-links to the account view. Never an account list. |
 | `src/routes/[view=wallet]/inline-cards/LoanCard.svelte` | `card: LoanEntityCard` | Shipped | One loan: type/description, balance, monthly payment, factual status chip. Optional deep link to the owning account. No credit score, title, or recommendation text. |
-| `src/routes/[view=wallet]/inline-cards/LocationCard.svelte` | `card: LocationEntityCard` | Shipped | One ATM or branch: name, address when present, hours when present. No distance (not in the data) and no deep link. |
+| `src/routes/[view=wallet]/inline-cards/LocationCard.svelte` | `card: LocationEntityCard` | Shipped | One branch: name, address, hours when present. `.location-card`. No distance (not in the data) and no deep link. |
+| `src/routes/[view=wallet]/inline-cards/AtmLocatorCard.svelte` | `card: LocationEntityCard` (ATM subtype) | Shipped | ATM only: name and hours plus a Mapbox Static Images preview from the server proxy (`/api/mapbox/static`). `.atm-locator-card`. If the image fails, it is hidden and a muted “Map preview unavailable” fallback is shown; name/hours remain. No token is ever sent to the client. |
 | `src/routes/[view=wallet]/inline-cards/RecurringChargeCard.svelte` | `card: RecurringChargeEntityCard` | Shipped | One recurring charge: description, average amount, months seen, last date. No cadence or next date (not in the data) and no subscription/cancel copy. |
 | `src/routes/[view=wallet]/inline-cards/EntityKeyValue.svelte` | `label: string`, `value: string` | Shipped | One compact label/value row; theme-aware, tabular value, no editorial styling. |
 | `src/routes/[view=wallet]/inline-cards/RewardCard.svelte` | `card: RewardEntityCard` | Shipped | One reward balance: label and `points.toLocaleString()` plus “pts”. Optional account deep link. No invented dollar value. |
@@ -103,7 +104,7 @@ Buffering details:
 | `src/routes/[view=wallet]/inline-cards/CashflowPointCard.svelte` | `card: CashflowPointEntityCard` | Shipped | One month: `EntityKeyValue` rows for period, inflow, outflow, and signed net. No interpretation. |
 | `src/routes/[view=wallet]/inline-cards/MerchantCard.svelte` | `card: MerchantEntityCard` | Shipped | One merchant: name, title-cased category when present, address when present. No amount, count, recommendation, or link. |
 | `src/routes/[view=wallet]/inline-cards/ProfileCard.svelte` | `card: ProfileEntityCard` | Shipped | One customer: initials avatar, name, and city/state when present. No street, zip, contact, or identifier fields; no action copy. |
-| `src/routes/[view=wallet]/inline-cards/ChatCardView.svelte` | `card: EntityCard`, `inline?: boolean` | Shipped | Shared card switch: routes each `kind` to its component and passes the inline flag to `TransactionCard`. Non-transaction inline styling comes from the bubble-scoped CSS. |
+| `src/routes/[view=wallet]/inline-cards/ChatCardView.svelte` | `card: EntityCard`, `inline?: boolean` | Shipped | Shared card switch: routes each `kind` to its component (ATM locations to `AtmLocatorCard`, branches to `LocationCard`) and passes the inline flag to `TransactionCard`. Non-transaction inline styling comes from the bubble-scoped CSS. |
 | `src/routes/[view=wallet]/ChatPanel.svelte` | `open`, `customerId`, `initialPrompt`, `onClose`, `canSend`, `variant` | Shipped | Bubbles, streaming text, grouped inline/standalone cards, thinking checklist, loading line, follow-ups, send/abort lifecycle. |
 | `src/lib/chat/thinking.ts` | `initialThinking`, `pushThinkingStep`, `friendlyToolLabel`, `THINKING_COMPOSING` | Shipped | Pure, non-technical thinking-step state machine. |
 | `src/lib/components/EnoThinking.svelte` | `active?: boolean`, `variant?: EnoVariant`, `size?: number` | Shipped | Eno avatar; pulses while active. |
@@ -114,6 +115,8 @@ Buffering details:
 | `src/lib/chat/entityCards.ts` | types plus `anomalyTransactionCards`, `transactionListCard`, `mergeTransactionListCard`, `spendingPieCard`, `billCard`, `accountCard`, `loanCard`, `locationCard`, `recurringCard`, `rewardCard`, `goalCard`, `cashflowCard`, `merchantCard`, `profileCard`, `anchorEntityCards`, `mergeEntityCards`, `transactionHref`, `accountHref` | Shipped | Pure, client-safe normalization and placement helpers. |
 
 Avatar/layout note: the assistant turn uses `EnoThinking` to the left of `.assistant-content`, aligned to the **bottom** of the message (not the top); the flex row and 10px gap are unchanged, and the avatar keeps its pulse/active state, size, and theme variant. Single-entity cards render inside the assistant prose bubble, so their width is capped by the bubble; the bubble-scoped rule removes the standalone lift shadow and keeps the 1px border with no accent. Standalone cards are siblings in the content column, left-aligned and capped at the bubble max width (88% of the column); `CardFrame` provides surface, border, and lift shadow with no accent strip. The pie and list cards are intentionally standalone `CardFrame` cards, never pulled into the prose bubble.
+
+ATM map note: `find_nearby_atms` results carry geocoded `lat`/`lng` and no street address, so ATMs render `AtmLocatorCard` (name, hours, and a map preview) while branches keep `LocationCard` (name, address, hours). The map `<img>` points at `/api/mapbox/static?lat=…&lng=…&zoom=15`, a server-side Mapbox Static Images proxy. It requires a server-only `MAPBOX_TOKEN` (Wrangler secret or local private env; never committed, never in the client, DOM, or error responses). With no token the proxy returns 404 and the card shows the muted “Map preview unavailable” fallback; invalid coordinates return 400, and upstream failures return 502.
 
 ## 5. Card catalog
 
@@ -126,7 +129,8 @@ Avatar/layout note: the assistant turn uses `EnoThinking` to the left of `.assis
 | `AccountCard` | `account` | `accountId`, `nickname`, `type`, `maskedNumber`, `balance` (nullable), `rewards` (nullable), `customerId?` | Account tools | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/AccountCard.svelte`; `accountCard` | Exactly one account. `asItems` must yield one row; zero or many returns null so prose answers. Whole card deep-links. |
 | `LoanCard` | `loan` | `loanId`, `type`, `balance` (nullable), `monthlyPayment` (nullable), `status?`, `accountId?`, `customerId?` | `nessie_list_account_loans` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/LoanCard.svelte`; `loanCard` | One loan: the largest balance, with type/description breaking ties. Optional account link. No credit score or recommendation. |
 | `SpendingCategoryCard` | `category` | `name`, `amount`, `share`, `period` | Spending breakdown | Standalone | Planned; represented by the pie | `spendingPieCard` | The old single-category card is superseded by the primitive pie (period + category shares). A “top category” claim belongs in prose. |
-| `LocationCard` | `location` | `locationId`, `name`, `address`, `hours?`, `customerId?` | `find_nearby_atms`, `find_nearby_branches` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/LocationCard.svelte`; `locationCard` | One ATM or branch: the first result. Branch addresses are composed from street/city/state/zip; ATMs have no street address, so `address` is empty. No distance. |
+| `LocationCard` | `location` (branch subtype) | `locationId`, `name`, `address`, `hours?`, `type: 'branch'`, `lat?`, `lng?`, `customerId?` | `find_nearby_branches` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/LocationCard.svelte`; `locationCard` | One branch: the first result. Addresses are composed from street/city/state/zip. No distance. |
+| `AtmLocatorCard` | `location` (ATM subtype) | `locationId`, `name`, `address` (empty), `hours?`, `type: 'atm'`, `lat?`, `lng?`, `customerId?` | `find_nearby_atms` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/AtmLocatorCard.svelte`; `locationCard` | One ATM: the first result, name/hours plus a server-proxied Mapbox preview. No street address or distance. Image failure shows “Map preview unavailable”; the rest of the card remains. Requires server `MAPBOX_TOKEN`. |
 | `RecurringChargeCard` | `recurring` | `chargeId`, `description`, `averageAmount` (nullable), `monthsSeen`, `lastDate`, `customerId?` | `insight_recurring_charges` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/RecurringChargeCard.svelte`; `recurringCard` | One charge: the largest average amount. `chargeId` is `description|amount` (the source has no id). No cadence or next date, because the source has none. |
 | `RewardCard` | `reward` | `rewardId`, `label`, `points`, `accountId?`, `customerId?` | `nessie_list_customer_accounts` accounts list; `insight_financial_overview` total | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/RewardCard.svelte`; `rewardCard` | One reward: the highest `rewards > 0` on a credit account, labelled by nickname (or type), else the positive overview `totalRewards` as “Total rewards”. No invented dollar value. Optional account link. |
 | `GoalCard` | `goal` | `goalId`, `accountId?`, `target`, `current`, `monthsToTarget`, `projectedDate?`, `customerId?` | `insight_goal_projection` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/GoalCard.svelte`; `goalCard` | One goal: target, current balance, months to target when finite, and a projected date when `asOf` parses. No on-track, progress narrative, or advice copy. Optional account link. |
@@ -277,7 +281,7 @@ E2E (`e2e/chat.spec.ts`, Playwright; current policy forbids running it):
 - Bill prompts render one `.bill-card` with payee, amount, due date, and status, and no legacy `.chat-card`.
 - Account-list prompts render no account list; a single-account payload renders `.account-card` with a deep link.
 - Loan prompts render one `.loan-card` (type, balance, payment, status) and no legacy `.chat-card`.
-- ATM/branch prompts render one `.location-card` with a name and, for branches, an address; no distance copy.
+- ATM prompts render one `.atm-locator-card` with a name, hours, and either a `/api/mapbox/static?lat=…&lng=…` image or the “Map preview unavailable” fallback; no distance copy and no token in the DOM. Branch prompts render one `.location-card` with a name and an address.
 - Recurring prompts render one `.recurring-card` with description, average amount, months seen, and last date; no cadence or next-date copy.
 - Rewards prompts render one `.reward-card` with a label and points; no invented dollar value and no legacy `.chat-card`.
 - Goal prompts render one `.goal-card` with target/current/months/projected date; no on-track or advice copy.
@@ -380,10 +384,13 @@ Server:
 - `src/lib/server/presentCard.test.ts`
 - `src/lib/server/cardsMode.ts`
 - `src/lib/server/env.ts`
+- `src/lib/server/mapbox.ts`
+- `src/lib/server/mapbox.test.ts`
 - `src/lib/server/mockAgent.ts`
 - `src/lib/server/toolBridge.ts`
 - `src/lib/server/nessie/tools/insights.ts`
 - `src/routes/api/chat/+server.ts`
+- `src/routes/api/mapbox/static/+server.ts`
 
 Archived (do not use):
 

@@ -1790,21 +1790,39 @@ test.describe('chat prompts', () => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Find an ATM near Arlington');
 
-    const card = page.locator('.location-card');
+    const card = page.locator('.atm-locator-card');
     await expect(card).toHaveCount(1);
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute('data-kind', 'location');
+
+    await expect(card.locator('.name')).toContainText('Arlington');
+    await expect(card.locator('.hours')).not.toBeEmpty();
 
     const text = await card.innerText();
     expect(text).toContain('Arlington');
     // Primitive: no distance, recommendation, or directions copy.
     expect(text.toLowerCase()).not.toMatch(/miles|distance|recommend|tip:|directions/);
 
+    // The map is a server proxy: the image src carries lat/lng but never a token.
+    const map = card.locator('img.atm-map');
+    if ((await map.count()) > 0) {
+      const src = await map.getAttribute('src');
+      expect(src).toMatch(/^\/api\/mapbox\/static\?/);
+      expect(src).toMatch(/lat=-?\d+(?:\.\d+)?/);
+      expect(src).toMatch(/lng=-?\d+(?:\.\d+)?/);
+      expect(src?.toLowerCase()).not.toContain('access_token');
+    } else {
+      await expect(card.locator('.map-fallback')).toHaveText(
+        'Map preview unavailable'
+      );
+    }
+    expect(await card.innerHTML()).not.toContain('access_token');
+
     await expect(page.locator('.chat-card')).toHaveCount(0);
-    await expect(page.locator('.entity-card .location-card')).toHaveCount(1);
+    await expect(page.locator('.entity-card .atm-locator-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the location card renders inline inside the prose bubble'
+      'the ATM locator card renders inline inside the prose bubble'
     ).toBe(true);
 
     await expectCardStyle(page);

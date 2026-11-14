@@ -120,6 +120,27 @@ function isCardKind(value: string): value is CardKind {
   return CARD_KINDS.has(value);
 }
 
+/**
+ * ATM records carry geocoded lat/lng and no street address; branch records
+ * carry a street address. Keep the distinction explicit for the card renderer.
+ */
+function locationTypeOf(
+  record: Record<string, unknown>
+): 'atm' | 'branch' | undefined {
+  const address = isRecord(record.address) ? record.address : null;
+  const hasAddress = Boolean(
+    address &&
+      (str(address.street) ||
+        str(address.city) ||
+        str(address.state) ||
+        str(address.zip))
+  );
+  if (hasAddress) return 'branch';
+  const lat = finiteOrNull(record.lat);
+  const lng = finiteOrNull(record.lng);
+  return lat !== null && lng !== null ? 'atm' : undefined;
+}
+
 function billRecord(row: Record<string, unknown>, id: string, accountId: string): Record<string, unknown> {
   return {
     ...row,
@@ -295,7 +316,10 @@ function normalize(
     case 'merchant':
       return merchantCard({ items: [candidate.record] }, 0, 1, { customerId });
     case 'location':
-      return locationCard({ results: [candidate.record] }, 0, 1, { customerId });
+      return locationCard({ results: [candidate.record] }, 0, 1, {
+        customerId,
+        type: locationTypeOf(candidate.record)
+      });
     case 'profile':
       return profileCard({ items: [candidate.record] }, 0, 1);
     default:

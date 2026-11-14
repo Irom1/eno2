@@ -126,6 +126,10 @@ export interface LocationCardPayload {
   name: string;
   address: string;
   hours?: string;
+  /** ATM results are maps-first; branches carry a street address. */
+  type?: 'atm' | 'branch';
+  lat?: number;
+  lng?: number;
   customerId?: string;
 }
 
@@ -964,6 +968,26 @@ function locationHours(value: unknown): string | undefined {
   return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
+/** Parse a finite, in-range coordinate pair; both values or nothing. */
+function locationCoordinates(
+  latValue: unknown,
+  lngValue: unknown
+): { lat: number; lng: number } | null {
+  const lat = finiteNumberOrNull(latValue);
+  const lng = finiteNumberOrNull(lngValue);
+  if (
+    lat === null ||
+    lng === null ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
+    return null;
+  }
+  return { lat, lng };
+}
+
 /**
  * Build one primitive location card from an ATM/branch payload. The first
  * whitelisted result is shown; ATMs carry no street address, so `address`
@@ -973,7 +997,7 @@ export function locationCard(
   payload: unknown,
   afterText: number,
   startId: number,
-  context?: { customerId?: string }
+  context?: { customerId?: string; type?: 'atm' | 'branch' }
 ): LocationEntityCard | null {
   try {
     const items = asItems(payload);
@@ -988,12 +1012,18 @@ export function locationCard(
       if (!locationId || !name) continue;
 
       const hours = locationHours(item.hours);
+      const address = locationAddress(item.address);
+      const coords = locationCoordinates(item.lat, item.lng);
+      const type =
+        context?.type ?? (address ? 'branch' : coords ? 'atm' : undefined);
       const customerId = optionalTrimmed(context?.customerId);
       const payloadOut: LocationCardPayload = {
         locationId,
         name,
-        address: locationAddress(item.address),
+        address,
         ...(hours ? { hours } : {}),
+        ...(type ? { type } : {}),
+        ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
         ...(customerId ? { customerId } : {})
       };
 

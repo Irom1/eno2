@@ -1296,21 +1296,77 @@ describe('locationCard', () => {
         name: 'Clarendon Branch',
         address: '2900 N Glebe Rd, Arlington, VA 22207',
         hours: 'MON-FRI 9:00-17:00, SAT 9:00-13:00',
+        type: 'branch',
+        lat: 38.9,
+        lng: -77.1,
         customerId: 'cust-1'
       }
     });
-    expect(card!.payload).not.toHaveProperty('lat');
-    expect(card!.payload).not.toHaveProperty('lng');
+    expect(card?.payload.type).toBe('branch');
+    expect(card?.payload.address).toContain('2900 N Glebe Rd');
   });
 
   it('keeps an ATM address empty rather than inventing one', () => {
     const card = locationCard(
-      { count: 1, results: [{ _id: 'atm-1', name: 'Arlington ATM', hours: '24 HOURS' }] },
+      {
+        count: 1,
+        results: [
+          {
+            _id: 'atm-1',
+            name: 'Arlington ATM',
+            hours: '24 HOURS',
+            lat: 38.88,
+            lng: -77.1
+          }
+        ]
+      },
       0,
-      1
+      1,
+      { type: 'atm' }
     );
     expect(card?.payload.address).toBe('');
     expect(card?.payload.hours).toBe('24 HOURS');
+    expect(card?.payload.type).toBe('atm');
+    expect(card?.payload.lat).toBe(38.88);
+    expect(card?.payload.lng).toBe(-77.1);
+    expect(card?.entityId).toBe('location:atm-1');
+  });
+
+  it('infers the ATM type from coordinates when no address is present', () => {
+    const card = locationCard(
+      { results: [{ _id: 'atm-2', name: 'No Address ATM', lat: 38.9, lng: -77.2 }] },
+      0,
+      1
+    );
+    expect(card?.payload.type).toBe('atm');
+    expect(card?.payload.lat).toBe(38.9);
+    expect(card?.payload.lng).toBe(-77.2);
+  });
+
+  it('omits malformed coordinates while keeping the card', () => {
+    const card = locationCard(
+      {
+        results: [
+          {
+            _id: 'atm-3',
+            name: 'Malformed Coords ATM',
+            lat: 'not-a-number',
+            lng: 500
+          }
+        ]
+      },
+      4,
+      2,
+      { type: 'atm' }
+    );
+    expect(card).toMatchObject({
+      id: 2,
+      afterText: 4,
+      kind: 'location',
+      payload: { locationId: 'atm-3', name: 'Malformed Coords ATM', type: 'atm' }
+    });
+    expect(card?.payload).not.toHaveProperty('lat');
+    expect(card?.payload).not.toHaveProperty('lng');
   });
 
   it('skips rows without an id or name and malformed payloads', () => {
