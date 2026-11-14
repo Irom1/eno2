@@ -314,3 +314,108 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 });
+
+test.describe('Eno mascot', () => {
+  test('Eno mascot renders and animates through wave, open, reach while thinking', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const emptyMascot = page.locator('.empty-state .eno-thinking');
+    await expect(emptyMascot).toBeVisible();
+    const emptyFrame = emptyMascot.locator('img[data-visible="true"]');
+    await expect(emptyFrame).toHaveAttribute('src', /\/eno\/eno-light-wave\.png$/);
+    await expect
+      .poll(
+        async () =>
+          emptyFrame.evaluate((img) => (img as HTMLImageElement).naturalWidth),
+        { timeout: 10_000 }
+      )
+      .toBe(1000);
+
+    // Slow the chat request enough for the pending mascot animation to run.
+    await page.route('**/api/chat', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.continue();
+    });
+
+    // Record the visible pose every time the thinking row or its layers change.
+    await page.evaluate(() => {
+      const target = window as unknown as { __enoFrames?: string[] };
+      target.__enoFrames = [];
+      const log = document.querySelector('.chat-log');
+      if (!log) return;
+      const record = (): void => {
+        const img = document.querySelector('.thinking-row img[data-visible="true"]');
+        const pose = img?.getAttribute('data-pose');
+        if (!pose) return;
+        const frames = target.__enoFrames!;
+        if (!frames.includes(pose)) frames.push(pose);
+      };
+      const observer = new MutationObserver(record);
+      observer.observe(log, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['data-visible']
+      });
+      record();
+    });
+
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await expect(composer).toBeVisible();
+    await composer.fill('Show me my loans');
+    const send = page.locator('button.send[aria-label="Ask"]');
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+
+    const chatResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/chat') && response.request().method() === 'POST',
+      { timeout: 55_000 }
+    );
+    await composer.press('Enter');
+
+    const thinkingRow = page.locator('.thinking-row');
+    await expect(thinkingRow).toBeVisible({ timeout: 20_000 });
+    await expect(thinkingRow.locator('.eno-thinking')).toBeVisible();
+
+    const response = await chatResponse;
+    expect(response.status(), 'chat request should succeed').toBeLessThan(400);
+    await response.finished().catch(() => undefined);
+    await waitForChatSettled(page);
+
+    const frames = await page.evaluate(
+      () => (window as unknown as { __enoFrames?: string[] }).__enoFrames ?? []
+    );
+    expect(frames.slice(0, 3), `recorded poses: ${JSON.stringify(frames)}`).toEqual([
+      'wave',
+      'open',
+      'reach'
+    ]);
+
+    await expect(thinkingRow).toHaveCount(0);
+    expectNoErrors(errors);
+  });
+
+  test('Eno mascot follows the active theme', async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto('/chat');
+
+    const headerMascot = page.locator('.chat-heading .eno-thinking');
+    await expect(headerMascot).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.chat-heading h2')).toHaveText('Eno 2.0');
+    await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
+
+    await page.locator('button[aria-label="Switch to dark mode"]').click();
+    await expect(page.locator('.dashboard')).toHaveAttribute('data-theme', 'dark');
+
+    await expect(headerMascot.locator('img[data-visible="true"]')).toHaveAttribute(
+      'src',
+      /\/eno\/eno-navy-wave\.png$/
+    );
+
+    expectNoErrors(errors);
+  });
+});
+
