@@ -38,20 +38,9 @@
   import { classifyIntents } from '$lib/chat/intents.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
+  import { groupInlineCards } from '$lib/chat/cardGroups.js';
   import FollowUps from './FollowUps.svelte';
-  import TransactionCard from './inline-cards/TransactionCard.svelte';
-  import TransactionListCard from './inline-cards/TransactionListCard.svelte';
-  import PieChartCard from './inline-cards/PieChartCard.svelte';
-  import BillCard from './inline-cards/BillCard.svelte';
-  import AccountCard from './inline-cards/AccountCard.svelte';
-  import LoanCard from './inline-cards/LoanCard.svelte';
-  import LocationCard from './inline-cards/LocationCard.svelte';
-  import RecurringChargeCard from './inline-cards/RecurringChargeCard.svelte';
-  import RewardCard from './inline-cards/RewardCard.svelte';
-  import GoalCard from './inline-cards/GoalCard.svelte';
-  import CashflowPointCard from './inline-cards/CashflowPointCard.svelte';
-  import MerchantCard from './inline-cards/MerchantCard.svelte';
-  import ProfileCard from './inline-cards/ProfileCard.svelte';
+  import ChatCardView from './inline-cards/ChatCardView.svelte';
 
   interface Props {
     open: boolean;
@@ -660,19 +649,9 @@
         {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [])}
         {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
         {@const blocks = inlineBlocks(message.text, readyCards)}
+        {@const groups = groupInlineCards(blocks)}
         {@const hasBlocks = blocks.length > 0}
         {@const isThinking = message.pending && !hasBlocks}
-        {@const inlineTransactionTurn =
-          hasBlocks &&
-          blocks.some(
-            (block) =>
-              block.type === 'cards' && block.cards.some((card) => card.kind === 'transaction')
-          ) &&
-          !blocks.some(
-            (block) =>
-              block.type === 'cards' &&
-              block.cards.some((card) => card.kind !== 'transaction')
-          )}
         {#if hasBlocks || message.pending}
           <div class="assistant-turn" class:intro={message.intro}>
             <EnoThinking {variant} active={message.pending} size={40} />
@@ -695,74 +674,30 @@
                   </div>
                 </div>
               {/if}
-              {#if inlineTransactionTurn}
-                <div class="bubble assistant inline-transactions">
-                  {#each blocks as block, index (block.type + index)}
-                    {#if block.type === 'text'}
-                      {#if block.text.trim()}
-                        <div class="richtext">{@html renderMarkdown(block.text)}</div>
-                      {/if}
-                    {:else}
-                      {#each block.cards as card (card.id)}
-                        {#if card.kind === 'transaction'}
-                          <TransactionCard {card} inline />
+              {#each groups as group}
+                {#if group.type === 'inline'}
+                  <div class="bubble assistant inline-entities">
+                    {#each group.blocks as block, blockIndex (blockIndex)}
+                      {#if block.type === 'text'}
+                        {#if block.text.trim()}
+                          <div class="richtext">{@html renderMarkdown(block.text)}</div>
                         {/if}
-                      {/each}
-                    {/if}
-                  {/each}
-                  {#if message.pending}
-                    <div class="loading-line status-line">
-                      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                      <span>{thinking.current || 'Still working…'}</span>
-                    </div>
-                  {/if}
-                </div>
-              {:else}
-                {#each blocks as block, index (block.type + index)}
-                  {#if block.type === 'text'}
-                    {#if block.text.trim()}
-                      <div class="bubble assistant">
-                        <div class="richtext">{@html renderMarkdown(block.text)}</div>
-                      </div>
-                    {/if}
-                  {:else}
-                    {#each block.cards as card (card.id)}
-                      {#if card.kind === 'transaction'}
-                        <TransactionCard {card} />
-                      {:else if card.kind === 'transaction-list'}
-                        <TransactionListCard {card} />
-                      {:else if card.kind === 'spending-pie'}
-                        <PieChartCard {card} />
-                      {:else if card.kind === 'bill'}
-                        <BillCard {card} />
-                      {:else if card.kind === 'account'}
-                        <AccountCard {card} />
-                      {:else if card.kind === 'loan'}
-                        <LoanCard {card} />
-                      {:else if card.kind === 'location'}
-                        <LocationCard {card} />
-                      {:else if card.kind === 'recurring'}
-                        <RecurringChargeCard {card} />
-                      {:else if card.kind === 'reward'}
-                        <RewardCard {card} />
-                      {:else if card.kind === 'goal'}
-                        <GoalCard {card} />
-                      {:else if card.kind === 'cashflow'}
-                        <CashflowPointCard {card} />
-                      {:else if card.kind === 'merchant'}
-                        <MerchantCard {card} />
-                      {:else if card.kind === 'profile'}
-                        <ProfileCard {card} />
+                      {:else}
+                        {#each block.cards as card (card.id)}
+                          <ChatCardView {card} inline />
+                        {/each}
                       {/if}
                     {/each}
-                  {/if}
-                {/each}
-                {#if message.pending && hasBlocks}
-                  <div class="loading-line status-line">
-                    <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                    <span>{thinking.current || 'Still working…'}</span>
                   </div>
+                {:else}
+                  <ChatCardView card={group.card} />
                 {/if}
+              {/each}
+              {#if message.pending && hasBlocks}
+                <div class="loading-line status-line">
+                  <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span>{thinking.current || 'Still working…'}</span>
+                </div>
               {/if}
               {#if message.intro && (booting || !ready)}
                 <p class="status-line intro-status">{status || 'Connecting…'}</p>
@@ -824,6 +759,20 @@
     background: var(--page);
     border: 1px solid var(--border);
     border-radius: 18px 18px 18px 4px;
+  }
+  /*
+   * Single-entity cards render inside the assistant bubble. CardFrame is owned
+   * by a child component, so restyle it globally within the bubble: same border,
+   * no lift shadow, no accent, and capped by the bubble width.
+   */
+  .bubble.assistant :global(.entity-card) {
+    width: 100%;
+    max-width: 100%;
+    margin: 6px 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    box-shadow: none;
   }
   .assistant-turn {
     align-self: flex-start;

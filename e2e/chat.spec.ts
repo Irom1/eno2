@@ -150,8 +150,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .loan-card')).toHaveCount(1);
     expect(
       await loan.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the loan card is standalone, not folded into the prose bubble'
-    ).toBe(false);
+      'the loan card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -210,8 +210,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .reward-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the reward card is standalone'
-    ).toBe(false);
+      'the reward card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -286,8 +286,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .merchant-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the merchant card is standalone'
-    ).toBe(false);
+      'the merchant card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -355,8 +355,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .profile-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the profile card is standalone'
-    ).toBe(false);
+      'the profile card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -423,8 +423,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .goal-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the goal card is standalone'
-    ).toBe(false);
+      'the goal card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -487,8 +487,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .cashflow-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the cashflow card is standalone'
-    ).toBe(false);
+      'the cashflow card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -1166,8 +1166,8 @@ test.describe('chat prompts', () => {
         .locator('.merchant-card')
         .first()
         .evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the buffered merchant card is standalone'
-    ).toBe(false);
+      'the buffered merchant card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await waitForChatSettled(page);
     await expect(turn.locator('.merchant-card')).toHaveCount(1);
@@ -1423,8 +1423,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .recurring-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the recurring card is standalone'
-    ).toBe(false);
+      'the recurring card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -1581,7 +1581,7 @@ test.describe('chat prompts', () => {
       'the buffered pie stays a standalone card'
     ).toBe(false);
     await expect(page.locator('.chat-card')).toHaveCount(0);
-    await expect(turn.locator('.bubble.assistant.inline-transactions')).toHaveCount(0);
+    await expect(turn.locator('.bubble.assistant .pie-chart-card')).toHaveCount(0);
 
     expectNoErrors(errors);
   });
@@ -1711,7 +1711,7 @@ test.describe('chat prompts', () => {
     expect(prose).toMatch(/duplicate|large|suspicious/i);
 
     const order = await page.locator('.assistant-turn').last().evaluate((turn) => {
-      const bubble = turn.querySelector('.bubble.assistant.inline-transactions');
+      const bubble = turn.querySelector('.bubble.assistant.inline-entities');
       const content = bubble ?? turn.querySelector('.assistant-content');
       if (!content) return [];
       return Array.from(content.children).flatMap((child) => {
@@ -1756,8 +1756,8 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .location-card')).toHaveCount(1);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the location card is standalone'
-    ).toBe(false);
+      'the location card renders inline inside the prose bubble'
+    ).toBe(true);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -2114,7 +2114,7 @@ test.describe('Eno mascot', () => {
           accentContent: accent.content
         };
       });
-    expect(surface.shadow, 'dark cards should still lift').not.toBe('none');
+    expect(surface.shadow, 'inline cards lose the standalone lift').toBe('none');
     expect(surface.borderTopWidth).toBeGreaterThanOrEqual(1);
     expect(['none', 'normal'], 'no ::before accent bar').toContain(surface.accentContent);
 
@@ -2226,8 +2226,8 @@ test.describe('primitive bill and account cards', () => {
     await expect(page.locator('.entity-card .bill-card')).toHaveCount(1);
     expect(
       await bill.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the bill card is standalone, not folded into the prose bubble'
-    ).toBe(false);
+      'the bill card renders inline inside the prose bubble'
+    ).toBe(true);
 
     // It deep-links to the owning account when the ids are present.
     const link = bill.locator('a.bill-link');
@@ -2358,8 +2358,8 @@ test.describe('primitive bill and account cards', () => {
     await expect(card.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the account card is standalone'
-    ).toBe(false);
+      'the account card renders inline inside the prose bubble'
+    ).toBe(true);
 
     const link = card.locator('a.account-link');
     await expect(link).toHaveCount(1);
