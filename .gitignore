@@ -16,6 +16,12 @@ build/
 .env.*
 !.env.example
 
+# Test reports and Playwright artifacts
+test-results/
+e2e-report/
+playwright-report/
+blob-report/
+
 # Local logs and OS metadata
 *.log
 .DS_Store

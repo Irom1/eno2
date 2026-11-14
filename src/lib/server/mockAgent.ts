@@ -82,16 +82,40 @@ export function routeIntent(message: string): {
       args: (session) => ({ customerId: session.customer.id, days: 30 })
     };
   }
-  if (/\bspend|where|money|categor/.test(text)) {
+  if (/\brecurring\b|\bsubscription/.test(text)) {
     return {
-      tool: "insight_spending_breakdown",
-      args: (session) => ({ accountId: checkingAccountId(session), months: 3 })
+      tool: "insight_recurring_charges",
+      args: (session) => ({ accountId: checkingAccountId(session) })
+    };
+  }
+  if (/\bloans?\b|\bmortgage\b|\bdebt\b/.test(text)) {
+    return {
+      tool: "nessie_list_account_loans",
+      args: (session) => ({ accountId: checkingAccountId(session) })
     };
   }
   if (/\bweird|anomal|duplicate|charge/.test(text)) {
     return {
       tool: "insight_anomalies",
       args: (session) => ({ accountId: checkingAccountId(session) })
+    };
+  }
+  if (/\btransaction|\bactivity\b|\bpurchases?\b|\bdeposits?\b|\bwithdrawals?\b|\bhistory\b/.test(text)) {
+    return {
+      tool: "nessie_list_account_withdrawals",
+      args: (session) => ({ accountId: checkingAccountId(session) })
+    };
+  }
+  if (/\brewards?\b|\bpoints\b|\bcash ?back\b|\bmiles\b/.test(text)) {
+    return {
+      tool: "nessie_list_customer_accounts",
+      args: (session) => ({ customerId: session.customer.id })
+    };
+  }
+  if (/\bspend|where|money|categor/.test(text)) {
+    return {
+      tool: "insight_spending_breakdown",
+      args: (session) => ({ accountId: checkingAccountId(session), months: 3 })
     };
   }
   if (/\batm|near\b/.test(text)) {
@@ -248,6 +272,52 @@ function branchAnswer(data: unknown, location: string): string {
   }. Branch data covers the DC metro area, so it may not reflect your own location.`;
 }
 
+function loansAnswer(data: unknown): string {
+  const payload = rec(data);
+  const loans = Array.isArray(payload.items) ? payload.items.map(rec) : [];
+  if (loans.length === 0) {
+    return "I don't see any active loans on this account.";
+  }
+  const total = loans.reduce((sum, loan) => sum + num(loan.amount), 0);
+  const monthly = loans.reduce((sum, loan) => sum + num(loan.monthlyPayment), 0);
+  const names = loans
+    .map((loan) => String(loan.type ?? loan.description ?? "Loan"))
+    .join(", ");
+  return `You have ${loans.length} loans: ${names}. Their balances total ${money(
+    total
+  )}, with ${money(monthly)} due monthly.`;
+}
+
+function transactionsAnswer(data: unknown): string {
+  const payload = rec(data);
+  const rows = Array.isArray(payload.items) ? payload.items.map(rec) : [];
+  if (rows.length === 0) {
+    return "I couldn't find any recent transactions on this account.";
+  }
+  const total = rows.reduce((sum, row) => sum + num(row.amount), 0);
+  return `Here are the ${rows.length} most recent transactions, totaling ${money(
+    total
+  )}. The latest is ${String(rows[0]?.description ?? "a transaction")}.`;
+}
+
+function accountsAnswer(data: unknown): string {
+  const payload = rec(data);
+  const accounts = Array.isArray(payload.items) ? payload.items.map(rec) : [];
+  if (accounts.length === 0) {
+    return "I couldn't find any accounts for this customer.";
+  }
+  const names = accounts
+    .map((account) => String(account.nickname ?? account.type ?? "Account"))
+    .join(", ");
+  const credit = accounts.find((account) =>
+    String(account.type ?? "").toLowerCase().includes("credit")
+  );
+  const rewardsLine = credit
+    ? ` Your ${String(credit.nickname ?? "credit")} card is where credit-card rewards accrue.`
+    : "";
+  return `You have ${accounts.length} accounts: ${names}.${rewardsLine}`;
+}
+
 function composeAnswer(name: string, data: unknown, now: Date, message: string): string {
   switch (name) {
     case "insight_upcoming_bills":
@@ -256,6 +326,13 @@ function composeAnswer(name: string, data: unknown, now: Date, message: string):
       return spendingAnswer(data, now);
     case "insight_anomalies":
       return anomaliesAnswer(data);
+    case "nessie_list_account_loans":
+      return loansAnswer(data);
+    case "nessie_list_account_deposits":
+    case "nessie_list_account_withdrawals":
+      return transactionsAnswer(data);
+    case "nessie_list_customer_accounts":
+      return accountsAnswer(data);
     case "find_nearby_atms":
       return atmAnswer(data, extractLocation(message, "Arlington"));
     case "find_nearby_branches":

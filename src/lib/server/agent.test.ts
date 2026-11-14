@@ -142,6 +142,84 @@ describe("agent loop", () => {
     expect(modelTurn?.parts[0]?.thoughtSignature).toBe("sig-1");
   });
 
+  it("emits an insight event for a raw nessie tool payload", async () => {
+    let streamCalls = 0;
+    const { session, events, emit } = capture();
+    const loansPayload = {
+      count: 1,
+      truncated: false,
+      items: [
+        {
+          _id: "loan-1",
+          type: "Auto",
+          status: "active",
+          monthlyPayment: 412,
+          amount: 18400,
+          creditScore: 721
+        }
+      ]
+    };
+
+    const rounds: RoundResult[] = [
+      {
+        text: "",
+        parts: [
+          {
+            functionCall: { name: "nessie_list_account_loans", args: { accountId: "acct-1" } },
+            thoughtSignature: "sig-loan"
+          }
+        ],
+        functionCalls: [{ name: "nessie_list_account_loans", args: { accountId: "acct-1" } }]
+      },
+      {
+        text: "You have one auto loan.",
+        parts: [{ text: "You have one auto loan." }],
+        functionCalls: []
+      }
+    ];
+
+    const callTool = vi.fn(async () => ({
+      ok: true,
+      data: loansPayload,
+      text: JSON.stringify(loansPayload)
+    }));
+
+    await runGeminiAgent({
+      session,
+      message: "Show me my loans",
+      emit,
+      runtime,
+      mcp,
+      deps: baseDeps({
+        stream: async (params) => {
+          const round = rounds[streamCalls++] as RoundResult;
+          if (round.text) params.onText(round.text);
+          return round;
+        },
+        callTool,
+        now: () => 1_000_000
+      })
+    });
+
+    const insight = events.find(
+      (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
+    );
+    expect(insight).toMatchObject({
+      type: "insight",
+      kind: "nessie_list_account_loans",
+      payload: loansPayload
+    });
+    expect(events.map((event) => event.type)).toEqual([
+      "tool_start",
+      "tool_result",
+      "insight",
+      "text",
+      "usage",
+      "done"
+    ]);
+    expect(events[events.length - 1]?.type).toBe("done");
+  });
+
   it("rejects a tool call outside the session allowlist without calling MCP", async () => {
     let streamCalls = 0;
     const { session, events, emit } = capture();

@@ -33,7 +33,19 @@ describe("buildSystemInstruction", () => {
     expect(instruction).toContain(
       "Do not call raw nessie_list_account_* tools unless the customer asks about individual transactions; the insight tools are the source of truth."
     );
+    expect(instruction).toContain(
+      'For a specific topic (loans, transactions, rewards, bills, recurring, spending, locations), call the specific tool directly. Do not call insight_financial_overview as a preamble or to look up ids unless the user asks for an overview/snapshot or cross-account context is required. Do not query every account for a single-account question. Use the fewest tools needed.'
+    );
     expect(instruction).toContain("Avoid markdown headings (#)");
+    expect(instruction).toContain(
+      'Cards already show account names, balances, amounts, dates, statuses, and rows. Do NOT restate any value, name, date, or row visible in a card.'
+    );
+    expect(instruction).toContain(
+      'Bad: "Your Venture card has a $50 balance." (the card shows both)'
+    );
+    expect(instruction).toContain(
+      'Good: "This is your only card." / "You\'re close to your next reward."'
+    );
     expect(instruction).toContain("Capital One's virtual assistant");
     expect(instruction).toContain("Use the category breakdown as returned.");
     expect(instruction).toContain(

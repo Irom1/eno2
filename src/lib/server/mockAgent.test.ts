@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "./events";
 import type { ToolCallResult } from "./mcp";
-import { mockAgent, type MockAgentDeps } from "./mockAgent";
+import { mockAgent, routeIntent, type MockAgentDeps } from "./mockAgent";
 import { createSession } from "./session";
 
 const customer = { id: "cust-1", firstName: "Maya", lastName: "Chen" };
@@ -164,5 +164,36 @@ describe("mockAgent", () => {
     expect(toolResult).toMatchObject({ type: "tool_result", ok: false });
     expect(text).toContain("couldn't read that data");
     expect(events[events.length - 1]?.type).toBe("done");
+  });
+
+  it("routes topic questions to the grounded tool for that topic", () => {
+    expect(routeIntent("Show me my loans").tool).toBe("nessie_list_account_loans");
+    expect(routeIntent("Show me my recent transactions").tool).toBe(
+      "nessie_list_account_withdrawals"
+    );
+    expect(routeIntent("Show me my recurring payments").tool).toBe("insight_recurring_charges");
+    expect(routeIntent("Show me my credit card rewards").tool).toBe(
+      "nessie_list_customer_accounts"
+    );
+    expect(routeIntent("Anything weird in my transactions?").tool).toBe("insight_anomalies");
+  });
+
+  it("composes a loans answer from live loan rows", async () => {
+    const { text } = await run("Show me my loans", async (name) => {
+      expect(name).toBe("nessie_list_account_loans");
+      return ok({
+        count: 2,
+        items: [
+          { type: "Auto Loan", amount: 18500, monthlyPayment: 412 },
+          { type: "Student Loan", amount: 12400, monthlyPayment: 180 }
+        ]
+      });
+    });
+
+    expect(text).toContain("Auto Loan");
+    expect(text).toContain("Student Loan");
+    expect(text).toContain("$30,900");
+    expect(text).toContain("$592");
+    expect(text).not.toMatch(/No loans/i);
   });
 });

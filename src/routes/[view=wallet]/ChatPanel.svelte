@@ -2,45 +2,58 @@
   import { tick } from 'svelte';
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
+  import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
+  import { filterCardDuplication } from '$lib/chat/dedupe.js';
+  import { followUpsFor } from '$lib/chat/followUps.js';
+  import { allowedKindsFor, classifyIntents, visibleCards } from '$lib/chat/relevance.js';
+  import ChatCardRenderer from './chat-cards/ChatCardRenderer.svelte';
+  import FollowUps from './FollowUps.svelte';
 
   interface Props {
     open: boolean;
+    customerId: string;
     initialPrompt: { text: string; id: number } | null;
     onClose: () => void;
     canSend: boolean;
     hasMessages: boolean;
   }
 
-  interface Customer {
-    id: string;
-    firstName: string;
-    lastName: string;
-  }
-
   interface ChatMessage {
     id: number;
     role: 'user' | 'assistant';
     text: string;
+    prompt?: string;
     pending?: boolean;
+    cards?: ChatCard[];
   }
 
-  let { open, initialPrompt, onClose, canSend = $bindable(), hasMessages = $bindable() }: Props = $props();
+  let {
+    open,
+    customerId,
+    initialPrompt,
+    onClose,
+    canSend = $bindable(),
+    hasMessages = $bindable()
+  }: Props = $props();
 
-  let customers = $state<Customer[]>([]);
-  let customerId = $state('');
   let ready = $state(false);
   let booting = $state(false);
   let bootPromise: Promise<boolean> | null = null;
+  let bootTarget = '';
+  let sessionCustomerId = $state('');
   let messages = $state<ChatMessage[]>([]);
   let streaming = $state(false);
   let status = $state('');
   let messageSeq = 0;
   let requestSeq = 0;
+  let cardSeq = 0;
   let lastPromptId = 0;
+  let inFlightPromptId = 0;
   let logEl: HTMLDivElement;
 
-  const displayName = (customer: Customer): string =>
-    `${customer.firstName} ${customer.lastName}`.trim() || 'Customer';
+  const lastAssistantId = $derived(
+    [...messages].reverse().find((message) => message.role === 'assistant')?.id
+  );
 
   function scrollLog(): void {
     void tick().then(() => {
@@ -48,63 +61,77 @@
     });
   }
 
-  async function createSession(id: string): Promise<void> {
-    const response = await fetch('/api/session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ customerId: id })
-    });
-    if (!response.ok) throw new Error('Could not start a session.');
-    customerId = id;
-    ready = true;
+  async function openSession(id: string): Promise<boolean> {
+    try {
+      const response = await fetch('/api/session', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ customerId: id })
+      });
+      if (!response.ok) throw new Error('Could not start a session.');
+      sessionCustomerId = id;
+      ready = true;
+      status = '';
+      return true;
+    } catch {
+      ready = false;
+      status = 'Unable to connect right now.';
+      return false;
+    }
   }
 
-  async function boot(): Promise<boolean> {
-    if (ready) return true;
-    if (bootPromise) return bootPromise;
+  async function runEnsureSession(id: string): Promise<boolean> {
+    if (ready) {
+      requestSeq += 1;
+      streaming = false;
+      messages = [];
+      status = '';
+      try {
+        await fetch('/api/session', { method: 'DELETE' });
+      } catch {
+        // The new session below is the source of truth.
+      }
+      ready = false;
+    }
+    return openSession(id);
+  }
 
+  async function ensureSession(id: string): Promise<boolean> {
+    if (!id) {
+      status = 'Choose an account to get started.';
+      return false;
+    }
+    if (ready && sessionCustomerId === id) return true;
+    if (bootPromise) {
+      if (bootTarget === id) return bootPromise;
+      await bootPromise;
+      if (ready && sessionCustomerId === id) return true;
+      return ensureSession(id);
+    }
+
+    bootTarget = id;
     booting = true;
     bootPromise = (async () => {
       try {
-        const response = await fetch('/api/customers');
-        if (!response.ok) throw new Error('Could not load customers.');
-        const payload = (await response.json()) as { customers?: Customer[] };
-        const list = Array.isArray(payload.customers) ? payload.customers : [];
-        if (list.length === 0) throw new Error('No customers available.');
-        customers = list;
-        const preferred = list.find((customer) => customer.lastName === 'Chen') ?? list[0];
-        if (!preferred) throw new Error('No customers available.');
-        await createSession(preferred.id);
-        return true;
-      } catch {
-        status = 'Unable to connect right now.';
-        return false;
+        return await runEnsureSession(id);
       } finally {
         booting = false;
         bootPromise = null;
+        bootTarget = '';
       }
     })();
-
     return bootPromise;
   }
 
-  async function switchCustomer(id: string): Promise<void> {
-    if (!id || id === customerId) return;
-    requestSeq += 1;
-    streaming = false;
-    status = '';
-    messages = [];
-    ready = false;
-    try {
-      await fetch('/api/session', { method: 'DELETE' });
-    } catch {
-      // The new session below is the source of truth.
-    }
-    try {
-      await createSession(id);
-    } catch {
-      status = 'Unable to switch customers right now.';
-    }
+  /**
+   * Imperative send used by the page's top composer on `/chat`: waits for the
+   * session to exist for this customer, then sends exactly one chat request.
+   */
+  export async function ask(text: string): Promise<void> {
+    const value = text.trim();
+    if (!value) return;
+    const ok = await ensureSession(customerId);
+    if (ok) await send(value);
   }
 
   function statusFor(name: string): string {
@@ -128,15 +155,15 @@
     message.pending = false;
   }
 
-  async function send(text: string): Promise<void> {
+  async function send(text: string): Promise<boolean> {
     const value = text.trim();
-    if (!value || !ready || streaming) return;
+    if (!value || !ready || streaming) return false;
 
     const requestId = ++requestSeq;
     const userId = ++messageSeq;
     const assistantId = ++messageSeq;
     messages.push({ id: userId, role: 'user', text: value });
-    messages.push({ id: assistantId, role: 'assistant', text: '', pending: true });
+    messages.push({ id: assistantId, role: 'assistant', text: '', prompt: value, pending: true });
     streaming = true;
     status = 'Thinking…';
     scrollLog();
@@ -149,7 +176,7 @@
       });
       if (!response.ok || !response.body) {
         markError(assistantId);
-        return;
+        return false;
       }
 
       const parser = createSseParser((event) => {
@@ -174,6 +201,28 @@
           case 'tool_start':
             status = statusFor(typeof data.name === 'string' ? data.name : '');
             break;
+          case 'insight': {
+            if (typeof data.kind !== 'string') break;
+            const payload = data.payload;
+            const fingerprint = `${data.kind}:${JSON.stringify(payload)}`;
+            const existing = message.cards ?? [];
+            if (
+              existing.some(
+                (card) => `${card.tool}:${JSON.stringify(card.payload)}` === fingerprint
+              )
+            ) {
+              break;
+            }
+            if (!message.cards) message.cards = [];
+            message.cards.push({
+              id: ++cardSeq,
+              kind: chatCardKind(data.kind),
+              tool: data.kind,
+              payload
+            });
+            scrollLog();
+            break;
+          }
           case 'error':
             markError(assistantId);
             break;
@@ -207,6 +256,8 @@
       }
       scrollLog();
     }
+
+    return true;
   }
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -217,7 +268,7 @@
   }
 
   $effect(() => {
-    if (open) void boot();
+    if (open) void ensureSession(customerId);
   });
 
   $effect(() => {
@@ -227,11 +278,32 @@
 
   $effect(() => {
     const prompt = initialPrompt;
+    const id = customerId;
+    const isReady = ready;
+    const isBusy = streaming;
+    // Only flush the queued prompt once the chat view is actually open; on the
+    // dashboard this effect re-runs after navigation flips `open` to true.
+    if (!open) return;
     if (!prompt || prompt.id === lastPromptId) return;
-    lastPromptId = prompt.id;
+    // Wait for the page to finish loading customers; this effect re-runs when
+    // `customerId` becomes available.
+    if (!id) return;
+    // Never drop a queued prompt because a previous turn is still streaming,
+    // and never consume it until it has actually been appended and sent.
+    if (isBusy || inFlightPromptId === prompt.id) return;
+
+    inFlightPromptId = prompt.id;
     void (async () => {
-      const ok = await boot();
-      if (ok) await send(prompt.text);
+      try {
+        const ok =
+          isReady && sessionCustomerId === id ? true : await ensureSession(id);
+        if (!ok) return;
+        if (prompt.id === lastPromptId) return;
+        const sent = await send(prompt.text);
+        if (sent) lastPromptId = prompt.id;
+      } finally {
+        if (inFlightPromptId === prompt.id) inFlightPromptId = 0;
+      }
     })();
   });
 </script>
@@ -247,18 +319,6 @@
   <header class="chat-header">
     <div class="chat-heading">
       <h2>Capital One Assistant</h2>
-      <label class="customer-picker">
-        <span class="sr-only">Customer</span>
-        <select
-          value={customerId}
-          disabled={!ready || booting}
-          onchange={(event) => void switchCustomer(event.currentTarget.value)}
-        >
-          {#each customers as customer (customer.id)}
-            <option value={customer.id}>{displayName(customer)}</option>
-          {/each}
-        </select>
-      </label>
     </div>
   </header>
 
@@ -275,15 +335,44 @@
     {#each messages as message (message.id)}
       {#if message.role === 'user'}
         <div class="bubble user">{message.text}</div>
-      {:else if message.text || message.pending}
-        <div class="bubble assistant">
-          {#if message.pending && !message.text}
-            <p class="status-line">{status || 'Looking that up…'}</p>
-          {/if}
-          {#if message.text}
-            <div class="richtext">{@html renderMarkdown(message.text)}</div>
-          {/if}
-        </div>
+      {:else}
+        {@const allowedKinds = allowedKindsFor(classifyIntents(message.prompt ?? ''))}
+        {@const shownCards = visibleCards(message.cards ?? [], message.prompt ?? '')}
+        {@const hasCards = shownCards.length > 0}
+        {@const displayText =
+          hasCards && message.pending ? '' : filterCardDuplication(message.text, shownCards)}
+        {@const showText = displayText.length > 0}
+        {#if showText || message.pending || hasCards}
+          <div class="assistant-turn">
+            {#if showText || message.pending}
+              <div class="bubble assistant">
+                {#if message.pending && !showText}
+                  <p class="status-line">{status || 'Looking that up…'}</p>
+                {/if}
+                {#if showText}
+                  <div class="richtext">{@html renderMarkdown(displayText)}</div>
+                {/if}
+              </div>
+            {/if}
+            {#if hasCards}
+              <div class="chat-cards">
+                {#each shownCards as card (card.id)}
+                  <ChatCardRenderer
+                    {card}
+                    allowedKinds={allowedKinds.size > 0 ? allowedKinds : undefined}
+                  />
+                {/each}
+              </div>
+            {/if}
+            {#if message.id === lastAssistantId && !message.pending && !streaming && (message.text || hasCards)}
+              <FollowUps
+                suggestions={followUpsFor(shownCards, message.prompt ?? '')}
+                disabled={!canSend}
+                onSelect={(prompt) => void send(prompt)}
+              />
+            {/if}
+          </div>
+        {/if}
       {/if}
     {/each}
   </div>
@@ -292,14 +381,6 @@
 </div>
 
 <style>
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
   .chat-panel {
     height: 100%;
     color: var(--ink);
@@ -322,16 +403,6 @@
     line-height: 1.3;
     font-weight: 650;
     letter-spacing: -0.015em;
-  }
-  .customer-picker { display: block; }
-  .customer-picker select {
-    max-width: 100%;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    padding: 5px 8px;
-    background: var(--page);
-    color: var(--ink);
-    font-size: 13px;
   }
   .chat-log {
     flex: 1;
@@ -361,6 +432,21 @@
     background: var(--page);
     border: 1px solid var(--border);
     border-radius: 18px 18px 18px 4px;
+  }
+  .assistant-turn {
+    align-self: flex-start;
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-cards {
+    display: grid;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    margin-top: 8px;
   }
   .status-line { color: var(--muted); font-size: 14px; }
   .richtext { line-height: 1.5; }

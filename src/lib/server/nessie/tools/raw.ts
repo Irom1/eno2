@@ -72,6 +72,8 @@ const billSummary = (value: unknown) => {
     paymentAmount: toMoney(num(bill.payment_amount)),
     upcomingPaymentDate: bill.upcoming_payment_date,
     recurringDate: bill.recurring_date,
+    paymentDate: bill.payment_date,
+    creationDate: bill.creation_date,
     accountId: bill.account_id,
   };
 };
@@ -85,6 +87,7 @@ const depositSummary = (value: unknown) => {
     amount: toMoney(num(deposit.amount)),
     description: text(deposit.description),
     transactionDate: deposit.transaction_date,
+    medium: deposit.medium,
   };
 };
 
@@ -97,6 +100,7 @@ const withdrawalSummary = (value: unknown) => {
     amount: toMoney(num(withdrawal.amount)),
     description: text(withdrawal.description),
     transactionDate: withdrawal.transaction_date,
+    medium: withdrawal.medium,
   };
 };
 
@@ -109,6 +113,8 @@ const loanSummary = (value: unknown) => {
     monthlyPayment: toMoney(num(loan.monthly_payment)),
     amount: toMoney(num(loan.amount)),
     description: text(loan.description),
+    creditScore: num(loan.credit_score),
+    creationDate: loan.creation_date,
     accountId: loan.account_id,
   };
 };
@@ -125,13 +131,19 @@ const merchantSummary = (value: unknown) => {
 
 const locationSummary = (value: unknown) => {
   const location = rec(value);
-  const address = rec(location.physical_address);
+  // Branches return `address`; some ATM payloads use `physical_address`.
+  const address = rec(location.address ?? location.physical_address);
   const geocode = rec(location.geocode);
   return {
     _id: location._id,
     name: text(location.name),
     hours: location.hours,
     address: addressSummary(address),
+    phone: location.phone_number,
+    notes: location.notes,
+    accessibility: location.accessibility,
+    amountLeft: location.amount_left,
+    languages: location.language_list,
     lat: geocode.lat,
     lng: geocode.lng,
   };

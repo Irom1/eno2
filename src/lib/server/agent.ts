@@ -337,7 +337,7 @@ export async function runGeminiAgent({
             ms,
             summary: result.ok ? summarizeToolResult(call.name, result.data) : 'Tool reported an error'
           });
-          if (result.ok && (call.name.startsWith('insight_') || call.name.startsWith('find_'))) {
+          if (result.ok) {
             emit({ type: 'insight', kind: call.name, payload: result.data });
           }
           responseParts.push({
