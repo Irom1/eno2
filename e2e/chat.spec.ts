@@ -129,7 +129,7 @@ async function expectFollowupsMatchBubble(page: Page): Promise<void> {
   });
 }
 
-/** Follow-up rows are borderless: no dividers between rows. */
+/** Follow-up rows have no dividers; the hover highlight is what carries rounding. */
 async function expectFollowupBorders(page: Page): Promise<void> {
   const rows = await page.locator('.follow-up').evaluateAll((elements) =>
     elements.map((element) => {
@@ -145,7 +145,7 @@ async function expectFollowupBorders(page: Page): Promise<void> {
   );
   expect(rows.length, 'follow-up rows are present').toBeGreaterThan(0);
   rows.forEach((row) => {
-    expect(row.radius, 'follow-up corners are square').toBe('0px');
+    expect(parseFloat(row.radius), 'follow-up corners are rounded').toBeGreaterThanOrEqual(6);
     expect(row.top, 'rows have no top border').toBe('0px');
     expect(row.right, 'rows have no right border').toBe('0px');
     expect(row.bottom, 'rows have no bottom border').toBe('0px');
@@ -802,18 +802,40 @@ test.describe('chat prompts', () => {
         firstRow.evaluate((element) => getComputedStyle(element).backgroundColor)
       )
       .not.toBe('rgba(0, 0, 0, 0)');
+    const hoveredStyle = await firstRow.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        radius: style.borderRadius,
+        background: style.backgroundColor,
+        top: style.borderTopWidth,
+        right: style.borderRightWidth,
+        bottom: style.borderBottomWidth,
+        left: style.borderLeftWidth
+      };
+    });
     expect(
-      await firstRow.evaluate((element) => {
-        const style = getComputedStyle(element);
-        return {
-          top: style.borderTopWidth,
-          right: style.borderRightWidth,
-          bottom: style.borderBottomWidth,
-          left: style.borderLeftWidth
-        };
-      }),
+      parseFloat(hoveredStyle.radius),
+      'hover highlight has rounded corners'
+    ).toBeGreaterThanOrEqual(6);
+    expect(
+      {
+        top: hoveredStyle.top,
+        right: hoveredStyle.right,
+        bottom: hoveredStyle.bottom,
+        left: hoveredStyle.left
+      },
       'hover must not add a border'
     ).toEqual({ top: '0px', right: '0px', bottom: '0px', left: '0px' });
+
+    const expectedTint = await page.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.background = 'color-mix(in srgb, var(--link) 10%, transparent)';
+      document.body.appendChild(probe);
+      const value = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return value;
+    });
+    expect(hoveredStyle.background, 'hover background is the link tint').toBe(expectedTint);
     expect(
       await firstElbow.evaluate((element) => getComputedStyle(element).transform),
       'hover must not translate the elbow'

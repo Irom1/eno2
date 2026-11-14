@@ -108,7 +108,7 @@ Buffering details:
 | `src/routes/[view=wallet]/ChatPanel.svelte` | `open`, `customerId`, `initialPrompt`, `onClose`, `canSend`, `variant` | Shipped | Bubbles, streaming text, grouped inline/standalone cards, thinking checklist, loading line, follow-ups, send/abort lifecycle. |
 | `src/lib/chat/thinking.ts` | `initialThinking`, `pushThinkingStep`, `friendlyToolLabel`, `THINKING_COMPOSING` | Shipped | Pure, non-technical thinking-step state machine. |
 | `src/lib/components/EnoThinking.svelte` | `active?: boolean`, `variant?: EnoVariant`, `size?: number` | Shipped | Eno avatar; pulses while active. |
-| `src/routes/[view=wallet]/FollowUps.svelte` | `suggestions`, `disabled?`, `onSelect` | Shipped | Borderless suggested follow-up rows with a leading down-then-right elbow arrow. |
+| `src/routes/[view=wallet]/FollowUps.svelte` | `suggestions`, `disabled?`, `onSelect` | Shipped | Borderless suggested follow-up rows with a leading down-then-right elbow arrow. The hover/focus highlight is the only rounded surface (`border-radius: 8px`, link-tinted background); rows keep no dividers, no underline, and a transparent rest background. |
 | `src/lib/components/Eno.svelte` | `variant?`, `size?`, `alt?`, `class?` | Shipped | Static Eno image used by layout/empty states. |
 | `src/lib/chat/inline.ts` | `revealInlineCards`, `inlineBlocks` | Shipped | Pending buffer, markdown-safe anchors, text/card block split. |
 | `src/lib/chat/cardGroups.ts` | `groupInlineCards`, `isInlineCard`, `isInlineCardKind`, `InlineRenderGroup` | Shipped | Pure client-safe grouping: text plus single-entity cards into one inline group; standalone cards (`transaction-list`, `spending-pie`, and the ATM `location` exception) flush and emit separately; order preserved. |
