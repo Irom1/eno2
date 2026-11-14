@@ -356,17 +356,23 @@
     white-space: nowrap;
   }
   .chat-panel {
-    display: none;
-    position: sticky;
+    position: fixed;
     top: 0;
-    height: 100dvh;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    width: min(27rem, 100vw);
     border-left: 1px solid var(--border);
     background: var(--surface);
     color: var(--ink);
+    display: flex;
     flex-direction: column;
     min-width: 0;
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform 240ms ease, visibility 240ms;
   }
-  .chat-panel.open { display: flex; }
+  .chat-panel.open { transform: none; visibility: visible; }
   .chat-header {
     display: flex;
     align-items: center;
@@ -509,10 +515,7 @@
   }
   .send-button svg { width: 19px; height: 19px; }
   @media (max-width: 900px) {
-    .chat-panel.open {
-      position: fixed;
-      inset: 0;
-      z-index: 70;
+    .chat-panel {
       width: 100%;
       border-left: 0;
     }
