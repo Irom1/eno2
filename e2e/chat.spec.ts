@@ -14,7 +14,6 @@ import {
 } from './helpers';
 
 const STARTER_PROMPTS = [
-  'Give me a snapshot of my finances',
   'Where did my money go last month?',
   "What's due in the next 30 days?",
   'Anything weird in my transactions?',
