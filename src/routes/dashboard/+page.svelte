@@ -110,7 +110,7 @@
 <svelte:window onkeydown={handleEscape} />
 
 <div class="dashboard" class:profile-open={profileOpen} data-theme={theme}>
-  <div class="dashboard-body">
+  <div class="dashboard-body" inert={profileOpen}>
     <div class="wallet-band">
       <header class="header">
         <div class="container header-inner">
@@ -124,7 +124,7 @@
               <textarea bind:value={query} rows="1" aria-label="Search your wallet" placeholder="What do you want to find in your wallet?"></textarea>
             </div>
             <button class="primary send" aria-label="Search" disabled={!query.trim()}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
             </button>
           </form>
         </div>
@@ -204,7 +204,8 @@
           {/each}
         </section>
 
-        <section class="stack" aria-label="Rewards and products">
+        <section class="stack tools" aria-labelledby="tools-title">
+          <h2 id="tools-title" class="section-title">Your tools</h2>
           <article class="panel feature reward">
             <div class="feature-main">
               <div><h2>Explore rewards and benefits</h2><p class="reward-amount">$276.24</p><p class="muted">Rewards cash</p></div>
@@ -221,9 +222,6 @@
               <a class="primary" href="https://www.capitalone.com/">Open a new account</a>
             </div>
           </article>
-        </section>
-
-        <section aria-label="Credit tools">
           <article class="panel utility">
             <h2>CreditWise</h2>
             <div class="credit">
@@ -249,7 +247,8 @@
     </main>
   </div>
 
-  <aside class="profile-panel" id="profile-panel" aria-labelledby="profile-title" inert={!profileOpen}>
+  <button class="profile-backdrop" tabindex="-1" aria-label="Dismiss profile panel" inert={!profileOpen} onclick={toggleProfile}></button>
+  <div class="profile-panel" id="profile-panel" role="dialog" aria-modal="true" aria-labelledby="profile-title" inert={!profileOpen}>
     <div class="profile-panel-content">
       <div class="profile-panel-heading">
         <h2 id="profile-title">Mori</h2>
@@ -265,7 +264,7 @@
       </label>
       <a class="link" href={signIn}>Manage your profile {@render arrowIcon()}</a>
     </div>
-  </aside>
+  </div>
 
   <dialog bind:this={dialog} aria-labelledby="dialog-title">
     {#if selected}
@@ -279,6 +278,8 @@
 
 <style>
   :global(body:has(.dashboard)) { margin: 0; }
+  :global(html:has(.dashboard)) { scrollbar-gutter: stable; }
+  :global(html:has(.dashboard.profile-open)) { overflow: hidden; }
   .dashboard {
     --dark: ;
     --light: initial;
@@ -304,28 +305,33 @@
   @media (prefers-color-scheme: dark) {
     .dashboard[data-theme='system'] { --dark: initial; --light: ; }
   }
-  .dashboard {
-    --profile-width: min(17rem, 36vw);
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 0px;
-    transition: grid-template-columns 240ms ease;
-  }
-  .dashboard.profile-open { grid-template-columns: minmax(0, 1fr) var(--profile-width); }
   .dashboard-body { container-type: inline-size; }
+  .profile-backdrop, .profile-panel {
+    position: fixed;
+    visibility: hidden;
+  }
+  .profile-backdrop {
+    inset: 0;
+    z-index: 2;
+    border: 0;
+    background: #0b182399;
+    opacity: 0;
+    transition: opacity 240ms ease, visibility 240ms;
+  }
+  .profile-open .profile-backdrop { visibility: visible; opacity: 1; }
   .profile-panel {
-    position: sticky;
-    top: 0;
-    height: 100dvh;
-    overflow: clip;
-    background: var(--surface);
-  }
-  .profile-panel-content {
-    width: var(--profile-width);
-    height: 100%;
+    inset: 0 0 0 auto;
+    z-index: 3;
+    width: min(17rem, 85vw);
     overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--surface);
     border-left: 1px solid var(--border);
-    padding: 18px;
+    transform: translateX(100%);
+    transition: transform 240ms ease, visibility 240ms;
   }
+  .profile-open .profile-panel { visibility: visible; transform: translateX(0); }
+  .profile-panel-content { padding: 18px; }
   .profile-panel-heading {
     display: flex;
     justify-content: space-between;
@@ -366,7 +372,8 @@
   .brand :global(svg) { display: block; width: 122px; height: 44px; }
   .quiet, .link, .visibility { background: transparent; border: 0; padding: 0; }
   .quiet { color: var(--muted); }
-  .quiet:hover, .link:hover, footer a:hover { text-decoration: underline; }
+  a.link:hover, footer a:hover { text-decoration: underline; }
+  button:is(.quiet, .link):hover { color: var(--ink); }
   .profile {
     grid-column: 3;
     grid-row: 1;
@@ -450,13 +457,22 @@
   .link { display: inline-flex; align-items: center; gap: 5px; color: var(--link); font-weight: 650; text-align: left; }
   .link svg { width: 15px; height: 15px; }
 
-  .content { padding-block: 24px 40px; display: grid; gap: 18px; }
+  .content {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+    padding-block: 24px 40px;
+  }
+  .content > footer { grid-column: 1 / -1; }
+  .tools .feature-main { flex-wrap: wrap; }
   .stack { display: grid; gap: 14px; }
   .section-title { font-size: 23px; }
-  .account, .panel { border: 1px solid var(--border); box-shadow: var(--shadow); }
+  .account, .panel { box-shadow: var(--shadow); }
+  .panel { border: 1px solid var(--border); }
   .account {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(140px, .55fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px 20px;
     padding: 14px 20px;
@@ -481,14 +497,18 @@
   .balance { font-size: clamp(26px, 4vw, 36px); line-height: 1; font-weight: 450; }
   .cents { color: #ffffffe0; font-size: .69em; letter-spacing: -.03em; }
   .card-actions, .panel-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .card-actions { justify-content: flex-end; }
+  .account-balance { text-align: right; }
+  .balance-label { justify-content: flex-end; }
+  .card-actions { grid-column: 1 / -1; }
+  .card-actions .pill { width: 10rem; max-width: 100%; }
   .pill, .primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 13px; min-height: 38px; font-size: 13px; font-weight: 650; }
   .pill { background: transparent; border: 1px solid #ffffffcb; border-radius: 5px; }
   .pill:hover { background: #ffffff25; }
   .primary { background: var(--button); border: 1px solid transparent; color: var(--button-text); border-radius: 10px; text-align: center; }
   .primary:hover { opacity: .88; }
   .account-note { margin-top: 4px; font-size: 12px; }
-  .account-note .link { color: inherit; text-decoration: underline; }
+  .account-note .link { color: inherit; }
+  .account-note .link:hover { color: inherit; opacity: .85; }
 
   .panel { background: var(--surface); border-radius: 16px; overflow: hidden; }
   .feature { display: flex; flex-direction: column; }
@@ -528,10 +548,7 @@
     .header-inner .brand, .profile { margin-top: 0; }
     .profile { grid-column: 2; }
     .header-inner .composer { grid-column: 1 / -1; grid-row: 2; width: min(720px, 100%); justify-self: center; }
-    .account { grid-template-columns: minmax(0, 1fr) auto; }
-    .account-balance { text-align: right; }
-    .balance-label { justify-content: flex-end; }
-    .card-actions { grid-column: 1 / -1; justify-content: flex-start; }
+    .content { grid-template-columns: minmax(0, 1fr); }
   }
   @container (max-width: 570px) {
     .container { width: calc(100% - 28px); }
@@ -543,21 +560,7 @@
     .account-top h2 { font-size: 18px; }
     .feature-main { padding-inline: 17px; }
   }
-  @media (max-width: 640px) {
-    .dashboard { --profile-width: min(17rem, 85vw); }
-    .dashboard.profile-open { grid-template-columns: minmax(0, 1fr) 0px; }
-    .profile-panel {
-      position: fixed;
-      right: 0;
-      z-index: 2;
-      width: var(--profile-width);
-      transform: translateX(100%);
-      visibility: hidden;
-      transition: transform 240ms ease, visibility 240ms;
-    }
-    .profile-open .profile-panel { transform: translateX(0); visibility: visible; }
-  }
   @media (prefers-reduced-motion: reduce) {
-    .dashboard, .profile-panel { transition: none; }
+    .profile-backdrop, .profile-panel { transition: none; }
   }
 </style>
