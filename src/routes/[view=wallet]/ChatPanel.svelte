@@ -9,8 +9,11 @@
     anomalyExplanation,
     anomalyTransactionCards,
     billCard,
+    loanCard,
+    locationCard,
     mergeEntityCards,
     mergeTransactionListCards,
+    recurringCard,
     spendingPieCard,
     transactionListCard,
     type EntityCard,
@@ -37,6 +40,9 @@
   import PieChartCard from './inline-cards/PieChartCard.svelte';
   import BillCard from './inline-cards/BillCard.svelte';
   import AccountCard from './inline-cards/AccountCard.svelte';
+  import LoanCard from './inline-cards/LoanCard.svelte';
+  import LocationCard from './inline-cards/LocationCard.svelte';
+  import RecurringChargeCard from './inline-cards/RecurringChargeCard.svelte';
 
   interface Props {
     open: boolean;
@@ -353,6 +359,63 @@
                 cardSeq = Math.max(cardSeq, incoming.id);
               }
             }
+            if (chatCardKind(data.kind) === 'loans') {
+              // One primitive loan card per turn: the largest balance wins, and
+              // a later loan insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = loanCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'loan'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'loan' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (
+              data.kind === 'find_nearby_atms' ||
+              data.kind === 'find_nearby_branches'
+            ) {
+              // One primitive location card per turn: the first result is shown,
+              // and a later location insight replaces the earlier card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = locationCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'location'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'location' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (data.kind === 'insight_recurring_charges') {
+              // One primitive recurring-charge card per turn: the largest
+              // average amount wins, and a later insight replaces the card.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = recurringCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) {
+                const existing = (message.inlineCards ?? []).some(
+                  (card) => card.kind === 'recurring'
+                );
+                message.inlineCards = existing
+                  ? (message.inlineCards ?? []).map((card) =>
+                      card.kind === 'recurring' ? incoming : card
+                    )
+                  : [...(message.inlineCards ?? []), incoming];
+                cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
             if (chatCardKind(data.kind) === 'transactions') {
               // Deposits and withdrawals in one turn share a single merged list.
               const anchor =
@@ -560,6 +623,12 @@
                         <BillCard {card} />
                       {:else if card.kind === 'account'}
                         <AccountCard {card} />
+                      {:else if card.kind === 'loan'}
+                        <LoanCard {card} />
+                      {:else if card.kind === 'location'}
+                        <LocationCard {card} />
+                      {:else if card.kind === 'recurring'}
+                        <RecurringChargeCard {card} />
                       {/if}
                     {/each}
                   {/if}

@@ -12,15 +12,15 @@ Canonical design, inventory, and detailed acceptance live in [`CARD_PLAN.md`](./
 - [x] `SpendingPieCard` — latest complete month, top 5 plus `Other`, period and legend; no editorial labels.
 - [x] `BillCard` — one largest upcoming bill from `insight_upcoming_bills`; payee, due date, amount, factual status chip; optional account link; coverage/total stay in prose.
 - [x] `AccountCard` — exactly one account (single-row payload only); nickname, type, masked number, balance, rewards when positive; whole card deep-links; never an account list.
+- [x] `LoanCard` — one loan: type/description, balance, monthly payment, factual status chip; optional account link; no credit score.
+- [x] `LocationCard` — one ATM or branch: name, street address when the data has one, hours when present; no distance.
+- [x] `RecurringChargeCard` — one recurring charge: description, average amount, months seen, last date; no invented cadence or next date.
 - [x] Shared `StatusChip` primitive — factual state only, theme-aware, never colour-only.
 - [x] Buffering, markdown-safe anchoring, and deep links — `revealInlineCards`, `inlineBlocks`, `anchorEntityCards`, `transactionHref`, `accountHref`.
-- [x] Prompt rules for primitive cards and the single-bill/single-account/no-account-list rule.
+- [x] Prompt rules for primitive cards and the single-bill/single-account/single-loan/location/recurring-charge rules.
 
 ## Remaining
 
-- [ ] `LoanCard` — one loan: type, balance, monthly payment, status.
-- [ ] `LocationCard` — one ATM or branch: name, address, distance where available.
-- [ ] `RecurringChargeCard` — one subscription/obligation: merchant, amount, cadence, next date.
 - [ ] `RewardCard` — one reward balance or offer: label, points, optional value.
 - [ ] `GoalCard` — one goal: label, target, current, projected date.
 - [ ] `CashflowPointCard` — one month/point: period, inflow, outflow.

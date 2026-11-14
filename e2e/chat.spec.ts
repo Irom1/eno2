@@ -141,23 +141,26 @@ async function expectFollowupBorders(page: Page): Promise<void> {
 }
 
 test.describe('chat prompts', () => {
-  test('"Show me my loans" renders exactly one Loans card', async ({ page }) => {
+  test('"Show me my loans" renders exactly one primitive loan card', async ({ page }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my loans');
 
-    await expectCardCount(page, 1);
+    const loan = page.locator('.loan-card');
+    await expect(loan).toHaveCount(1);
+    await expect(loan).toBeVisible();
+    await expect(loan).toHaveAttribute('data-kind', 'loan');
 
-    const titles = await cardTitles(page);
-    expect(titles).toEqual(['Loans']);
-    expectTitlesWithin(titles, ['Loans']);
-    await expect(page.locator('.chat-card .badge')).toHaveCount(0);
+    const text = await loan.innerText();
+    expect(text.length, 'the loan card shows its type').toBeGreaterThan(0);
+    // Primitive: no credit score, recommendation, or coverage copy.
+    expect(text.toLowerCase()).not.toMatch(/credit score|recommend|insight|coverage|tip:/);
 
-    const text = await cardText(page);
-    expect(text).toContain('Loans');
-    expect(text).not.toMatch(/No loans/i);
-    for (const forbidden of ['Overview', 'Accounts', 'Rewards', 'Cashflow']) {
-      expect(titles).not.toContain(forbidden);
-    }
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .loan-card')).toHaveCount(1);
+    expect(
+      await loan.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the loan card is standalone, not folded into the prose bubble'
+    ).toBe(false);
 
     await expectCardStyle(page);
     expectNoErrors(errors);
@@ -324,8 +327,7 @@ test.describe('chat prompts', () => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my loans');
 
-    await expectCardCount(page, 1);
-    expect(await cardTitles(page)).toEqual(['Loans']);
+    await expect(page.locator('.loan-card')).toHaveCount(1);
 
     const chips = page.locator('.follow-up');
     await expect(chips.first()).toBeVisible({ timeout: 20_000 });
@@ -459,7 +461,7 @@ test.describe('chat prompts', () => {
     await expect.poll(() => cardTitles(page), { timeout: 20_000 }).toContain('Bills');
 
     const titles = await cardTitles(page);
-    expect(titles.filter((title) => title === 'Loans')).toHaveLength(1);
+    await expect(page.locator('.loan-card')).toHaveCount(1);
     expect(titles).toContain('Bills');
     expect(titles).not.toContain('Overview');
 
@@ -1001,17 +1003,31 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Show me my recurring payments" renders one Recurring payments card', async ({
+  test('"Show me my recurring payments" renders one primitive recurring card', async ({
     page
   }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my recurring payments');
 
-    await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(titles).toEqual(['Recurring payments']);
+    const card = page.locator('.recurring-card');
+    await expect(card).toHaveCount(1);
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'recurring');
 
-    await expect(page.locator('.chat-card .badge')).toHaveCount(0);
+    const text = await card.innerText();
+    expect(text.length, 'the recurring card names the charge').toBeGreaterThan(0);
+    expect(text, 'the average amount is shown').toMatch(/\$\d/);
+    expect(text, 'the last date is shown').toMatch(/Last [A-Z][a-z]{2} \d{1,2}/);
+    // Primitive: no cadence, next-date, subscription, or cancel copy.
+    expect(text.toLowerCase()).not.toMatch(/subscription|cancel|cadence|next|recommend|tip:/);
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .recurring-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the recurring card is standalone'
+    ).toBe(false);
+
     await expectCardStyle(page);
     expectNoErrors(errors);
   });
@@ -1322,23 +1338,43 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Find an ATM near Arlington" renders a location card with Arlington', async ({
+  test('"Find an ATM near Arlington" renders one primitive location card', async ({
     page
   }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Find an ATM near Arlington');
 
-    await expectCardCount(page, { min: 1, max: 1 });
-    const titles = await cardTitles(page);
-    expect(
-      titles.some((title) => ['Locations', 'ATMs & branches', 'ATMs', 'Branches'].includes(title)),
-      `expected a locations card, got ${JSON.stringify(titles)}`
-    ).toBe(true);
+    const card = page.locator('.location-card');
+    await expect(card).toHaveCount(1);
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'location');
 
-    const text = await cardText(page);
+    const text = await card.innerText();
     expect(text).toContain('Arlington');
+    // Primitive: no distance, recommendation, or directions copy.
+    expect(text.toLowerCase()).not.toMatch(/miles|distance|recommend|tip:|directions/);
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .location-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the location card is standalone'
+    ).toBe(false);
 
     await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('a branch prompt renders an address when the data has one', async ({ page }) => {
+    const errors = collectErrors(page);
+    await runPrompt(page, 'Find a branch in Arlington');
+
+    const card = page.locator('.location-card');
+    await expect(card).toHaveCount(1);
+    await expect(card).toHaveAttribute('data-kind', 'location');
+    await expect(card.locator('.name')).not.toBeEmpty();
+    await expect(card.locator('.address')).not.toBeEmpty();
+
     expectNoErrors(errors);
   });
 
@@ -1666,18 +1702,21 @@ test.describe('Eno mascot', () => {
     await expect(page.locator('.dashboard')).toHaveAttribute('data-theme', 'dark');
 
     await askChat(page, 'Show me my loans');
-    await expectCardCount(page, 1);
-    expect(await cardTitles(page)).toEqual(['Loans']);
+    const loan = page.locator('.loan-card');
+    await expect(loan).toHaveCount(1);
 
-    const surface = await page.locator('.chat-card').first().evaluate((card) => {
-      const style = getComputedStyle(card);
-      const accent = getComputedStyle(card, '::before');
-      return {
-        shadow: style.boxShadow,
-        borderTopWidth: Number.parseFloat(style.borderTopWidth),
-        accentHeight: Number.parseFloat(accent.height)
-      };
-    });
+    const surface = await page
+      .locator('.entity-card')
+      .filter({ has: loan })
+      .evaluate((card) => {
+        const style = getComputedStyle(card);
+        const accent = getComputedStyle(card, '::before');
+        return {
+          shadow: style.boxShadow,
+          borderTopWidth: Number.parseFloat(style.borderTopWidth),
+          accentHeight: Number.parseFloat(accent.height)
+        };
+      });
     expect(surface.shadow, 'dark cards should still lift').not.toBe('none');
     expect(surface.borderTopWidth).toBeGreaterThanOrEqual(1);
     expect(surface.accentHeight).toBeGreaterThan(2);

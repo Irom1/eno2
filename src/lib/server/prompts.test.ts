@@ -68,6 +68,12 @@ describe("buildSystemInstruction", () => {
       'For a single bill or account, use one primitive card; never render an account list. Leave totals, coverage, and account comparisons in the prose.'
     );
     expect(instruction).toContain(
+      'For a single loan, location, or recurring charge, use one primitive card and keep lists, comparisons, and the tip in the prose; the card shows only the factual data.'
+    );
+    expect(instruction).toContain(
+      "Do not state a recurring charge's cadence or next date unless a tool returns them."
+    );
+    expect(instruction).toContain(
       'Do not ask for or describe a broad “everything” card.'
     );
     expect(instruction).toContain(

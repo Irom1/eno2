@@ -102,12 +102,66 @@ export interface AccountEntityCard {
   afterText?: number;
 }
 
+export interface LoanCardPayload {
+  loanId: string;
+  type: string;
+  balance: number | null;
+  monthlyPayment: number | null;
+  status?: string;
+  accountId?: string;
+  customerId?: string;
+}
+
+export interface LoanEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'loan';
+  payload: LoanCardPayload;
+  afterText?: number;
+}
+
+export interface LocationCardPayload {
+  locationId: string;
+  name: string;
+  address: string;
+  hours?: string;
+  customerId?: string;
+}
+
+export interface LocationEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'location';
+  payload: LocationCardPayload;
+  afterText?: number;
+}
+
+export interface RecurringChargeCardPayload {
+  chargeId: string;
+  description: string;
+  averageAmount: number | null;
+  monthsSeen: number;
+  lastDate: string;
+  customerId?: string;
+}
+
+export interface RecurringChargeEntityCard {
+  id: number;
+  entityId: string;
+  kind: 'recurring';
+  payload: RecurringChargeCardPayload;
+  afterText?: number;
+}
+
 export type EntityCard =
   | TransactionEntityCard
   | TransactionListEntityCard
   | SpendingPieEntityCard
   | BillEntityCard
-  | AccountEntityCard;
+  | AccountEntityCard
+  | LoanEntityCard
+  | LocationEntityCard
+  | RecurringChargeEntityCard;
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
 export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
@@ -666,6 +720,245 @@ export function accountCard(
 }
 
 /**
+ * Build one primitive loan card from a loans tool payload. When several loans
+ * are returned, the largest balance wins (type/description breaks ties);
+ * malformed rows and rows without an id or type/description are skipped.
+ */
+export function loanCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): LoanEntityCard | null {
+  try {
+    const items = asItems(payload);
+    if (items.length === 0) return null;
+
+    interface Candidate {
+      index: number;
+      loanId: string;
+      type: string;
+      balance: number | null;
+      monthlyPayment: number | null;
+      status?: string;
+      accountId?: string;
+    }
+
+    const candidates: Candidate[] = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const rawId = item._id ?? item.id;
+      const loanId =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+      const label = trimmedString(item.type) || trimmedString(item.description);
+      if (!loanId || !label) continue;
+
+      candidates.push({
+        index,
+        loanId,
+        type: label,
+        balance: finiteNumberOrNull(item.amount),
+        monthlyPayment: finiteNumberOrNull(item.monthlyPayment),
+        ...(optionalTrimmed(item.status) ? { status: optionalTrimmed(item.status) } : {}),
+        ...(optionalTrimmed(item.accountId) ? { accountId: optionalTrimmed(item.accountId) } : {})
+      });
+    }
+
+    if (candidates.length === 0) return null;
+
+    const selected = candidates.reduce((best, entry) => {
+      const bestBalance = best.balance === null ? Number.NEGATIVE_INFINITY : best.balance;
+      const entryBalance = entry.balance === null ? Number.NEGATIVE_INFINITY : entry.balance;
+      if (entryBalance !== bestBalance) return entryBalance > bestBalance ? entry : best;
+      if (entry.type !== best.type) return entry.type < best.type ? entry : best;
+      return entry.index < best.index ? entry : best;
+    });
+
+    const customerId = optionalTrimmed(context?.customerId);
+
+    const payloadOut: LoanCardPayload = {
+      loanId: selected.loanId,
+      type: selected.type,
+      balance: selected.balance,
+      monthlyPayment: selected.monthlyPayment,
+      ...(selected.status ? { status: selected.status } : {}),
+      ...(selected.accountId ? { accountId: selected.accountId } : {}),
+      ...(customerId ? { customerId } : {})
+    };
+
+    const card: LoanEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: `loan:${selected.loanId}`,
+      kind: 'loan',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+function locationAddress(value: unknown): string {
+  if (!isRecord(value)) return '';
+  const street = trimmedString(value.street);
+  const city = trimmedString(value.city);
+  const state = trimmedString(value.state);
+  const zip = trimmedString(value.zip);
+  const cityStateZip = [city, [state, zip].filter(Boolean).join(' ')]
+    .filter(Boolean)
+    .join(', ');
+  return [street, cityStateZip].filter(Boolean).join(', ');
+}
+
+function locationHours(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text.length > 0 ? text : undefined;
+  }
+  if (!Array.isArray(value)) return undefined;
+  const parts = value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+/**
+ * Build one primitive location card from an ATM/branch payload. The first
+ * whitelisted result is shown; ATMs carry no street address, so `address`
+ * stays empty rather than inventing one.
+ */
+export function locationCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): LocationEntityCard | null {
+  try {
+    const items = asItems(payload);
+    for (const item of items) {
+      const rawId = item._id ?? item.id;
+      const locationId =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+      const name = trimmedString(item.name);
+      if (!locationId || !name) continue;
+
+      const hours = locationHours(item.hours);
+      const customerId = optionalTrimmed(context?.customerId);
+      const payloadOut: LocationCardPayload = {
+        locationId,
+        name,
+        address: locationAddress(item.address),
+        ...(hours ? { hours } : {}),
+        ...(customerId ? { customerId } : {})
+      };
+
+      const card: LocationEntityCard = {
+        id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+        entityId: `location:${locationId}`,
+        kind: 'location',
+        payload: payloadOut
+      };
+      if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+        card.afterText = afterText;
+      }
+      return card;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build one primitive recurring-charge card. The largest average amount wins;
+ * the source has no cadence or next date, so none is invented.
+ */
+export function recurringCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): RecurringChargeEntityCard | null {
+  try {
+    if (!isRecord(payload) || !Array.isArray(payload.recurringCharges)) return null;
+
+    interface Candidate {
+      index: number;
+      description: string;
+      averageAmount: number | null;
+      monthsSeen: number;
+      lastDate: string;
+    }
+
+    const candidates: Candidate[] = [];
+    for (let index = 0; index < payload.recurringCharges.length; index += 1) {
+      const entry = payload.recurringCharges[index];
+      if (!isRecord(entry)) continue;
+      const description = trimmedString(entry.description);
+      if (!description) continue;
+      const monthsSeen =
+        typeof entry.monthsSeen === 'number' && Number.isFinite(entry.monthsSeen)
+          ? Math.max(0, Math.floor(entry.monthsSeen))
+          : 0;
+      candidates.push({
+        index,
+        description,
+        averageAmount: finiteNumberOrNull(entry.averageAmount),
+        monthsSeen,
+        lastDate: trimmedString(entry.lastDate)
+      });
+    }
+
+    if (candidates.length === 0) return null;
+
+    const selected = candidates.reduce((best, entry) => {
+      const bestAmount =
+        best.averageAmount === null ? Number.NEGATIVE_INFINITY : best.averageAmount;
+      const entryAmount =
+        entry.averageAmount === null ? Number.NEGATIVE_INFINITY : entry.averageAmount;
+      if (entryAmount !== bestAmount) return entryAmount > bestAmount ? entry : best;
+      return entry.index < best.index ? entry : best;
+    });
+
+    const amountKey =
+      selected.averageAmount === null ? 'null' : String(selected.averageAmount);
+    const chargeId = `${selected.description}|${amountKey}`;
+    const customerId = optionalTrimmed(context?.customerId);
+    const payloadOut: RecurringChargeCardPayload = {
+      chargeId,
+      description: selected.description,
+      averageAmount: selected.averageAmount,
+      monthsSeen: selected.monthsSeen,
+      lastDate: selected.lastDate,
+      ...(customerId ? { customerId } : {})
+    };
+
+    const card: RecurringChargeEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: chargeId,
+      kind: 'recurring',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Merge rows into a single list card, dedupe by transaction id, cap the rows,
  * and keep the earliest anchor (a real anchor beats end-of-text).
  */
@@ -821,13 +1114,48 @@ function anchorCandidates(card: EntityCard): string[][] {
     return candidates;
   }
 
+  if (card.kind === 'loan') {
+    const label = typeof card.payload?.type === 'string' ? card.payload.type : '';
+    const keys = tokenize(label).map((token) => token.norm);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  if (card.kind === 'location') {
+    const name = typeof card.payload?.name === 'string' ? card.payload.name : '';
+    const keys = tokenize(name).map((token) => token.norm);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
+  if (card.kind === 'recurring') {
+    const description =
+      typeof card.payload?.description === 'string' ? card.payload.description : '';
+    const keys = descriptionTokens(description);
+    const candidates = keys.length > 0 ? [keys] : [];
+    if (keys.length > 1) {
+      const token = firstMeaningfulToken(keys);
+      if (token) candidates.push([token]);
+    }
+    return candidates;
+  }
+
   return [];
 }
 
 /**
- * Reposition entity cards after the mention they introduce: transactions after
- * their description, bills after their payee, and accounts after their nickname
- * (falling back to type). Returns copies; cards with no mention keep their
+ * Reposition entity cards after the mention they introduce: transactions and
+ * recurring charges after their description, bills after their payee, accounts
+ * after their nickname (falling back to type), loans after their type, and
+ * locations after their name. Returns copies; cards with no mention keep their
  * existing `afterText`. Non-anchored kinds (lists, pies) are left unchanged.
  */
 export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard[] {
@@ -845,7 +1173,10 @@ export function anchorEntityCards(text: string, cards: EntityCard[]): EntityCard
       if (
         card.kind !== 'transaction' &&
         card.kind !== 'bill' &&
-        card.kind !== 'account'
+        card.kind !== 'account' &&
+        card.kind !== 'loan' &&
+        card.kind !== 'location' &&
+        card.kind !== 'recurring'
       ) {
         anchored.push({ ...card });
         continue;
