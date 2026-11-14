@@ -2,7 +2,7 @@
 	import RingChart, { type RingItem } from './RingChart.svelte';
 	import CategoryIcon from './CategoryIcon.svelte';
 	import ClimateWiseMark from './ClimateWiseMark.svelte';
-	import { CATEGORIES, CATEGORY_BY_ID, RATINGS, RATING_WEIGHT, type ClimateReport } from './emissions';
+	import { CATEGORIES, CATEGORY_BY_ID, type ClimateReport } from './emissions';
 
 	type Theme = 'light' | 'dark' | 'system';
 
@@ -52,7 +52,6 @@
 	let report = $state<ClimateReport | null>(null);
 	let customer = $state<{ firstName: string; lastName: string } | null>(null);
 	let error = $state('');
-	let view = $state<'emissions' | 'green'>('emissions');
 	let selected = $state<string | null>(null);
 
 	$effect(() => {
@@ -71,16 +70,8 @@
 		return () => (cancelled = true);
 	});
 
-	function setView(v: 'emissions' | 'green') {
-		view = v;
-		selected = null;
-	}
-
-	// Theme-aware category / rating colors, from the single source in emissions.ts
-	const colorVars = [
-		...CATEGORIES.map((c) => `--cat-${c.id}: var(--dark, ${c.colorDark}) var(--light, ${c.color})`),
-		...RATINGS.map((r) => `--rate-${r.id}: var(--dark, ${r.colorDark}) var(--light, ${r.color})`)
-	].join(';');
+	// Theme-aware category colors, from the single source in emissions.ts
+	const colorVars = CATEGORIES.map((c) => `--cat-${c.id}: var(--dark, ${c.colorDark}) var(--light, ${c.color})`).join(';');
 
 	const kg = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(2)}` : `${Math.round(n)}`);
 	const kgUnit = (n: number) => (n >= 1000 ? 't' : 'kg');
@@ -93,26 +84,15 @@
 
 	let ringItems = $derived.by((): RingItem[] => {
 		if (!report) return [];
-		if (view === 'emissions')
-			return report.categories
-				.filter((c) => c.kg > 0)
-				.map((c) => ({
-					id: c.id,
-					label: c.label,
-					share: c.share,
-					fill: c.greenness,
-					color: `var(--cat-${c.id})`,
-					detail: `${Math.round(c.kg)} kg CO₂e · ${money(c.spend)}`
-				}));
-		return report.greenness.ratings
-			.filter((r) => r.spend > 0)
-			.map((r) => ({
-				id: r.id,
-				label: r.label,
-				share: r.share,
-				fill: RATING_WEIGHT[r.id],
-				color: `var(--rate-${r.id})`,
-				detail: `${money(r.spend)} · ${r.count} purchase${r.count === 1 ? '' : 's'}`
+		return report.categories
+			.filter((c) => c.kg > 0)
+			.map((c) => ({
+				id: c.id,
+				label: c.label,
+				share: c.share,
+				fill: c.greenness,
+				color: `var(--cat-${c.id})`,
+				detail: `${Math.round(c.kg)} kg CO₂e · ${money(c.spend)}`
 			}));
 	});
 
@@ -121,13 +101,9 @@
 
 	let headline = $derived.by(() => {
 		if (!report) return { big: '', sub: '' };
-		if (view === 'emissions')
-			return topCat
-				? { big: topCat.label, sub: `Your biggest source · ${Math.round(topCat.share * 100)}% of emissions` }
-				: { big: 'No purchases', sub: '' };
-		const g = report.greenness.greenShare;
-		const big = g >= 0.6 ? 'Very green' : g >= 0.45 ? 'Mostly green' : g >= 0.25 ? 'Getting there' : 'Room to grow';
-		return { big, sub: `${Math.round(g * 100)}% of your everyday spending went to green choices` };
+		return topCat
+			? { big: topCat.label, sub: `Your biggest source · ${Math.round(topCat.share * 100)}% of emissions` }
+			: { big: 'No purchases', sub: '' };
 	});
 	let showInfo = $state(false);
 
@@ -159,7 +135,7 @@
 
 	$effect(() => {
 		if (!hubEl) return;
-		report; view; showInfo; // re-measure when content changes
+		report; showInfo; // re-measure when content changes
 		const ro = new ResizeObserver(() => layoutLinks());
 		ro.observe(hubEl);
 		requestAnimationFrame(layoutLinks);
@@ -170,11 +146,9 @@
 	let visiblePurchases = $derived.by(() => {
 		if (!report) return [];
 		if (!selected) return report.topPurchases;
-		return report.topPurchases.filter((p) => (view === 'emissions' ? p.category === selected : p.rating === selected));
+		return report.topPurchases.filter((p) => p.category === selected);
 	});
-	let selectedLabel = $derived(
-		!selected ? '' : view === 'emissions' ? CATEGORY_BY_ID[selected as keyof typeof CATEGORY_BY_ID]?.label : RATINGS.find((r) => r.id === selected)?.label
-	);
+	let selectedLabel = $derived(selected ? CATEGORY_BY_ID[selected as keyof typeof CATEGORY_BY_ID]?.label : '');
 
 </script>
 
@@ -226,18 +200,13 @@
 
 				<!-- Ring -->
 				<div class="tabs-wrap">
-					<div class="tabs" role="tablist" aria-label="Chart view">
-						<button role="tab" aria-selected={view === 'emissions'} onclick={() => setView('emissions')}>Emissions</button>
-						<button role="tab" aria-selected={view === 'green'} onclick={() => setView('green')}>How green</button>
+					<div class="section-title">
+						<h2>Emissions</h2>
 						<button class="info" aria-expanded={showInfo} aria-label="How this is calculated" onclick={() => (showInfo = !showInfo)}>i</button>
 					</div>
 					{#if showInfo}
 						<p class="info-text">
-							{#if view === 'emissions'}
-								Segment size = share of emissions. Fill = how green your choices in that category are. Tap a segment to filter purchases.
-							{:else}
-								Segment size = share of everyday spending, rated against greener ways to meet the same need. Rent is left out.
-							{/if}
+							Segment size = share of emissions. Fill = how green your choices in that category are. Tap a segment to filter purchases.
 						</p>
 					{/if}
 				</div>
@@ -252,7 +221,7 @@
 						items={ringItems}
 						bind:selected
 						size={220}
-						ariaLabel={view === 'emissions' ? 'Carbon emissions by purchase category' : 'Spending by sustainability rating'}
+						ariaLabel="Carbon emissions by purchase category"
 						centerValue={String(report.score)}
 						centerUnit={report.tier}
 					/>
@@ -404,11 +373,22 @@
 	.sky { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 	.sky-day, .sky-golden, .sky-night { position: absolute; inset: 0; }
 	.sky-day {
-		background: linear-gradient(180deg, #ffe89a 0%, #fff3c4 16%, #c8f2c2 42%, #8fdfd6 66%, #5ab4ff 100%);
+		/* soft overlapping washes on a diagonal base, so the bands curve instead of stacking flat */
+		background:
+			radial-gradient(120% 70% at 15% 0%, #ffe89a 0%, rgba(255, 232, 154, 0) 60%),
+			radial-gradient(90% 60% at 95% 30%, rgba(200, 242, 194, 0.9) 0%, rgba(200, 242, 194, 0) 70%),
+			radial-gradient(110% 70% at 0% 75%, rgba(143, 223, 214, 0.85) 0%, rgba(143, 223, 214, 0) 70%),
+			radial-gradient(130% 80% at 85% 110%, #5ab4ff 0%, rgba(90, 180, 255, 0) 70%),
+			linear-gradient(160deg, #fff3c4 0%, #c8f2c2 40%, #8fdfd6 70%, #7cc4ff 100%);
 		opacity: var(--dark, 0) var(--light, 1);
 	}
 	.sky-night {
-		background: linear-gradient(180deg, #050f3a 0%, #0a2f6e 28%, #0b5a4c 55%, #6a5210 80%, #a2400f 100%);
+		background:
+			radial-gradient(120% 70% at 85% 0%, #050f3a 0%, rgba(5, 15, 58, 0) 65%),
+			radial-gradient(90% 60% at 5% 35%, rgba(10, 47, 110, 0.9) 0%, rgba(10, 47, 110, 0) 70%),
+			radial-gradient(110% 60% at 100% 70%, rgba(11, 90, 76, 0.85) 0%, rgba(11, 90, 76, 0) 70%),
+			radial-gradient(130% 70% at 20% 110%, #a2400f 0%, rgba(162, 64, 15, 0) 70%),
+			linear-gradient(200deg, #07164a 0%, #0a2f6e 30%, #0b5a4c 60%, #6a5210 100%);
 		opacity: var(--dark, 1) var(--light, 0);
 	}
 	.sun {
@@ -425,7 +405,10 @@
 	.sun-dusk { background: radial-gradient(circle, rgba(255, 140, 50, 0.75) 0%, rgba(240, 90, 40, 0.3) 24%, transparent 55%); opacity: var(--dark, 1) var(--light, 0); }
 	/* Golden hour: only visible mid-transition */
 	.sky-golden {
-		background: linear-gradient(180deg, #2f4a8c 0%, #c8705a 45%, #f59a4e 72%, #ffc46e 100%);
+		background:
+			radial-gradient(120% 70% at 20% 0%, #2f4a8c 0%, rgba(47, 74, 140, 0) 65%),
+			radial-gradient(130% 80% at 80% 105%, #ffc46e 0%, rgba(255, 196, 110, 0) 70%),
+			linear-gradient(165deg, #3a508c 0%, #c8705a 45%, #f59a4e 75%, #ffc46e 100%);
 		opacity: 0;
 	}
 
@@ -489,10 +472,9 @@
 	.links circle { fill: var(--line); }
 
 	.tabs-wrap { position: relative; z-index: 4; }
-	.tabs { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 999px; background: var(--sunken); }
-	.tabs button[role='tab'] { min-height: 22px; padding: 0 9px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
-	.tabs button[aria-selected='true'] { background: var(--glass-strong); color: var(--ink); box-shadow: 0 1px 3px rgba(10, 25, 40, 0.15); }
-	.info { width: 18px; height: 18px; margin: 0 3px 0 2px; border: 1.3px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font-family: Georgia, serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
+	.section-title { display: flex; align-items: center; gap: 4px; }
+	.section-title h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+	.info { width: 16px; height: 16px; margin: 0; border: 1.3px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font-family: Georgia, serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
 	.info[aria-expanded='true'] { border-color: var(--link); color: var(--link); }
 	.info-text {
 		position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: 280px;
