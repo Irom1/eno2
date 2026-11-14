@@ -414,31 +414,33 @@
 		opacity: 0;
 	}
 
+	/*
+	 * Night sits on top of day, so each crossfade happens over a fully opaque layer:
+	 * the incoming sky is always solid underneath, and the card never goes see-through mid-change.
+	 */
 	/* ---- Sunset (light → dark): day → warm glow → night, ~3s ---- */
-	.cw.to-dark .sun { transition: transform 2.8s cubic-bezier(0.42, 0, 0.3, 1); }
-	.cw.to-dark .sun-day { transition: opacity 1.2s ease-in-out 0.3s; }
-	.cw.to-dark .sun-dusk { transition: opacity 0.9s ease-in-out 0.2s; }
-	.cw.to-dark .sky-day { transition: opacity 1.4s ease-in-out 0.2s; }
-	.cw.to-dark .sky-golden { animation: golden 2.6s ease-in-out; }
-	.cw.to-dark .sky-night { transition: opacity 1.6s ease-in-out 0.9s; }
+	.cw.to-dark .sun { transition: transform 3s cubic-bezier(0.42, 0, 0.3, 1); }
+	.cw.to-dark .sun-day { transition: opacity 1.6s ease-in-out 0.2s; }
+	.cw.to-dark .sun-dusk { transition: opacity 1.2s ease-in-out 0.1s; }
+	.cw.to-dark .sky-golden { animation: golden 2.8s ease-in-out; }
+	.cw.to-dark .sky-night { transition: opacity 2.2s ease-in-out 0.5s; }
+	.cw.to-dark .sky-day { transition: opacity 0.4s linear 2.7s; } /* hidden under night by now */
 	/* ---- Sunrise (dark → light), mirrored ---- */
-	.cw.to-light .sun { transition: transform 2.8s cubic-bezier(0.4, 0, 0.3, 1); }
-	.cw.to-light .sun-dusk { transition: opacity 1.2s ease-in-out 1s; }
-	.cw.to-light .sun-day { transition: opacity 1.2s ease-in-out 1.1s; }
-	.cw.to-light .sky-night { transition: opacity 1.4s ease-in-out 0.1s; }
-	.cw.to-light .sky-golden { animation: golden 2.6s ease-in-out; animation-name: golden-up; }
-	.cw.to-light .sky-day { transition: opacity 1.6s ease-in-out 0.9s; }
+	.cw.to-light .sun { transition: transform 3s cubic-bezier(0.4, 0, 0.3, 1); }
+	.cw.to-light .sun-dusk { transition: opacity 1.4s ease-in-out 0.9s; }
+	.cw.to-light .sun-day { transition: opacity 1.4s ease-in-out 1s; }
+	.cw.to-light .sky-day { transition: opacity 0.3s linear; } /* solid under night before it fades */
+	.cw.to-light .sky-golden { animation: golden 2.8s ease-in-out; animation-name: golden-up; }
+	.cw.to-light .sky-night { transition: opacity 2.2s ease-in-out 0.3s; }
 	@keyframes golden { 0% { opacity: 0; } 40% { opacity: 0.75; } 100% { opacity: 0; } }
 	@keyframes golden-up { 0% { opacity: 0; } 45% { opacity: 0.7; } 100% { opacity: 0; } }
 
-	/* Cards and text change together with the sky */
-	.cw.to-dark, .cw.to-dark :global(*:not(.sky):not(.sky *)) {
-		transition: color 0.4s ease-in-out 1.25s, background-color 1.6s ease-in-out 0.8s, border-color 1.6s ease-in-out 0.8s,
-			fill 1.6s ease-in-out 0.8s, stroke 1.6s ease-in-out 0.8s, box-shadow 1.6s ease-in-out 0.8s !important;
-	}
+	/* Page, cards and text ease over the same span as the sky */
+	.cw.to-dark, .cw.to-dark :global(*:not(.sky):not(.sky *)),
 	.cw.to-light, .cw.to-light :global(*:not(.sky):not(.sky *)) {
-		transition: color 0.4s ease-in-out 1.15s, background-color 1.6s ease-in-out 0.6s, border-color 1.6s ease-in-out 0.6s,
-			fill 1.6s ease-in-out 0.6s, stroke 1.6s ease-in-out 0.6s, box-shadow 1.6s ease-in-out 0.6s !important;
+		transition: color 1.4s ease-in-out 0.8s, background-color 2.2s ease-in-out 0.4s, border-color 2.2s ease-in-out 0.4s,
+			fill 2.2s ease-in-out 0.4s, stroke 2.2s ease-in-out 0.4s, box-shadow 2.2s ease-in-out 0.4s,
+			backdrop-filter 2.2s ease-in-out 0.4s !important;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
