@@ -355,17 +355,6 @@
           <div class="assistant-turn" class:intro={message.intro}>
             <EnoThinking {variant} active={isThinking} size={40} />
             <div class="assistant-content">
-              {#if hasCards}
-                <div class="chat-cards">
-                  {#each shownCards as card (card.id)}
-                    <ChatCardRenderer
-                      {card}
-                      allowedKinds={allowedKinds.size > 0 ? allowedKinds : undefined}
-                      accountFilter={creditOnly ? 'credit' : 'all'}
-                    />
-                  {/each}
-                </div>
-              {/if}
               {#if showText || (message.pending && !hasCards)}
                 <div class="bubble assistant">
                   {#if isThinking}
@@ -387,6 +376,17 @@
                   {#if showText}
                     <div class="richtext">{@html renderMarkdown(displayText)}</div>
                   {/if}
+                </div>
+              {/if}
+              {#if hasCards}
+                <div class="chat-cards">
+                  {#each shownCards as card (card.id)}
+                    <ChatCardRenderer
+                      {card}
+                      allowedKinds={allowedKinds.size > 0 ? allowedKinds : undefined}
+                      accountFilter={creditOnly ? 'credit' : 'all'}
+                    />
+                  {/each}
                 </div>
               {/if}
               {#if message.intro && (booting || !ready)}

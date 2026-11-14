@@ -115,13 +115,10 @@ test.describe('chat prompts', () => {
     // The responder turn's mascot sits to the left of its content column.
     const responderTurn = page.locator('.assistant-turn').last();
     const responderAvatar = responderTurn.locator('.eno-thinking');
-    const responderContent = responderTurn.locator('.chat-cards').first();
+    const responderContent = responderTurn.locator('.assistant-content').first();
     await expect(responderAvatar).toBeVisible();
     const responderAvatarBox = await responderAvatar.boundingBox();
-    const responderContentBox =
-      (await responderContent.count()) > 0
-        ? await responderContent.boundingBox()
-        : await responderTurn.locator('.bubble.assistant').first().boundingBox();
+    const responderContentBox = await responderContent.boundingBox();
     expect(responderAvatarBox, 'responder mascot should be laid out').not.toBeNull();
     expect(responderContentBox, 'responder content should be laid out').not.toBeNull();
     expect(
@@ -435,7 +432,7 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('cards render above the assistant response text', async ({ page }) => {
+  test('cards render below the assistant response text', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);
 
@@ -487,16 +484,16 @@ test.describe('chat prompts', () => {
         hasCards: Boolean(cards),
         hasBubble: Boolean(bubble),
         hasRich: Boolean(rich),
-        cardsBeforeBubble:
+        cardsAfterBubble:
           Boolean(cards && bubble) &&
-          Boolean(cards!.compareDocumentPosition(bubble!) & Node.DOCUMENT_POSITION_FOLLOWING)
+          Boolean(bubble!.compareDocumentPosition(cards!) & Node.DOCUMENT_POSITION_FOLLOWING)
       };
     });
     expect(order).toEqual({
       hasCards: true,
       hasBubble: true,
       hasRich: true,
-      cardsBeforeBubble: true
+      cardsAfterBubble: true
     });
 
     expectNoErrors(errors);
