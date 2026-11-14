@@ -1,0 +1,168 @@
+import { describe, expect, it } from "vitest";
+import type { AgentEvent } from "./events";
+import type { ToolCallResult } from "./mcp";
+import { mockAgent, type MockAgentDeps } from "./mockAgent";
+import { createSession } from "./session";
+
+const customer = { id: "cust-1", firstName: "Maya", lastName: "Chen" };
+const accounts = [
+  {
+    id: "acct-1",
+    type: "Checking",
+    nickname: "Everyday",
+    balance: 4218,
+    rewards: 0,
+    accountNumber: "****1234"
+  }
+];
+
+const billsPayload = {
+  asOf: "2026-11-14",
+  days: 30,
+  count: 8,
+  total: 4283.59,
+  liquidBalance: 16858,
+  checkingBalance: 4218,
+  shortfall: 65.59,
+  covered: false,
+  bills: [
+    { payee: "Rent", amount: 1650, dueDate: "2026-11-20", daysUntil: 6 },
+    { payee: "Electric", amount: 120, dueDate: "2026-11-21", daysUntil: 7 }
+  ]
+};
+
+const spendingPayload = {
+  months: 3,
+  monthlyTotals: [
+    { month: "2026-09", total: 2100 },
+    { month: "2026-10", total: 2470 },
+    { month: "2026-11", total: 0 }
+  ],
+  monthlyBreakdown: [
+    {
+      month: "2026-09",
+      total: 2100,
+      transactionCount: 18,
+      categories: [{ category: "housing", total: 2100, share: 1 }]
+    },
+    {
+      month: "2026-10",
+      total: 2470,
+      transactionCount: 20,
+      categories: [
+        { category: "shopping", total: 1800, share: 0.7287 },
+        { category: "groceries", total: 670, share: 0.2713 }
+      ]
+    },
+    { month: "2026-11", total: 0, transactionCount: 0, categories: [] }
+  ],
+  categories: [
+    { category: "shopping", total: 1800, share: 0.4 },
+    { category: "groceries", total: 900, share: 0.2 }
+  ],
+  topDescriptions: [],
+  largestTransactions: [],
+  monthOverMonth: { from: "2026-09", to: "2026-10", delta: 370, pctChange: 17.62 },
+  transactionCount: 20,
+  totalSpend: 6000,
+  averageTransaction: 300
+};
+
+function ok(data: unknown): ToolCallResult {
+  return { ok: true, data, text: JSON.stringify(data) };
+}
+
+async function run(
+  message: string,
+  callTool: MockAgentDeps["callTool"]
+): Promise<{ events: AgentEvent[]; text: string }> {
+  const session = createSession(customer, accounts);
+  const events: AgentEvent[] = [];
+  await mockAgent({
+    session,
+    message,
+    emit: (event) => events.push(event),
+    deps: { callTool, now: () => new Date("2026-11-14T12:00:00Z") }
+  });
+  const text = events
+    .filter((event): event is Extract<AgentEvent, { type: "text" }> => event.type === "text")
+    .map((event) => event.delta)
+    .join("");
+  return { events, text };
+}
+
+describe("mockAgent", () => {
+  it("routes bills questions and emits ordered events with exact figures", async () => {
+    const { events, text } = await run("What's due before my next paycheck and can I cover it?", async (name) => {
+      expect(name).toBe("insight_upcoming_bills");
+      return ok(billsPayload);
+    });
+
+    const types = events.map((event) => event.type);
+    expect(types).toEqual(["tool_start", "tool_result", "insight", "text", "usage", "done"]);
+
+    expect(text).toContain("8 bills");
+    expect(text).toContain("4,283.59");
+    expect(text).toContain("4,218");
+    expect(text).toContain("65.59");
+    expect(text).toContain("Rent");
+    expect(text).toContain("1,650");
+    expect(text).not.toContain("not financial advice");
+    expect(text).not.toContain("read-only");
+  });
+
+  it("uses the latest complete month for spending answers", async () => {
+    const { text } = await run("Where did my money go?", async (name) => {
+      expect(name).toBe("insight_spending_breakdown");
+      return ok(spendingPayload);
+    });
+
+    expect(text).toContain("October 2026");
+    expect(text).toContain("$2,470");
+    expect(text).toContain("shopping");
+    expect(text).toContain("$1,800");
+    expect(text).toContain("20 transactions");
+    expect(text).not.toContain("estimated");
+    expect(text).not.toContain("descriptions");
+    expect(text).not.toContain("November 2026");
+  });
+
+  it("describes anomalies in plain language", async () => {
+    const { text } = await run("Anything weird in my transactions?", async (name) => {
+      expect(name).toBe("insight_anomalies");
+      return ok({
+        count: 2,
+        findings: [
+          {
+            type: "duplicate",
+            description: "NETFLIX",
+            amount: 15.99,
+            date: "2026-10-02",
+            duplicateOf: "2026-09-30"
+          },
+          {
+            type: "outlier",
+            description: "APPLE STORE",
+            amount: 1200,
+            date: "2026-10-12"
+          }
+        ]
+      });
+    });
+
+    expect(text).toContain("possible duplicate");
+    expect(text).toContain("unusually large purchase");
+    expect(text).not.toMatch(/outlier|median|MAD|threshold|findings/i);
+  });
+
+  it("degrades gracefully when a tool fails", async () => {
+    const { events, text } = await run("Anything weird?", async () => {
+      throw new Error("MCP unavailable");
+    });
+
+    const toolResult = events.find((event) => event.type === "tool_result");
+    expect(toolResult).toMatchObject({ type: "tool_result", ok: false });
+    expect(text).toContain("couldn't read that data");
+    expect(events[events.length - 1]?.type).toBe("done");
+  });
+});

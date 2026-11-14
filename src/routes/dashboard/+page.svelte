@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import CapitalOneLogo from './CapitalOneLogo.svelte';
+  import ChatPanel from './ChatPanel.svelte';
 
   type Theme = 'light' | 'dark' | 'system';
 
@@ -13,53 +14,51 @@
 
   const signIn = 'https://www.capitalone.com/sign-in/';
   const helpCenter = 'https://www.capitalone.com/help-center/';
-  const referral = 'Earn $100 for each approved referral, up to $500 per year.';
-  const offers = [
-    { store: 'Walmart', amount: '5% back' },
-    { store: 'Apple', amount: '10% back' },
-    { store: 'eBay', amount: 'Up to 10% back' }
-  ];
 
   let theme = $state<Theme>('system');
   let profileOpen = $state(false);
-  let profileButton: HTMLButtonElement;
-  let closeProfileButton: HTMLButtonElement;
+  let chatOpen = $state(false);
+  let chatPrompt = $state<{ text: string; id: number } | null>(null);
+  let promptSeq = 0;
+  let profileButton = $state<HTMLButtonElement>();
+  let closeProfileButton = $state<HTMLButtonElement>();
 
   async function toggleProfile() {
+    if (!profileOpen) chatOpen = false;
     profileOpen = !profileOpen;
     await tick();
-    (profileOpen ? closeProfileButton : profileButton).focus();
+    (profileOpen ? closeProfileButton : profileButton)?.focus();
   }
 
   function handleEscape(event: KeyboardEvent) {
-    if (event.key === 'Escape' && profileOpen && !event.defaultPrevented && !dialog?.open) {
+    if (event.key === 'Escape' && !chatOpen && profileOpen && !event.defaultPrevented && !dialog?.open) {
       void toggleProfile();
     }
   }
   let hidden = $state<Record<string, boolean>>({});
   const shortcuts = [
-    { label: 'Virtual cards', prompt: 'Show me my virtual cards', icon: 'card', keywords: ['virtual', 'digital card'], detail: 'Choose an eligible credit card to manage your virtual cards.', link: signIn, linkText: 'Manage virtual cards' },
-    { label: 'Referral bonuses', prompt: 'How do referral bonuses work?', icon: 'gift', keywords: ['refer', 'bonus', 'friend'], detail: referral, link: signIn, linkText: 'Refer a friend' },
-    { label: 'Shopping offers', prompt: 'Find cash-back shopping offers', icon: 'tag', keywords: ['shop', 'offer', 'cash back', ...offers.map((offer) => offer.store.toLowerCase())], detail: offers.map((offer) => `${offer.store}: ${offer.amount}`).join(' · '), link: signIn, linkText: 'View offers' },
-    { label: 'ATM finder', prompt: 'Find an ATM near me', icon: 'pin', keywords: ['atm', 'branch', 'location', 'near me'], detail: 'Find a Capital One branch, Café or ATM near you.', link: 'https://locations.capitalone.com/', linkText: 'Find a location' }
+    { label: 'Snapshot', prompt: 'Give me a snapshot of my finances', icon: 'card' },
+    { label: 'Spending', prompt: 'Where did my money go last month?', icon: 'gift' },
+    { label: 'Bills', prompt: "What's due in the next 30 days?", icon: 'tag' },
+    { label: 'Anomalies', prompt: 'Anything weird in my transactions?', icon: 'pin' },
+    { label: 'ATM finder', prompt: 'Find an ATM near Arlington', icon: 'pin' }
   ];
 
   let query = $state('');
-  let request = $state('');
 
-  let matchingShortcuts = $derived(request ? shortcuts.filter((shortcut) =>
-    shortcut.keywords.some((keyword) => request.toLowerCase().includes(keyword))
-  ) : []);
-  let matchingAccounts = $derived(request ? accounts.filter((account) => {
-    const term = request.toLowerCase();
-    return /\b(accounts?|balances?|payments?)\b/.test(term) ||
-      term.includes(account.ending) ||
-      account.name.toLowerCase().split(' ').some((word) => word.length > 2 && term.includes(word));
-  }) : []);
+  function openChat(text?: string) {
+    chatOpen = true;
+    profileOpen = false;
+    const trimmed = text?.trim();
+    if (trimmed) chatPrompt = { text: trimmed, id: ++promptSeq };
+  }
 
-  function search(event: SubmitEvent) {
+  function submit(event: SubmitEvent) {
     event.preventDefault();
-    request = query.trim();
+    const text = query.trim();
+    if (!text) return;
+    query = '';
+    openChat(text);
   }
   let dialog: HTMLDialogElement;
   let selected = $state<{ title: string; detail: string; link?: string; linkText?: string }>();
@@ -109,7 +108,7 @@
 
 <svelte:window onkeydown={handleEscape} />
 
-<div class="dashboard" class:profile-open={profileOpen} data-theme={theme}>
+<div class="dashboard" class:profile-open={profileOpen} class:chat-open={chatOpen} data-theme={theme}>
   <div class="dashboard-body">
     <div class="wallet-band">
       <header class="header">
@@ -119,11 +118,11 @@
             <span class="avatar" aria-hidden="true">M</span>
             <span class="profile-name">Mori</span>
           </button>
-          <form class="composer" onsubmit={search}>
+          <form class="composer" onsubmit={submit}>
             <div class="composer-field" data-value={query}>
-              <textarea bind:value={query} rows="1" aria-label="Search your wallet" placeholder="What do you want to find in your wallet?"></textarea>
+              <textarea bind:value={query} rows="1" aria-label="Ask Capital One" placeholder="Ask about your money, spending, or bills…"></textarea>
             </div>
-            <button class="primary send" aria-label="Search" disabled={!query.trim()}>
+            <button class="primary send" aria-label="Ask" disabled={!query.trim()}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/></svg>
             </button>
           </form>
@@ -132,7 +131,7 @@
       <section class="container wallet" aria-label="Wallet shortcuts">
         <div class="shortcuts" role="group" aria-label="Wallet shortcuts">
           {#each shortcuts as shortcut}
-            <button class="prompt" onclick={() => { query = shortcut.prompt; request = shortcut.prompt; }}>
+            <button class="prompt" onclick={() => openChat(shortcut.prompt)}>
               {#if shortcut.icon === 'card'}
                 {@render cardIcon()}
               {:else}
@@ -146,24 +145,10 @@
                   {/if}
                 </svg>
               {/if}
-              {shortcut.prompt}
+              {shortcut.label}
             </button>
           {/each}
         </div>
-        {#if request}
-          <div class="search-results" aria-live="polite">
-            <div class="search-heading"><h2>Results</h2><button class="quiet" onclick={() => { request = ''; query = ''; }}>Clear</button></div>
-            {#each matchingShortcuts as shortcut}
-              <p><button class="link" onclick={() => show(shortcut.label, shortcut.detail, shortcut.link, shortcut.linkText)}>{shortcut.label} {@render arrowIcon()}</button> · {shortcut.detail}</p>
-            {/each}
-            {#each matchingAccounts as account}
-              <p><a class="link" href={'#account-' + account.ending}>{account.name} •• {account.ending}</a>{#if !hidden[account.ending]} · ${account.balance}{/if}</p>
-            {/each}
-            {#if !matchingShortcuts.length && !matchingAccounts.length}
-              <p>Try an account name or a shortcut such as “virtual cards” or “ATM.”</p>
-            {/if}
-          </div>
-        {/if}
       </section>
     </div>
 
@@ -249,23 +234,27 @@
     </main>
   </div>
 
-  <aside class="profile-panel" id="profile-panel" aria-labelledby="profile-title" inert={!profileOpen}>
-    <div class="profile-panel-content">
-      <div class="profile-panel-heading">
-        <h2 id="profile-title">Mori</h2>
-        <button class="panel-close quiet" bind:this={closeProfileButton} aria-label="Close profile panel" onclick={toggleProfile}>×</button>
+  <ChatPanel open={chatOpen} initialPrompt={chatPrompt} onClose={() => (chatOpen = false)} />
+
+  {#if !chatOpen}
+    <aside class="profile-panel" id="profile-panel" aria-labelledby="profile-title" inert={!profileOpen}>
+      <div class="profile-panel-content">
+        <div class="profile-panel-heading">
+          <h2 id="profile-title">Mori</h2>
+          <button class="panel-close quiet" bind:this={closeProfileButton} aria-label="Close profile panel" onclick={toggleProfile}>×</button>
+        </div>
+        <label class="theme-picker">
+          Appearance
+          <select value={theme} onchange={changeTheme}>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="system">System</option>
+          </select>
+        </label>
+        <a class="link" href={signIn}>Manage your profile {@render arrowIcon()}</a>
       </div>
-      <label class="theme-picker">
-        Appearance
-        <select value={theme} onchange={changeTheme}>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-          <option value="system">System</option>
-        </select>
-      </label>
-      <a class="link" href={signIn}>Manage your profile {@render arrowIcon()}</a>
-    </div>
-  </aside>
+    </aside>
+  {/if}
 
   <dialog bind:this={dialog} aria-labelledby="dialog-title">
     {#if selected}
@@ -306,11 +295,13 @@
   }
   .dashboard {
     --profile-width: min(17rem, 36vw);
+    --chat-width: min(27rem, 44vw);
     display: grid;
     grid-template-columns: minmax(0, 1fr) 0px;
     transition: grid-template-columns 240ms ease;
   }
   .dashboard.profile-open { grid-template-columns: minmax(0, 1fr) var(--profile-width); }
+  .dashboard.chat-open { grid-template-columns: minmax(0, 1fr) var(--chat-width); }
   .dashboard-body { container-type: inline-size; }
   .profile-panel {
     position: sticky;
@@ -444,9 +435,6 @@
   }
   .prompt svg { color: var(--link); }
   .prompt:hover { background: color-mix(in srgb, var(--surface) 65%, transparent); }
-  .search-results { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-top: 14px; padding: 15px; }
-  .search-heading { display: flex; justify-content: space-between; }
-  .search-results p { margin-top: 8px; }
   .link { display: inline-flex; align-items: center; gap: 5px; color: var(--link); font-weight: 650; text-align: left; }
   .link svg { width: 15px; height: 15px; }
 
@@ -542,6 +530,9 @@
     .account { padding-inline: 14px; column-gap: 9px; }
     .account-top h2 { font-size: 18px; }
     .feature-main { padding-inline: 17px; }
+  }
+  @media (max-width: 900px) {
+    .dashboard.chat-open { grid-template-columns: minmax(0, 1fr) 0px; }
   }
   @media (max-width: 640px) {
     .dashboard { --profile-width: min(17rem, 85vw); }
