@@ -5,14 +5,19 @@
 	 */
 	import { scoreFraction, type ClimateReport } from './emissions';
 
-	let { href = '/climatewise' }: { href?: string } = $props();
+	let { href = '/climatewise', refresh = 0 }: { href?: string; /** Change to refetch, e.g. after switching customers. */ refresh?: number } = $props();
 	let report = $state<ClimateReport | null>(null);
 
 	$effect(() => {
+		refresh;
+		let cancelled = false;
+		report = null; // show "Loading" instead of the previous customer's score
 		fetch('/api/climate?days=30')
 			.then((r) => (r.ok ? r.json() : null))
-			.then((d) => (report = d?.report ?? null))
+			.then((d) => !cancelled && (report = d?.report ?? null))
 			.catch(() => {});
+		// a slower response for the previous customer must not overwrite the new one
+		return () => (cancelled = true);
 	});
 
 	// gauge covers 270° like CreditWise: 0..75% of the conic circle

@@ -79,6 +79,8 @@
   let loans = $state<WalletLoan[]>([]);
   let recentActivity = $state<WalletTransaction[]>([]);
   let snapshotOverview = $state<OverviewSnapshot | null>(null);
+  // Bumped after each successful load, so widgets that fetch their own data (ClimateWise) refetch for the new session.
+  let snapshotVersion = $state(0);
   let snapshotLoading = $state(true);
   let snapshotError = $state('');
   let accountNotice = $state('');
@@ -269,6 +271,7 @@
       loans = Array.isArray(snapshot.loans) ? snapshot.loans : [];
       recentActivity = Array.isArray(snapshot.recentActivity) ? snapshot.recentActivity : [];
       snapshotOverview = overview;
+      snapshotVersion++;
       if (seq === snapshotSeq) openDeepLinkedAccount();
     } catch {
       if (seq !== snapshotSeq) return;
@@ -751,7 +754,7 @@
               </div>
               <a class="link" href="https://www.capitalone.com/creditwise/">Check your FICO® Score {@render arrowIcon()}</a>
             </article>
-            <ClimateWiseWidget />
+            <ClimateWiseWidget refresh={snapshotVersion} />
             {:else if !snapshotLoading && !snapshotError}
               <article class="panel utility getting-started">
                 <h2>Make yourself at home.</h2>
