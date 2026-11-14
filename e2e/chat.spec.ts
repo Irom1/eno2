@@ -167,6 +167,28 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('"What credit cards do I have?" lists only credit-card accounts', async ({ page }) => {
+    const errors = collectErrors(page);
+    await runPrompt(page, 'What credit cards do I have?');
+
+    await expectCardCount(page, { min: 1 });
+    const titles = await cardTitles(page);
+    const text = await cardText(page);
+
+    expect(text, `expected a Venture card, got ${JSON.stringify(titles)}`).toMatch(/Venture/i);
+    expect(text).not.toContain('Everyday Checking');
+    expect(text).not.toContain('Emergency Fund');
+
+    // A list card must be labelled for credit cards, never the generic all-accounts title.
+    if (titles.some((title) => title === 'Accounts' || title === 'Credit cards')) {
+      expect(titles).toContain('Credit cards');
+      expect(titles).not.toContain('Accounts');
+    }
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
   test('"Show me my recurring payments" renders one Recurring payments card', async ({
     page
   }) => {

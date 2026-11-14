@@ -36,6 +36,9 @@ describe("buildSystemInstruction", () => {
     expect(instruction).toContain(
       'For a specific topic (loans, transactions, rewards, bills, recurring, spending, locations), call the specific tool directly. Do not call insight_financial_overview as a preamble or to look up ids unless the user asks for an overview/snapshot or cross-account context is required. Do not query every account for a single-account question. Use the fewest tools needed.'
     );
+    expect(instruction).toContain(
+      'For a credit-card question, show only credit-card accounts; do not include checking or savings unless the customer also asks for accounts.'
+    );
     expect(instruction).toContain("Avoid markdown headings (#)");
     expect(instruction).toContain(
       'Cards already show account names, balances, amounts, dates, statuses, and rows. Do NOT restate any value, name, date, or row visible in a card.'

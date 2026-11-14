@@ -4,6 +4,7 @@ import {
   allowedKindsFor,
   classifyIntents,
   isCardEmpty,
+  isCreditOnlyPrompt,
   visibleCards
 } from './relevance';
 
@@ -120,6 +121,25 @@ describe('classifyIntents', () => {
   it('returns an empty set for an unknown prompt', () => {
     expect(classifyIntents('Tell me something interesting').size).toBe(0);
     expect(allowedKindsFor(new Set()).size).toBe(0);
+  });
+});
+
+describe('isCreditOnlyPrompt', () => {
+  it('treats credit-card-only questions as credit-only', () => {
+    expect(isCreditOnlyPrompt('What credit cards do I have?')).toBe(true);
+    expect(isCreditOnlyPrompt('Show me my cards')).toBe(true);
+    expect(isCreditOnlyPrompt('Show my credit card rewards')).toBe(true);
+  });
+
+  it('keeps the full account list for mixed or account questions', () => {
+    expect(isCreditOnlyPrompt('Show my accounts')).toBe(false);
+    expect(isCreditOnlyPrompt('Show my accounts and credit cards')).toBe(false);
+    expect(isCreditOnlyPrompt('Give me a snapshot')).toBe(false);
+  });
+
+  it('falls back to false for unrelated prompts', () => {
+    expect(isCreditOnlyPrompt('Show me my loans')).toBe(false);
+    expect(isCreditOnlyPrompt('Hello! What can you do?')).toBe(false);
   });
 });
 

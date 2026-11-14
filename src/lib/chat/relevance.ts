@@ -60,6 +60,16 @@ export function classifyIntents(prompt: string): Set<Intent> {
   return intents;
 }
 
+/**
+ * True when the customer is asking specifically about credit cards, without
+ * also asking for all accounts or an overview. Such answers should list only
+ * credit-card accounts.
+ */
+export function isCreditOnlyPrompt(prompt: string): boolean {
+  const intents = classifyIntents(prompt);
+  return intents.has('credit') && !intents.has('accounts') && !intents.has('overview');
+}
+
 const OVERVIEW_GROUP: ReadonlySet<ChatCardKind> = new Set([
   'overview',
   'accounts',

@@ -22,11 +22,15 @@
     card: ChatCard;
     /** When provided, only these card kinds may render. */
     allowedKinds?: ReadonlySet<ChatCardKind>;
+    /** Narrow an accounts/account card to credit cards only. */
+    accountFilter?: 'all' | 'credit';
   }
 
-  let { card, allowedKinds }: Props = $props();
+  let { card, allowedKinds, accountFilter = 'all' }: Props = $props();
 
   const data = $derived(asRecord(card.payload));
+  const creditOnly = $derived(accountFilter === 'credit');
+  const accountTitle = $derived(creditOnly ? 'Credit cards' : 'Accounts');
   const allowed = $derived(!allowedKinds || allowedKinds.has(card.kind));
   const showOverview = $derived(!allowedKinds || allowedKinds.has('overview'));
   const showAccounts = $derived(!allowedKinds || allowedKinds.has('accounts'));
@@ -44,7 +48,7 @@
     <OverviewCard payload={card.payload} />
   {/if}
   {#if showAccounts && hasAccounts}
-    <AccountListCard payload={data.accounts} />
+    <AccountListCard payload={data.accounts} filter={accountFilter} title={accountTitle} />
   {/if}
   {#if showRewards}
     <RewardsCard payload={data.totalRewards} />
@@ -54,9 +58,11 @@
   {/if}
 {:else if card.kind === 'unknown' || allowed}
   {#if card.kind === 'accounts'}
-    <AccountListCard payload={card.payload} />
+    <AccountListCard payload={card.payload} filter={accountFilter} title={accountTitle} />
   {:else if card.kind === 'account'}
-    <AccountCard payload={card.payload} />
+    {#if !creditOnly || String(data.type ?? '').toLowerCase().includes('credit')}
+      <AccountCard payload={card.payload} />
+    {/if}
   {:else if card.kind === 'transactions' || card.kind === 'transaction'}
     <TransactionsCard payload={card.payload} tool={card.tool} />
   {:else if card.kind === 'bills'}

@@ -5,7 +5,7 @@
   import { chatCardKind, type ChatCard } from '$lib/chat/cards.js';
   import { filterCardDuplication } from '$lib/chat/dedupe.js';
   import { followUpsFor } from '$lib/chat/followUps.js';
-  import { allowedKindsFor, classifyIntents, visibleCards } from '$lib/chat/relevance.js';
+  import { allowedKindsFor, classifyIntents, isCreditOnlyPrompt, visibleCards } from '$lib/chat/relevance.js';
   import ChatCardRenderer from './chat-cards/ChatCardRenderer.svelte';
   import FollowUps from './FollowUps.svelte';
 
@@ -337,6 +337,7 @@
         <div class="bubble user">{message.text}</div>
       {:else}
         {@const allowedKinds = allowedKindsFor(classifyIntents(message.prompt ?? ''))}
+        {@const creditOnly = isCreditOnlyPrompt(message.prompt ?? '')}
         {@const shownCards = visibleCards(message.cards ?? [], message.prompt ?? '')}
         {@const hasCards = shownCards.length > 0}
         {@const displayText =
@@ -360,6 +361,7 @@
                   <ChatCardRenderer
                     {card}
                     allowedKinds={allowedKinds.size > 0 ? allowedKinds : undefined}
+                    accountFilter={creditOnly ? 'credit' : 'all'}
                   />
                 {/each}
               </div>

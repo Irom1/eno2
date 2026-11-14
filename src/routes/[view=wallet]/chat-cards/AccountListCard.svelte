@@ -5,11 +5,18 @@
 
   interface Props {
     payload: unknown;
+    filter?: 'all' | 'credit';
+    title?: string;
   }
 
-  let { payload }: Props = $props();
+  let { payload, filter = 'all', title = 'Accounts' }: Props = $props();
 
-  const items = $derived(asItems(payload));
+  const all = $derived(asItems(payload));
+  const items = $derived(
+    filter === 'credit'
+      ? all.filter((account) => text(account.type).toLowerCase().includes('credit'))
+      : all
+  );
 
   function text(value: unknown): string {
     return value === undefined || value === null ? '' : String(value);
@@ -39,9 +46,9 @@
   }
 </script>
 
-<ChatCardShell title="Accounts" badge={items.length ? `${items.length}` : undefined}>
+<ChatCardShell {title} badge={items.length ? `${items.length}` : undefined}>
   {#if items.length === 0}
-    <p class="empty">No accounts to show.</p>
+    <p class="empty">{filter === 'credit' ? 'No credit cards.' : 'No accounts to show.'}</p>
   {:else}
     <ul class="rows">
       {#each items as account, index (text(account._id) || index)}
