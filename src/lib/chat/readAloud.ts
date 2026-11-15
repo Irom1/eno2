@@ -5,7 +5,11 @@
  * played through the Web Audio API. The AudioContext is created/resumed
  * synchronously in the click handler (before the network request) so iOS and
  * Safari allow playback once the audio bytes arrive.
+ *
+ * The Eno intro is pre-recorded and served as a static asset so repeated intro
+ * plays never call ElevenLabs.
  */
+import { ENO_INTRO } from './intro';
 
 type AudioContextConstructor = typeof AudioContext;
 
@@ -17,6 +21,10 @@ function contextConstructor(): AudioContextConstructor | undefined {
   };
   return candidate.AudioContext ?? candidate.webkitAudioContext;
 }
+
+const PRE_RECORDED: Record<string, string> = {
+  [ENO_INTRO]: '/audio/eno-intro.mp3'
+};
 
 let context: AudioContext | null = null;
 let currentSource: AudioBufferSourceNode | null = null;
@@ -73,13 +81,30 @@ export async function readAloud(
   const controller = new AbortController();
   currentController = controller;
 
-  try {
-    const response = await fetch('/api/tts', {
+  const postToTts = () =>
+    fetch('/api/tts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: trimmed }),
       signal: controller.signal
     });
+
+  // Prefer the static recording for known text. If it fails for a non-abort
+  // reason, fall back to live synthesis so playback still works.
+  const requestAudio = async (): Promise<Response> => {
+    const staticUrl = PRE_RECORDED[trimmed];
+    if (!staticUrl) return postToTts();
+    try {
+      const staticResponse = await fetch(staticUrl, { signal: controller.signal });
+      if (staticResponse.ok || myGeneration !== generation) return staticResponse;
+    } catch (error) {
+      if (controller.signal.aborted || myGeneration !== generation) throw error;
+    }
+    return postToTts();
+  };
+
+  try {
+    const response = await requestAudio();
     if (myGeneration !== generation) return;
 
     if (!response.ok) {

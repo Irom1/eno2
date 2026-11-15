@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ENO_INTRO } from './intro';
 import { readAloud, stopReadAloud, supportsReadAloud } from './readAloud';
 
 const createdSources: FakeSource[] = [];
@@ -63,6 +64,42 @@ describe('readAloud', () => {
     expect(onEnd).not.toHaveBeenCalled();
     createdSources[0].onended?.();
     expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('plays the pre-recorded intro without calling /api/tts', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string) => new Response(new Uint8Array([1, 2, 3]), { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const reportError = vi.fn();
+
+    await readAloud(ENO_INTRO, reportError);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(url).toBe('/audio/eno-intro.mp3');
+    expect(fetchMock.mock.calls.some(([called]) => called === '/api/tts')).toBe(false);
+    expect(createdSources).toHaveLength(1);
+    expect(createdSources[0].start).toHaveBeenCalledTimes(1);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('falls back to /api/tts when the static intro is missing', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url === '/audio/eno-intro.mp3'
+        ? new Response('not found', { status: 404 })
+        : new Response(new Uint8Array([1, 2, 3]), { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await readAloud(ENO_INTRO, vi.fn());
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/audio/eno-intro.mp3',
+      '/api/tts'
+    ]);
+    expect(createdSources).toHaveLength(1);
+    expect(createdSources[0].start).toHaveBeenCalledTimes(1);
   });
 
   it('aborts the in-flight request and never plays after stop', async () => {
