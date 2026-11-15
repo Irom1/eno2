@@ -66,7 +66,10 @@ describe("buildSystemInstruction", () => {
       'Prefer the smallest primitive card(s) needed, and put the analysis, comparison, and next step in the prose.'
     );
     expect(instruction).toContain(
-      'For a single bill or account, use one primitive card; never render an account list. When insight_upcoming_bills returns multiple bills, the bill list card shows them; do not call present_card for individual bills as well. Leave totals, coverage, and account comparisons in the prose.'
+      'For a single bill or account, use one primitive card. An explicit accounts-list question renders one AccountCard per account instead of an all-accounts dump. When insight_upcoming_bills returns multiple bills, the bill list card shows them; do not call present_card for individual bills as well. Leave totals, coverage, and account comparisons in the prose.'
+    );
+    expect(instruction).toContain(
+      'An explicit accounts-list question asks the UI to render one AccountCard per account; a credit-card-only question stays in prose or its one matching card.'
     );
     expect(instruction).toContain(
       'Multiple due bills render the bill list card in the tool\'s order; explain the pattern and coverage in prose and do not call present_card for individual rows.'

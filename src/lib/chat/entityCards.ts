@@ -954,7 +954,8 @@ export function billListCard(
 
 /**
  * Build a single-account card. Account lists (zero or more than one row) return
- * null so the prose answers instead of rendering an all-accounts dump.
+ * null here so single-entity callers keep one card; use `accountCards` for an
+ * explicit accounts-list question that should render one card per account.
  */
 export function accountCard(
   payload: unknown,
@@ -1006,6 +1007,36 @@ export function accountCard(
     return card;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Build one account card per valid account in a list payload, preserving the
+ * tool's order. Malformed rows are skipped rather than thrown on; an empty or
+ * invalid payload returns an empty list. This is only for an explicit
+ * accounts-list question; single-account callers keep `accountCard`.
+ */
+export function accountCards(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): AccountEntityCard[] {
+  try {
+    const items = asItems(payload);
+    const cards: AccountEntityCard[] = [];
+    for (const item of items) {
+      const card = accountCard(
+        { items: [item] },
+        afterText,
+        startId + cards.length,
+        context
+      );
+      if (card) cards.push(card);
+    }
+    return cards;
+  } catch {
+    return [];
   }
 }
 

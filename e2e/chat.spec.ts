@@ -2298,8 +2298,8 @@ test.describe('chat prompts', () => {
     const errors = collectErrors(page);
     await runPrompt(page, 'What credit cards do I have?');
 
-    // An accounts list stays in prose: only a single-account payload renders an
-    // account card, and there is no account-list primitive.
+    // A credit-card-only question is not an accounts-list question: it stays in
+    // prose (or one matching card) and renders no account cards.
     await expect(page.locator('.account-card')).toHaveCount(0);
 
     const prose = await assistantText(page);
@@ -3567,7 +3567,7 @@ test.describe('primitive bill and account cards', () => {
     expectNoErrors(errors);
   });
 
-  test('an accounts list stays in prose and renders no account list card', async ({ page }) => {
+  test('an accounts list renders one account card per account', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);
 
@@ -3620,13 +3620,34 @@ test.describe('primitive bill and account cards', () => {
 
     await askChat(page, 'What accounts do I have?');
 
-    await expect(page.locator('.account-card')).toHaveCount(0);
-    // No legacy account-list card either.
+    const cards = page.locator('.account-card');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toHaveAttribute('data-kind', 'account');
+    await expect(cards.nth(1)).toHaveAttribute('data-kind', 'account');
+
+    const checkingText = await cards.nth(0).innerText();
+    expect(checkingText).toContain('360 Checking');
+    expect(checkingText, 'the checking balance is shown in its card').toContain('$4,218.00');
+
+    const ventureText = await cards.nth(1).innerText();
+    expect(ventureText).toContain('Venture');
+    expect(ventureText, 'the Venture balance is shown in its card').toContain('$862.00');
+
+    for (const card of [cards.nth(0), cards.nth(1)]) {
+      expect(
+        await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+        'each account card renders inline inside the prose bubble'
+      ).toBe(true);
+    }
+
+    // No legacy account-list card.
     await expect(page.locator('.chat-card')).toHaveCount(0);
+
     const prose = (await assistantText(page)).trim();
     expect(prose.length, 'the prose answers the account question').toBeGreaterThan(0);
     expect(prose).toMatch(/Everyday Checking|Venture/);
 
+    await expectCardStyle(page);
     expectNoErrors(errors);
   });
 

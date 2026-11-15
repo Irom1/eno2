@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   accountCard,
+  accountCards,
   accountHref,
   anchorEntityCards,
   anchorTransactionCards,
@@ -1416,6 +1417,104 @@ describe('accountCard', () => {
     expect(accountCard('account', 0, 1)).toBeNull();
     expect(accountCard([], 0, 1)).toBeNull();
     expect(accountCard({ count: 3 }, 0, 1)).toBeNull();
+  });
+});
+
+describe('accountCards', () => {
+  const account = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    _id: 'acct-checking',
+    nickname: 'Everyday Checking',
+    type: 'Checking',
+    accountNumber: '\u2022\u2022\u2022\u2022 4212',
+    balance: 4218,
+    rewards: 0,
+    customerId: 'cust-1',
+    ...overrides
+  });
+
+  it('builds one card per valid account in payload order', () => {
+    const cards = accountCards(
+      {
+        accounts: [
+          account(),
+          account({
+            _id: 'acct-venture',
+            nickname: 'Venture',
+            type: 'Credit Card',
+            accountNumber: '12345678907788',
+            balance: 862,
+            rewards: 24850
+          })
+        ]
+      },
+      12,
+      4
+    );
+
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => card.id)).toEqual([4, 5]);
+    expect(cards.map((card) => card.entityId)).toEqual([
+      'account:acct-checking',
+      'account:acct-venture'
+    ]);
+    expect(cards.every((card) => card.kind === 'account')).toBe(true);
+    expect(cards.every((card) => card.afterText === 12)).toBe(true);
+    expect(cards[0].payload).toMatchObject({
+      accountId: 'acct-checking',
+      nickname: 'Everyday Checking',
+      type: 'Checking',
+      maskedNumber: '\u2022\u2022\u2022\u2022 4212',
+      balance: 4218,
+      rewards: 0,
+      customerId: 'cust-1'
+    });
+    expect(cards[1].payload).toMatchObject({
+      accountId: 'acct-venture',
+      nickname: 'Venture',
+      type: 'Credit Card',
+      maskedNumber: '\u2022\u2022\u2022\u2022 7788',
+      balance: 862,
+      rewards: 24850
+    });
+  });
+
+  it('skips malformed rows and preserves the order of valid ones', () => {
+    const cards = accountCards(
+      {
+        items: [
+          account({ _id: 'acct-first' }),
+          { nickname: 'No id', type: 'Checking' },
+          account({ _id: 'acct-second' }),
+          { _id: 'acct-no-type' },
+          'nope'
+        ]
+      },
+      0,
+      1
+    );
+
+    expect(cards.map((card) => card.entityId)).toEqual([
+      'account:acct-first',
+      'account:acct-second'
+    ]);
+    expect(cards.map((card) => card.id)).toEqual([1, 2]);
+  });
+
+  it('copies context customerId and returns an empty list without valid accounts', () => {
+    const cards = accountCards(
+      { accounts: [{ _id: 'acct-2', type: 'Checking' }] },
+      0,
+      1,
+      { customerId: 'cust-context' }
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0].payload.customerId).toBe('cust-context');
+
+    expect(accountCards(null, 0, 1)).toEqual([]);
+    expect(accountCards(undefined, 0, 1)).toEqual([]);
+    expect(accountCards('accounts', 0, 1)).toEqual([]);
+    expect(accountCards({ accounts: [] }, 0, 1)).toEqual([]);
+    expect(accountCards({ count: 3 }, 0, 1)).toEqual([]);
   });
 });
 

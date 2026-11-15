@@ -7,6 +7,7 @@
   import { createSseParser } from '$lib/sse.js';
   import {
     accountCard,
+    accountCards,
     anchorEntityCards,
     anomalyExplanation,
     anomalyTransactionCards,
@@ -477,6 +478,26 @@
                     )
                   : [...(message.inlineCards ?? []), incoming];
                 cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (
+              data.kind === 'nessie_list_customer_accounts' &&
+              intents.has('accounts') &&
+              !intents.has('credit')
+            ) {
+              // An explicit accounts-list question renders one account card per
+              // account in the tool's order. A credit-card-only question stays
+              // in prose (or its one matching card), and other card kinds from
+              // the same payload (for example a reward card) are preserved.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = accountCards(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming.length > 0) {
+                const otherCards = (message.inlineCards ?? []).filter(
+                  (card) => card.kind !== 'account'
+                );
+                message.inlineCards = [...otherCards, ...incoming];
+                cardSeq = Math.max(cardSeq, ...incoming.map((card) => card.id));
               }
             }
             if (data.kind === 'nessie_list_account_loans') {
