@@ -428,10 +428,14 @@
     }
   }
 
-  function closeAccountView(): Promise<void> {
-    const destination = openedFromChat ? customerHref('/chat', routeCustomerId) : dashboardHref;
+  function backToDashboard(): Promise<void> {
     openedFromChat = false;
-    return goto(destination, { replaceState: true, noScroll: true });
+    return goto(dashboardHref, { replaceState: true, noScroll: true });
+  }
+
+  function returnToChat(): Promise<void> {
+    openedFromChat = false;
+    return goto(customerHref('/chat', routeCustomerId), { replaceState: true, noScroll: true });
   }
 
   async function handleAccountDeleted(accountId: string): Promise<void> {
@@ -439,7 +443,7 @@
     if (primaryCheckingId === accountId) recentActivity = [];
     liveAccounts = liveAccounts.filter((account) => account.id !== accountId);
     liveBills = liveBills.filter((bill) => bill.accountId !== accountId);
-    await closeAccountView();
+    await backToDashboard();
     accountNotice = 'Account deleted.';
     void loadSnapshot(activeCustomerId);
     await tick();
@@ -958,8 +962,9 @@
     <ViewShell
       title="Account details"
       subtitle={activeName}
-      backLabel={openedFromChat ? 'Return to chat' : 'Back to dashboard'}
-      onBack={closeAccountView}
+      onBack={backToDashboard}
+      returnLabel={openedFromChat ? 'Return to chat' : undefined}
+      onReturn={openedFromChat ? returnToChat : undefined}
     >
       {#snippet children(heading)}
         <AccountDetailView

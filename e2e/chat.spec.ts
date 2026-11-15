@@ -2866,18 +2866,13 @@ test.describe('chat prompts', () => {
     );
 
     await expect(page.locator('.view-shell')).toBeVisible({ timeout: 30_000 });
-    const topbar = page.locator('.view-topbar');
-    await expect(topbar).toBeVisible();
-    await expect(topbar.locator('.back-button[aria-label="Back to dashboard"]')).toBeVisible();
-    expect(await topbar.evaluate((element) => getComputedStyle(element).position)).toBe('sticky');
-    const [topbarBox, bodyBox] = await Promise.all([
-      topbar.boundingBox(),
-      page.locator('.view-body').boundingBox()
-    ]);
-    expect(
-      topbarBox && bodyBox && topbarBox.y < bodyBox.y,
-      'the sticky topbar sits above the scrolling body'
-    ).toBe(true);
+    const backButton = page.locator('.view-shell .back-button[aria-label="Back to dashboard"]');
+    await expect(backButton).toBeVisible();
+    expect(await backButton.evaluate((element) => getComputedStyle(element).borderRadius)).toBe(
+      '50%'
+    );
+    // A direct deep link was not opened from chat, so there is no sticky return bar.
+    await expect(page.locator('.view-topbar')).toHaveCount(0);
     await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
     await expect(page.locator('.tab[aria-pressed="true"]')).toContainText('Activity');
 
@@ -3460,6 +3455,101 @@ test.describe('primitive bill and account cards', () => {
     await expect(card).toContainText('360 Checking');
     await expect(card).toContainText('•••• 4212');
     await expect(page.locator('.chat-card')).toHaveCount(0);
+
+    expectNoErrors(errors);
+  });
+
+  test('a chat-referred account keeps the normal back button and adds Return to chat', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+
+    const customersResponse = await page.request.get('/api/customers');
+    const { customers } = (await customersResponse.json()) as {
+      customers: Array<{ id: string; lastName: string }>;
+    };
+    const maya = customers.find((customer) => customer.lastName === 'Chen') ?? customers[0];
+    expect(maya, 'Maya should exist in the fixture customers').toBeTruthy();
+
+    const sessionResponse = await page.request.post('/api/session', {
+      data: { customerId: maya.id }
+    });
+    expect(sessionResponse.ok()).toBe(true);
+
+    const accountsResponse = await page.request.get('/api/accounts');
+    const accountsPayload = (await accountsResponse.json()) as {
+      accounts: Array<{ id: string; type: string; nickname?: string; balance?: number }>;
+    };
+    const checking =
+      accountsPayload.accounts.find((account) =>
+        account.type.toLowerCase().includes('checking')
+      ) ?? accountsPayload.accounts[0];
+    expect(checking, 'a checking account should exist').toBeTruthy();
+
+    await loadChat(page);
+
+    const intro = 'Your checking account is below.';
+    const events = [
+      `event: text\ndata: ${JSON.stringify({ type: 'text', delta: intro })}`,
+      `event: card\ndata: ${JSON.stringify({
+        type: 'card',
+        card: {
+          id: 1,
+          entityId: `account:${checking.id}`,
+          kind: 'account',
+          afterText: intro.length,
+          payload: {
+            accountId: checking.id,
+            nickname: checking.nickname ?? 'Everyday Checking',
+            type: checking.type,
+            maskedNumber: '•••• 4212',
+            balance: checking.balance ?? 4218,
+            rewards: 0,
+            customerId: maya.id
+          }
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: ' You can open it to review recent activity.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Tell me about my checking account');
+
+    const link = page.locator('.account-card a.account-link');
+    await expect(link).toHaveCount(1, { timeout: 20_000 });
+    await expect(link).toHaveAttribute(
+      'href',
+      `/dashboard?customer=${encodeURIComponent(maya.id)}&account=${encodeURIComponent(checking.id)}`
+    );
+    await link.click();
+
+    await expect(page.locator('.view-shell')).toBeVisible({ timeout: 30_000 });
+    const topbar = page.locator('.view-topbar');
+    await expect(topbar).toBeVisible();
+    const returnButton = topbar.locator('.return-chat-button');
+    await expect(returnButton).toBeVisible();
+    await expect(returnButton).toHaveText('Return to chat');
+    await expect(returnButton).toHaveAttribute('aria-label', 'Return to chat');
+
+    // The normal hero back button stays available alongside the sticky return bar.
+    const heroBack = page.locator('.view-shell .back-button[aria-label="Back to dashboard"]');
+    await expect(heroBack).toBeVisible();
+    await heroBack.click();
+
+    await expect(page.locator('.view-shell')).toBeHidden();
+    await expect(page.locator('.view-topbar')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/dashboard/);
 
     expectNoErrors(errors);
   });

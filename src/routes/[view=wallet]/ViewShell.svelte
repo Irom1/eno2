@@ -4,12 +4,13 @@
   interface Props {
     title: string;
     subtitle?: string;
-    backLabel?: string;
     onBack: () => void;
+    returnLabel?: string;
+    onReturn?: () => void;
     children: Snippet<[Snippet]>;
   }
 
-  let { title, subtitle, backLabel = 'Back to dashboard', onBack, children }: Props = $props();
+  let { title, subtitle, onBack, returnLabel, onReturn, children }: Props = $props();
   let backButton: HTMLButtonElement;
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -28,6 +29,11 @@
 
 {#snippet heading()}
     <div class="view-header-inner">
+      <button class="back-button" type="button" bind:this={backButton} aria-label="Back to dashboard" onclick={onBack}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19 12H5m6-6-6 6 6 6"/>
+        </svg>
+      </button>
       <div class="view-heading">
         <h1>{title}</h1>
         {#if subtitle}<p>{subtitle}</p>{/if}
@@ -36,14 +42,16 @@
 {/snippet}
 
 <div class="view-shell" role="dialog" aria-modal="true" aria-label={title}>
-  <div class="view-topbar">
-    <button class="back-button" type="button" bind:this={backButton} aria-label={backLabel} onclick={onBack}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-        <path d="M6 6l12 12M18 6 6 18" />
-      </svg>
-      <span>{backLabel}</span>
-    </button>
-  </div>
+  {#if returnLabel && onReturn}
+    <div class="view-topbar">
+      <button class="return-chat-button" type="button" aria-label={returnLabel} onclick={onReturn}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+        <span>{returnLabel}</span>
+      </button>
+    </div>
+  {/if}
   <div class="view-body">
     <div class="view-content">
       {@render children(heading)}
@@ -77,6 +85,26 @@
     gap: 12px;
   }
   .back-button {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    transition: background 140ms ease;
+  }
+  .back-button:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+  .back-button:focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+  }
+  .back-button svg { width: 18px; height: 18px; }
+  .return-chat-button {
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -92,12 +120,12 @@
     cursor: pointer;
     transition: background 140ms ease, border-color 140ms ease;
   }
-  .back-button:hover { background: color-mix(in srgb, currentColor 8%, var(--surface)); }
-  .back-button:focus-visible {
+  .return-chat-button:hover { background: color-mix(in srgb, currentColor 8%, var(--surface)); }
+  .return-chat-button:focus-visible {
     outline: 2px solid var(--link);
     outline-offset: 2px;
   }
-  .back-button svg { width: 16px; height: 16px; flex: none; }
+  .return-chat-button svg { width: 16px; height: 16px; flex: none; }
   .view-heading { display: grid; gap: 1px; min-width: 0; }
   .view-heading h1 {
     margin: 0;
