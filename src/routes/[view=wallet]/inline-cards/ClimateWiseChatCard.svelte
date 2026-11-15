@@ -23,4 +23,11 @@
     min-width: 0;
     align-self: flex-start;
   }
+
+  @media (max-width: 570px) {
+    .climatewise-chat-card {
+      width: 96%;
+      max-width: 96%;
+    }
+  }
 </style>

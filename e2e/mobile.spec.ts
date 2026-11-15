@@ -311,7 +311,7 @@ test.describe('360x640 keyboard viewport', () => {
     ).toBe(false);
     await expect(page.locator('.bubble.assistant .climatewise-chat-card')).toHaveCount(0);
 
-    // The 88% column cap keeps the card inside the viewport.
+    // The 96% column cap keeps the card inside the viewport.
     const sizes = await card.evaluate((element) => {
       const rect = element.getBoundingClientRect();
       const container = element.closest('.assistant-content') as HTMLElement | null;
@@ -330,8 +330,8 @@ test.describe('360x640 keyboard viewport', () => {
     expect(sizes.cardRight).toBeLessThanOrEqual(sizes.innerWidth);
     expect(
       sizes.cardWidth,
-      `card width ${sizes.cardWidth} exceeds the 88% cap of ${sizes.containerWidth}`
-    ).toBeLessThanOrEqual(sizes.containerWidth * 0.88 + 1);
+      `card width ${sizes.cardWidth} exceeds the 96% cap of ${sizes.containerWidth}`
+    ).toBeLessThanOrEqual(sizes.containerWidth * 0.96 + 1);
     await expectNoHorizontalOverflow(page);
 
     // Highlighting a ring slice hides the panel title and shows that category.
@@ -414,7 +414,14 @@ test.describe('320x568 narrow phone viewport', () => {
 
     const bounds = await page.locator('.composer').evaluate((element) => {
       const rect = element.getBoundingClientRect();
-      return { top: rect.top, bottom: rect.bottom, left: rect.left, width: rect.width };
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        innerWidth: window.innerWidth
+      };
     });
     const overflow = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
@@ -423,6 +430,10 @@ test.describe('320x568 narrow phone viewport', () => {
     console.log('[320x568 composer]', JSON.stringify({ mirror, bounds, ...overflow }));
 
     expect(bounds.bottom).toBeLessThanOrEqual(320);
+    // The chat container is width: calc(100% - 8px), so the composer spans nearly
+    // the full narrow viewport with at most ~4px of side inset.
+    expect(bounds.left).toBeLessThanOrEqual(8);
+    expect(bounds.right).toBeGreaterThanOrEqual(bounds.innerWidth - 8);
     await expectNoHorizontalOverflow(page);
     expectNoErrors(errors);
   });

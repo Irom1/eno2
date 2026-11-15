@@ -139,6 +139,13 @@
     width: 88%;
     max-width: 88%;
   }
+
+  @media (max-width: 570px) {
+    .atm-actions {
+      width: 96%;
+      max-width: 96%;
+    }
+  }
   .atm-action {
     display: inline-flex;
     align-items: center;

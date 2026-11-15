@@ -1266,6 +1266,8 @@
   }
   @container (max-width: 570px) {
     .container { width: calc(100% - 28px); }
+    /* Chat uses nearly the full narrow viewport: 4px of breathing room per side. */
+    .chat .container { width: calc(100% - 8px); }
     .wallet-band { --composer-bottom-padding: 20px; }
     .header-inner { padding-block: 20px; }
     .dashboard:not(.chat) .composer-area { margin-top: 20px; }

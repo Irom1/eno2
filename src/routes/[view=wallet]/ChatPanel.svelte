@@ -959,6 +959,12 @@
       transform: scale(1);
     }
   }
+  @media (max-width: 570px) {
+    .chat-log { padding: 10px 6px; }
+    .bubble { max-width: 94%; }
+    .bubble.user { max-width: 92%; }
+    .chat-followups { max-width: 94%; }
+  }
   @media (prefers-reduced-motion: reduce) {
     .loading-dots i {
       animation: none;

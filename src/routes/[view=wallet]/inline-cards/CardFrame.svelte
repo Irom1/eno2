@@ -33,4 +33,8 @@
       0 8px 24px color-mix(in srgb, var(--ink) 12%, transparent),
       0 1px 2px color-mix(in srgb, var(--ink) 10%, transparent);
   }
+
+  @media (max-width: 570px) {
+    .entity-card { max-width: 96%; }
+  }
 </style>
