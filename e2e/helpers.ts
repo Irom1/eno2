@@ -190,7 +190,7 @@ export async function assistantText(page: Page): Promise<string> {
  * no lift shadow, no accent strip, and a width capped by the bubble. Account
  * and loan product cards are the single inline surface and have no extra
  * `.entity-card` frame. Multi or series cards (`transaction-list`,
- * `spending-pie`) stay standalone: a framed `.entity-card` surface with lift, a
+ * `spending-pie`) stay standalone: a framed `.entity-card` surface with a
  * border, left alignment, and the same 88% column cap as the Eno chat bubble.
  * The full ClimateWise card is standalone without a second `CardFrame`: its own
  * `article.card` surface is the frame.
@@ -205,6 +205,10 @@ export async function expectCardStyle(page: Page): Promise<void> {
     'cards must not render eyebrow labels'
   ).toHaveCount(0);
 
+  const bubbleSurface = await page.locator('.assistant-turn.intro .bubble.assistant').evaluate((bubble) => {
+    const style = getComputedStyle(bubble);
+    return { border: style.border, radius: style.borderRadius };
+  });
   const surfaces = await page.locator(PRIMITIVE_CARD_SELECTOR).evaluateAll((cards) =>
     cards.map((card) => {
       const bubble = card.closest('.bubble.assistant');
@@ -223,7 +227,8 @@ export async function expectCardStyle(page: Page): Promise<void> {
         fullCard,
         framed: Boolean(frame),
         shadow: style.boxShadow,
-        borderTopWidth: Number.parseFloat(style.borderTopWidth),
+        border: style.border,
+        radius: style.borderRadius,
         accentContent: accent.content,
         leftAligned: columnRect ? Math.abs(targetRect.left - columnRect.left) <= 1 : false,
         withinBubbleWidth: columnRect
@@ -237,6 +242,8 @@ export async function expectCardStyle(page: Page): Promise<void> {
   );
 
   for (const surface of surfaces) {
+    expect(surface.border, 'cards share the assistant bubble border').toBe(bubbleSurface.border);
+    expect(surface.radius, 'cards share the assistant bubble corner radii').toBe(bubbleSurface.radius);
     if (surface.inline) {
       // Inline cards keep the shared border but lose the standalone lift and
       // accent, and never exceed the bubble they sit in.
@@ -247,12 +254,6 @@ export async function expectCardStyle(page: Page): Promise<void> {
         ['none', 'normal'],
         'inline cards must not render a ::before accent bar'
       ).toContain(surface.accentContent);
-      if (surface.framed) {
-        expect(
-          surface.borderTopWidth,
-          'inline cards keep the 1px frame border'
-        ).toBeGreaterThanOrEqual(1);
-      }
       expect(
         surface.withinInlineBubbleWidth,
         'inline cards must not exceed the assistant bubble width'
@@ -265,7 +266,7 @@ export async function expectCardStyle(page: Page): Promise<void> {
       expect(surface.framed, 'the full ClimateWise card must not be double-framed').toBe(
         false
       );
-      expect(surface.shadow, 'the full ClimateWise card lifts off the chat surface').not.toBe(
+      expect(surface.shadow, 'the full ClimateWise card has no outer shadow').toBe(
         'none'
       );
       expect(
@@ -284,8 +285,7 @@ export async function expectCardStyle(page: Page): Promise<void> {
     }
 
     expect(surface.framed, 'standalone primitive cards sit in a contrast frame').toBe(true);
-    expect(surface.shadow, 'cards should lift off the chat surface').not.toBe('none');
-    expect(surface.borderTopWidth, 'cards need a visible border').toBeGreaterThanOrEqual(1);
+    expect(surface.shadow, 'standalone cards have no outer shadow').toBe('none');
     expect(
       ['none', 'normal'],
       'cards must not render a ::before accent bar'

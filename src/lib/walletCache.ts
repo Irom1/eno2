@@ -71,7 +71,7 @@ export function writeWalletCache<T>(
 }
 
 export const snapshotCacheKey = (customerId: string): string =>
-  `${KEY_PREFIX}:snapshot:${customerId}`;
+  `${KEY_PREFIX}:snapshot:v2:${customerId}`;
 
 export const accountCacheKey = (accountId: string): string =>
   `${KEY_PREFIX}:account:${accountId}`;

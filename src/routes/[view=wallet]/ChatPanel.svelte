@@ -54,6 +54,7 @@
     initialPrompt: { text: string; id: number } | null;
     onClose: () => void;
     canSend: boolean;
+    hasUserMessage?: boolean;
     variant?: EnoVariant;
     accounts?: Array<{ id?: string; nickname?: string; type?: string }>;
   }
@@ -74,6 +75,7 @@
     initialPrompt,
     onClose,
     canSend = $bindable(),
+    hasUserMessage = $bindable(false),
     variant = 'light',
     accounts = []
   }: Props = $props();
@@ -100,7 +102,6 @@
   let cardSeq = 0;
   let lastPromptId = 0;
   let inFlightPromptId = 0;
-  let logEl: HTMLDivElement;
   let speechSupported = $state(false);
   let speechNotice = $state('');
   let speaking = false;
@@ -131,10 +132,11 @@
   }
 
 
+  const conversationHasUserMessage = $derived(messages.some((message) => message.role === 'user'));
+
   const suggestions = $derived.by(() => {
     if (streaming || customerId === GUEST_CUSTOMER_ID) return [];
-    const hasUserMessage = messages.some((message) => message.role === 'user');
-    if (!hasUserMessage) return [...STARTER_PROMPTS];
+    if (!conversationHasUserMessage) return [...STARTER_PROMPTS];
     const last = [...messages].reverse().find((message) => message.role === 'assistant');
     if (!last || last.pending) return [];
     const cards = last.inlineCards ?? [];
@@ -142,9 +144,9 @@
     return followUpsFor(cards, last.prompt ?? '', last.text, accounts).slice(0, 3);
   });
 
-  function scrollLog(): void {
+  function scrollToLatest(): void {
     void tick().then(() => {
-      if (logEl) logEl.scrollTop = logEl.scrollHeight;
+      if (open) window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
     });
   }
 
@@ -180,10 +182,7 @@
   }
 
   async function ensureSession(id: string): Promise<boolean> {
-    if (!id) {
-      status = 'Choose an account to get started.';
-      return false;
-    }
+    if (!id) return false;
     if (ready && sessionCustomerId === id) return true;
     if (bootPromise) {
       if (bootTarget === id) return bootPromise;
@@ -297,7 +296,7 @@
     messages.push({ id: assistantId, role: 'assistant', text: '', prompt: value, pending: true });
     streaming = true;
     status = '';
-    scrollLog();
+    scrollToLatest();
 
     try {
       const response = await fetchWithSession('/api/chat', {
@@ -331,7 +330,7 @@
             if (typeof data.delta === 'string') {
               message.text += data.delta;
               status = '';
-              scrollLog();
+              scrollToLatest();
             }
             break;
           case 'insight': {
@@ -626,7 +625,7 @@
                 cardSeq = Math.max(cardSeq, merged.id);
               }
             }
-            scrollLog();
+            scrollToLatest();
             break;
           }
           case 'card': {
@@ -659,7 +658,7 @@
               index >= 0
                 ? current.map((card, position) => (position === index ? incoming : card))
                 : [...current, incoming];
-            scrollLog();
+            scrollToLatest();
             break;
           }
           case 'error':
@@ -697,7 +696,7 @@
         streaming = false;
         status = '';
       }
-      scrollLog();
+      scrollToLatest();
     }
 
     return true;
@@ -720,6 +719,10 @@
 
   $effect(() => {
     canSend = ready && !streaming;
+  });
+
+  $effect(() => {
+    hasUserMessage = conversationHasUserMessage;
   });
 
   $effect(() => {
@@ -763,7 +766,7 @@
   data-streaming={streaming}
   inert={!open}
 >
-  <div class="chat-log" role="log" aria-relevant="additions text" aria-live="polite" aria-label="Conversation" bind:this={logEl}>
+  <div class="chat-log" role="log" aria-relevant="additions text" aria-live="polite" aria-label="Conversation">
     {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
     {#each messages as message (message.id)}
       {#if message.role === 'user'}
@@ -813,8 +816,8 @@
                   <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
                 </div>
               {/if}
-              {#if message.intro && (booting || !ready)}
-                <p class="status-line intro-status">{status || 'Connecting…'}</p>
+              {#if message.intro && !booting && !ready && status}
+                <p class="status-line intro-status">{status}</p>
               {/if}
             </div>
             <span class="sender">
@@ -845,17 +848,14 @@
 
 <style>
   .chat-panel {
-    height: 100%;
-    min-height: 0;
+    --chat-bubble-border: 1px solid var(--border);
+    --assistant-bubble-radius: var(--bubble-radius) var(--bubble-radius) var(--bubble-radius) 0;
     color: var(--ink);
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
   .chat-log {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
     padding: 30px 22px 36px;
     display: flex;
     flex-direction: column;
@@ -863,8 +863,8 @@
   }
   .bubble {
     padding: 17px 20px;
-    border: 1px solid var(--border);
-    border-radius: var(--bubble-radius) var(--bubble-radius) var(--bubble-radius) 0;
+    border: var(--chat-bubble-border);
+    border-radius: var(--assistant-bubble-radius);
     background: var(--surface);
     overflow-wrap: anywhere;
   }
@@ -887,17 +887,14 @@
   .speech-notice { margin: 0; color: var(--muted); font-size: 11px; text-align: center; }
   /*
    * Single-entity cards render inside the assistant bubble. CardFrame is owned
-   * by a child component, so restyle it globally within the bubble: same border,
-   * no lift shadow, no accent, and capped by the bubble width.
+   * by a child component, so adjust its spacing and background within the bubble.
    */
   .bubble.assistant :global(.entity-card) {
     width: 100%;
     max-width: 100%;
     margin: 6px 0;
     padding: 8px 10px;
-    border-radius: 8px;
     background: color-mix(in srgb, var(--surface) 72%, transparent);
-    box-shadow: none;
   }
   .assistant-turn {
     align-self: flex-start;
@@ -966,9 +963,11 @@
   }
   @media (max-width: 600px) {
     .chat-log { padding: 18px 16px 28px; gap: 22px; }
-    .assistant-turn, .chat-followups-row { column-gap: 8px; }
+    .assistant-turn { column-gap: 8px; }
+    .chat-followups-spacer { display: none; }
+    .chat-followups { max-width: none; }
     .bubble { padding: 14px; font-size: 14px; }
-    .bubble.assistant, .chat-followups { max-width: 96%; }
+    .bubble.assistant { max-width: 96%; }
     .from-you { max-width: 85%; }
   }
   @media (prefers-reduced-motion: reduce) {

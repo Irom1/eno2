@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestEvent } from './$types';
 import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
+import { isCredit } from '$lib/wallet';
 import {
   mergeTransactions,
   normalizeAccount,
@@ -52,7 +53,7 @@ export async function GET({ cookies, platform }: RequestEvent): Promise<Response
       const accounts = itemsOf(requireOk(accountsResult)).map(normalizeAccount);
       const bills = itemsOf(requireOk(billsResult)).map(normalizeBill);
 
-      const [loans, recent] = await Promise.all([
+      const [loans, transactions] = await Promise.all([
         Promise.all(
           accounts.map(async (account) => {
             const result = await callTool(mcp, 'nessie_list_account_loans', {
@@ -61,17 +62,18 @@ export async function GET({ cookies, platform }: RequestEvent): Promise<Response
             return itemsOf(requireOk(result)).map((item) => normalizeLoan(item, account.id));
           })
         ),
-        (async () => {
-          const focus = accounts.find((account) => account.type.toLowerCase() === 'checking') ?? accounts[0];
-          if (!focus) return [];
-          const [depositsResult, withdrawalsResult] = await Promise.all([
-            callTool(mcp, 'nessie_list_account_deposits', { accountId: focus.id }),
-            callTool(mcp, 'nessie_list_account_withdrawals', { accountId: focus.id })
-          ]);
-          const deposits = itemsOf(requireOk(depositsResult));
-          const withdrawals = itemsOf(requireOk(withdrawalsResult));
-          return recentActivity(mergeTransactions(deposits, withdrawals, focus.balance, focus.type.toLowerCase().includes('credit')), 5);
-        })()
+        Promise.all(
+          accounts.map(async (account) => {
+            const [depositsResult, withdrawalsResult] = await Promise.all([
+              callTool(mcp, 'nessie_list_account_deposits', { accountId: account.id }),
+              callTool(mcp, 'nessie_list_account_withdrawals', { accountId: account.id })
+            ]);
+            const deposits = itemsOf(requireOk(depositsResult));
+            const withdrawals = itemsOf(requireOk(withdrawalsResult));
+            return mergeTransactions(deposits, withdrawals, account.balance, isCredit(account.type))
+              .map((transaction) => ({ ...transaction, accountId: account.id }));
+          })
+        )
       ]);
 
       return json({
@@ -79,7 +81,7 @@ export async function GET({ cookies, platform }: RequestEvent): Promise<Response
         accounts,
         bills,
         loans: loans.flat(),
-        recentActivity: recent
+        recentActivity: recentActivity(transactions.flat())
       });
     });
   } catch {

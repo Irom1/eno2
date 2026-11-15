@@ -208,7 +208,7 @@ test.describe('dashboard', () => {
     expectNoErrors(errors);
   });
 
-  test('home modules show recent activity and upcoming bills without a rewards tile', async ({ page }) => {
+  test('recent activity opens chat with a request for the 10 latest transactions', async ({ page }) => {
     const errors = collectErrors(page);
     await loadDashboard(page);
 
@@ -216,11 +216,21 @@ test.describe('dashboard', () => {
     await expect(page.locator('.activity-panel')).toContainText('Recent activity');
     await expect(page.locator('.activity-panel .activity-row').first()).toBeVisible();
 
-    await expect(page.locator('.bills-panel')).toBeVisible();
-    await expect(page.locator('.bills-panel')).toContainText('Upcoming bills');
-    await expect(page.locator('.bills-panel .bill-row').first()).toBeVisible();
-
+    await expect(page.getByRole('heading', { name: 'Upcoming bills' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Explore rewards and benefits' })).toHaveCount(0);
+
+    await page.route('**/api/chat', (route) => route.fulfill({
+      contentType: 'text/event-stream',
+      body: 'event: done\ndata: {}\n\n'
+    }));
+    const chatRequest = page.waitForRequest((request) =>
+      new URL(request.url()).pathname === '/api/chat' && request.method() === 'POST'
+    );
+    await page.locator('.activity-panel').getByRole('button', { name: 'View more' }).click();
+    await expect(page).toHaveURL(/\/chat(?:\?|$)/);
+    expect((await chatRequest).postDataJSON()).toEqual({
+      message: 'Show me my 10 most recent transactions across all accounts.'
+    });
 
     expectNoErrors(errors);
   });

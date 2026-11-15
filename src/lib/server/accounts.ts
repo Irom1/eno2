@@ -228,10 +228,10 @@ export function mergeTransactions(
   return transactions;
 }
 
-export function recentActivity(
-  transactions: WalletTransaction[],
+export function recentActivity<T extends WalletTransaction>(
+  transactions: T[],
   limit = 5
-): WalletTransaction[] {
+): T[] {
   const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.trunc(limit)) : 5;
   return [...(Array.isArray(transactions) ? transactions : [])]
     .sort(compareTransactions)

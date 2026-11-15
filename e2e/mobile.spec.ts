@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  MAYA,
   askChat,
   cardShells,
   collectErrors,
@@ -66,7 +67,7 @@ test.describe('iPhone 13 viewport', () => {
 
   test('chat fits and returns exactly one Loans card', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/chat');
+    await page.goto(`/chat?customer=${MAYA.id}`);
     await expect(page.locator('textarea[aria-label="Ask Capital One"]')).toBeVisible({
       timeout: 30_000
     });
@@ -84,7 +85,7 @@ test.describe('iPhone 13 viewport', () => {
 
   test('locks pinch/double-tap zoom and keeps 16px mobile fields', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/chat');
+    await page.goto(`/chat?customer=${MAYA.id}`);
     const composer = page.locator('textarea[aria-label="Ask Capital One"]');
     await expect(composer).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
@@ -131,7 +132,7 @@ test.describe('360x640 keyboard viewport', () => {
     page
   }) => {
     const errors = collectErrors(page);
-    await page.goto('/chat');
+    await page.goto(`/chat?customer=${MAYA.id}`);
     const field = page.locator('textarea[aria-label="Ask Capital One"]');
     await expect(field).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
@@ -163,7 +164,7 @@ test.describe('360x640 keyboard viewport', () => {
 
   test('renders the full ClimateWise card standalone within the viewport', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/chat');
+    await page.goto(`/chat?customer=${MAYA.id}`);
     await expect(page.locator('textarea[aria-label="Ask Capital One"]')).toBeVisible({
       timeout: 30_000
     });
@@ -234,7 +235,7 @@ test.describe('360x640 keyboard viewport', () => {
     const events = [
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'Here’s what goes into your LORAXⓇ Score:'
+        delta: 'Here’s what goes into your LORAX® Score:'
       })}`,
       `event: insight\ndata: ${JSON.stringify({
         type: 'insight',
@@ -256,7 +257,7 @@ test.describe('360x640 keyboard viewport', () => {
       });
     });
 
-    await askChat(page, 'What is my LORAXⓇ Score?');
+    await askChat(page, 'What is my LORAX® Score?');
 
     const card = page.locator('.climatewise-chat-card');
     await expect(card).toHaveCount(1, { timeout: 20_000 });
@@ -297,7 +298,7 @@ test.describe('360x640 keyboard viewport', () => {
     }
     await info.click();
     await expect(card.locator('#score-info')).toBeVisible();
-    await expect(card.locator('#score-info')).toContainText('LORAXⓇ Score is estimated');
+    await expect(card.locator('#score-info')).toContainText('LORAX® Score is estimated');
     await info.click();
     await expect(card.locator('#score-info')).toHaveCount(0);
 
@@ -394,7 +395,7 @@ test.describe('320x568 narrow phone viewport', () => {
     page
   }) => {
     const errors = collectErrors(page);
-    await page.goto('/chat');
+    await page.goto(`/chat?customer=${MAYA.id}`);
     const field = page.locator('textarea[aria-label="Ask Capital One"]');
     await expect(field).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });

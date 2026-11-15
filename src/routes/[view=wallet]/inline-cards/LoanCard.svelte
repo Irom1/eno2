@@ -51,17 +51,16 @@
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
+    border: var(--chat-bubble-border);
+    border-radius: var(--assistant-bubble-radius);
     /* Same vertical rhythm the former CardFrame provided inline. */
     margin: 6px 0;
   }
   .loan-card:not(.product) {
-    border: 1px solid color-mix(in srgb, var(--ink) 16%, var(--border));
-    border-radius: 8px;
     padding: 10px 12px;
     background: color-mix(in srgb, var(--surface) 80%, transparent);
   }
   .product {
-    border-radius: 8px;
     padding: 10px 12px;
     background: var(--product-gradient);
     --ink: var(--product-ink);

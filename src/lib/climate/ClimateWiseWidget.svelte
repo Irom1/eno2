@@ -35,12 +35,12 @@
 	{logoDark}
 	score={report?.score ?? '–'}
 	rating={report?.tier ?? (loading ? 'Loading' : 'Unavailable')}
-	scoreLabel={report ? `LORAXⓇ Score: ${report.score} out of ${SCORE_MAX}, ${report.tier}` : `LORAXⓇ Score ${loading ? 'loading' : 'unavailable'}`}
+	scoreLabel={report ? `LORAX® Score: ${report.score} out of ${SCORE_MAX}, ${report.tier}` : `LORAX® Score ${loading ? 'loading' : 'unavailable'}`}
 	color="var(--dark, #4fb27d) var(--light, #2f7a4f)"
 	progress={pct}
 	note={report ? `Based on your last ${report.days} days` : undefined}
 	{href}
-	linkLabel="Check your LORAXⓇ Score"
+	linkLabel="Check your LORAX® Score"
 	onActivate={onAsk}
 >
 	{#snippet description()}

@@ -692,7 +692,7 @@ export function composeIntro(name: string): string {
     case "insight_top_merchants":
       return "Here is where you shop most:";
     case "insight_climatewise":
-      return "Here’s what goes into your LORAXⓇ Score:";
+      return "Here’s what goes into your LORAX® Score:";
     case "nessie_list_account_deposits":
     case "nessie_list_account_withdrawals":
     case "nessie_list_account_transactions":

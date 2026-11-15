@@ -174,10 +174,10 @@ describe("buildSystemInstruction", () => {
       '- insight_top_merchants for where the customer shops most; returns the top merchant for a merchant card.'
     );
     expect(instruction).toContain(
-      "- insight_climatewise for the LORAXⓇ Score, purchase emissions, and the biggest emitting categories."
+      "- insight_climatewise for the LORAX® Score, purchase emissions, and the biggest emitting categories."
     );
     expect(instruction).toContain(
-      "For a LORAXⓇ Score or purchase emissions question, call insight_climatewise and show the single full report card; it renders standalone with the score, ring, categories, and purchase rows. Explain what the score means or add a nudge, but do not restate the card's score, tier, kilograms, days, categories, or purchase rows."
+      "For a LORAX® Score or purchase emissions question, call insight_climatewise and show the single full report card; it renders standalone with the score, ring, categories, and purchase rows. Explain what the score means or add a nudge, but do not restate the card's score, tier, kilograms, days, categories, or purchase rows."
     );
     expect(instruction).toContain(
       "For a spending pie, do not restate the period, total, category amounts, shares, or transaction count. Explain what the mix means (fixed vs discretionary) and give one next step."

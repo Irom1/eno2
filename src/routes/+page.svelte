@@ -75,7 +75,7 @@
         ], { duration: 280, easing: 'ease-out', fill: 'forwards' });
         await animation.finished.catch(() => undefined);
       }
-      if (link.isConnected) await goto(link.href, { state: { sentFirstAccountPrompt: true } });
+      if (link.isConnected) await goto(link.href);
     } catch {
       if (link.isConnected) location.assign(link.href);
     } finally {
@@ -253,15 +253,14 @@
 
       <div class="foreground">
         <div class="hills" aria-hidden="true"></div>
-        <a class="account-link message-composer" href="/setup" onclick={sendAccountPrompt} aria-disabled={sendingAccountPrompt}>
-          {firstAccountPrompt} <span class="message-send message-send-raised" aria-hidden="true">↑</span>
+        <a class="account-link message-composer" href="/setup?start=signup" onclick={sendAccountPrompt} aria-disabled={sendingAccountPrompt}>
+          {firstAccountPrompt} <span class="message-send" aria-hidden="true">↑</span>
         </a>
         <span class="send-status" role="status">{sendingAccountPrompt ? 'Sending message…' : ''}</span>
         <div class="sign-in-area" bind:this={signInArea}>
           <button type="button" class="existing-account-link" disabled={!ready} bind:this={signInButton}
             aria-expanded={accountsOpen} aria-controls="account-list" onclick={() => setAccountsOpen(!accountsOpen)}>
             Already have an account? <strong>Sign in</strong>
-            <svg class="sign-in-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
           </button>
           <CustomerDropdown id="account-list" {customers} dark={isDark} open={accountsOpen}
             loading={customersLoading} error={customersError} bind:element={accountList} onretry={loadCustomers} />
@@ -512,15 +511,11 @@
   article p { margin: 0; color: #36515a; font-size: 0.95rem; line-height: 1.5; }
 
   .account-link {
-    --dark: ;
-    --light: initial;
+    --dark: initial;
+    --light: ;
     width: min(100%, 360px);
     background: linear-gradient(to bottom, #001c24 30%, color-mix(in srgb, var(--message-accent) 40%, #001c24) 100%);
     color: white;
-  }
-  .dark .account-link {
-    --dark: initial;
-    --light: ;
   }
   .send-status {
     position: absolute;
@@ -548,8 +543,6 @@
     font-size: 0.9rem;
   }
   .dark .existing-account-link { color: inherit; }
-  .sign-in-chevron { width: 13px; height: 13px; vertical-align: -2px; }
-  .existing-account-link[aria-expanded='true'] .sign-in-chevron { rotate: 180deg; }
   .existing-account-link strong { text-decoration: underline; text-underline-offset: 3px; }
 
   footer {
