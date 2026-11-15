@@ -33,8 +33,6 @@
     </fieldset>
   {:else}
     <fieldset disabled={disabled} aria-label="Choose accounts">
-      <legend>Make it your own</legend>
-      <p class="hint">All three start checked. Uncheck any you don’t want.</p>
       <label class="product" style:--product-gradient={products.checking.gradient} style:--product-ink={products.checking.ink}>
         <input type="checkbox" bind:checked={selection.checking} />
         <span>{products.checking.name}<small>For everyday spending</small></span>
@@ -49,9 +47,8 @@
       </label>
     </fieldset>
     {#if card}<a class="product-link" href={card.url} target="_blank" rel="noreferrer">About {brandedCardName(card)} ↗</a>{/if}
-    <p class="hint">Simulated Nessie accounts with sample activity, bills, and loans. This won’t open real banking products.</p>
   {/if}
-  <button class="continue" type="button" aria-label={step === 'spending' ? 'Confirm spending categories' : 'Confirm selected accounts'} disabled={disabled || (step === 'spending' && !categories.length)} onclick={oncontinue}>Continue <span aria-hidden="true">→</span></button>
+  <button class="setup-action" type="button" aria-label={step === 'spending' ? 'Confirm spending categories' : 'Confirm selected accounts'} disabled={disabled || (step === 'spending' && !categories.length)} onclick={oncontinue}>Continue <span aria-hidden="true">→</span></button>
 </div>
 
 <style>
@@ -61,16 +58,13 @@
   .hint { margin: 8px 0 12px; color: var(--muted); font-size: 11px; line-height: 1.6; }
   label { display: flex; align-items: center; gap: 12px; padding: 12px; margin-top: 7px; border: 1px solid var(--border); border-radius: 10px; background: transparent; cursor: pointer; }
   label:hover, label.selected { border-color: color-mix(in srgb, var(--link) 60%, var(--border)); background: var(--reply); }
-  input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--link); cursor: pointer; }
+  input { flex: none; width: 18px; height: 18px; margin: 0; cursor: pointer; }
   label > span { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; }
   small { display: block; color: var(--muted); font-size: 10px; }
   label.product { color: var(--product-ink); background: var(--product-gradient); }
   label.product:hover { border-color: currentColor; }
   .product small { color: inherit; }
   fieldset:disabled label { opacity: .6; cursor: default; }
-  .continue { display: inline-flex; align-items: center; gap: 24px; padding: 10px 15px; margin-top: 12px; border: 0; border-radius: 8px; background: var(--button); color: var(--button-text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-  .continue:disabled { opacity: .5; cursor: default; }
-  .continue span { font-size: 18px; line-height: 1; }
   .product-link { display: inline-block; margin-top: 12px; color: var(--link); font-size: 11px; text-underline-offset: 3px; }
   :is(input, button, a):focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
 </style>

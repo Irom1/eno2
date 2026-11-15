@@ -15,5 +15,5 @@
     <ExistingAccountSignup customerId={page.url.searchParams.get('customer') ?? ''} />
   {/key}
 {:else}
-  <NewCustomerSignup />
+  <NewCustomerSignup sentFirstAccountPrompt={page.state.sentFirstAccountPrompt} />
 {/if}

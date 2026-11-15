@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
+import { firstAccountPrompt } from '../src/lib/firstAccountPrompt';
+import { emptyAnswers } from '../src/lib/signup';
 
 const answers = { first_name: 'Ada', last_name: 'Lovelace', street_number: '123', street_name: 'Main St', city: 'Boston', state: 'MA', zip: '02139' };
 const skipSpending = { status: 'skip', categories: [] };
@@ -7,6 +9,25 @@ async function say(page: Page, message: string) {
   await page.getByRole('combobox', { name: 'Message Eno' }).fill(message);
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
 }
+
+test('the landing prompt sends the first setup chat turn', async ({ page }) => {
+  const message = 'Let’s open your first account. What should I call you?';
+  await page.route('**/api/customers', (route) => route.fulfill({ json: { customers: [] } }));
+  await page.route('**/api/signup/chat', (route) => route.fulfill({ json: {
+    message, answers: emptyAnswers(), accountChoice: 'undecided',
+    spending: skipSpending, includeCreditCard: null, stage: 'details', ready: false, confirmed: false
+  } }));
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
+
+  const firstTurn = page.waitForRequest('**/api/signup/chat');
+  await page.getByRole('link', { name: firstAccountPrompt, exact: true }).click();
+  await expect(page).toHaveURL(/\/setup$/);
+  const request = await firstTurn;
+  expect(request.method()).toBe('POST');
+  expect(request.postDataJSON()).toMatchObject({ message: firstAccountPrompt, history: [] });
+  await expect(page.getByRole('log').locator('.bubble > p')).toHaveText([firstAccountPrompt, message]);
+});
 
 test('fast Eno replies and the following profile preview appear with breathing room', async ({ page }) => {
   await page.route('**/api/signup/chat', (route) => route.fulfill({ json: {
@@ -100,20 +121,10 @@ test('Eno appears beside each of his messages, can speak, and fits on mobile', a
   await page.goto('/setup');
   await expect(page.getByRole('complementary')).toHaveCount(0);
   await expect(page.locator('.message-avatar img[alt="Eno"]')).toBeVisible();
-  const voice = page.locator('.voice-toggle');
-  await expect(voice).toHaveAttribute('aria-pressed', 'false');
-  await expect(voice.locator('.speaker-slash')).toBeVisible();
-  const mutedColor = await voice.evaluate((button) => getComputedStyle(button).color);
-  await voice.click();
-  await expect(page.locator('html')).toHaveAttribute('data-spoken-text', /What should I call you/);
-  await expect(voice).toHaveAttribute('aria-pressed', 'true');
-  await expect(voice.locator('.speaker-slash')).toHaveCount(0);
-  expect(await voice.evaluate((button) => getComputedStyle(button).color)).not.toBe(mutedColor);
-  await voice.click();
-  await expect(voice).toHaveAttribute('aria-pressed', 'false');
-  await expect(voice.locator('.speaker-slash')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enable Eno voice' })).toHaveCount(0);
   await expect(page.locator('html')).not.toHaveAttribute('data-spoken-text');
-  await expect(voice).toHaveCSS('color', mutedColor);
+  await page.getByRole('button', { name: 'Read Eno message aloud' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-spoken-text', /What should I call you/);
   await expect(page.getByRole('combobox', { name: 'Message Eno' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

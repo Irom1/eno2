@@ -1,0 +1,236 @@
+.message-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  box-sizing: border-box;
+  padding: 7px 7px 7px 20px;
+  border-radius: 99px;
+  background: linear-gradient(to bottom, #000 30%, #1f3442 100%);
+  color: white;
+  font-weight: 400;
+  box-shadow:
+    inset 0 3px 7px #0009,
+    inset 0 0 0 1px #17263273;
+}
+
+.message-composer,
+.setup-composer-background {
+  --message-blue: #2f5ad9;
+  --message-blue-gradient: linear-gradient(180deg, #223aa7 0%, var(--message-blue) 100%);
+  --message-blue-edge: #6386ef;
+  --message-blue-shadow: inset 0 0 5px #89a9ffb3, 0 5px 12px #1c3d9a45;
+}
+
+.message-composer > .message-send {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--message-blue-edge);
+  border-radius: 50%;
+  background: var(--message-blue-gradient);
+  box-shadow: var(--message-blue-shadow);
+  color: #fff;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.message-composer > input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+}
+
+.message-composer > input::placeholder {
+  color: #c3cfda;
+}
+
+.setup-composer-background {
+  isolation: isolate;
+  --link: var(--dark, color-mix(in srgb, var(--message-blue) 45%, white))
+    var(--light, color-mix(in srgb, var(--message-blue) 85%, black));
+  --reply: color-mix(in srgb, var(--message-blue) var(--reply-tint), var(--surface));
+  --reply-tint: var(--dark, 24%) var(--light, 14%);
+  --setup-header-height: 88px;
+  --bubble-radius: 24px;
+  --composer-bottom-space: calc(16px + max(18px, env(safe-area-inset-bottom)));
+  --composer-bloom-strength: var(--dark, 28%) var(--light, 19%);
+  --composer-bloom: color-mix(in srgb, var(--message-blue) var(--composer-bloom-strength), transparent);
+  background: var(--page);
+  accent-color: var(--message-blue);
+}
+
+.setup-composer-background ::selection {
+  background: var(--message-blue);
+  color: #fff;
+}
+
+.setup-composer-background::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    url('/images/hero-grain.png') 0 0 / 128px 128px repeat,
+    radial-gradient(
+      ellipse min(760px, 90vw) clamp(190px, 35dvh, 340px) at 50% calc(100% - var(--composer-bottom-space) - 29px),
+      var(--composer-bloom),
+      transparent 100%
+    );
+}
+
+.setup-composer-background > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: var(--setup-header-height);
+  background: transparent;
+  pointer-events: none;
+}
+
+.setup-composer-background > header > * {
+  pointer-events: auto;
+}
+
+.setup-composer-background > header::before,
+.setup-composer-background > header::after,
+.setup-composer-background .composer-area::before,
+.setup-composer-background .composer-area::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+}
+
+.setup-composer-background > header::before,
+.setup-composer-background .composer-area::before {
+  backdrop-filter: blur(4px);
+  mask-image: linear-gradient(var(--chat-blur-direction, to bottom), #000 25%, #000b 50%, #0004 76%, transparent);
+}
+
+.setup-composer-background > header::after,
+.setup-composer-background .composer-area::after {
+  backdrop-filter: blur(10px);
+  mask-image: linear-gradient(var(--chat-blur-direction, to bottom), #000 12%, #000c 36%, #0005 64%, transparent);
+}
+
+.setup-composer-background > header::before {
+  inset: 0 -36px -42px;
+}
+
+.setup-composer-background > header::after {
+  inset: 0 -36px -12px;
+}
+
+.setup-composer-background > main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.setup-composer-background .transcript {
+  flex: 1;
+  width: min(800px, 100%);
+  margin-inline: auto;
+}
+
+.setup-composer-background .composer-area {
+  --chat-blur-direction: to top;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding: 12px 22px var(--composer-bottom-space);
+  pointer-events: none;
+}
+
+.setup-composer-background .composer-area::before {
+  inset: -42px 0 0;
+}
+
+.setup-composer-background .composer-area::after {
+  inset: -12px 0 0;
+}
+
+.setup-composer-background .composer-area > form {
+  width: min(756px, 100%);
+  margin-inline: auto;
+  pointer-events: auto;
+}
+
+.setup-composer-background .message-composer {
+  background: var(--dark, #000) var(--light, #fff);
+  color: var(--dark, #fff) var(--light, #142632);
+  box-shadow:
+    var(--dark, inset 0 3px 7px #0009, inset 0 0 0 1px #17263273)
+    var(--light, 0 2px 6px #17334a14, 0 12px 28px #17334a24);
+}
+
+.setup-composer-background .message-composer > input::placeholder {
+  color: var(--dark, #c3cfda) var(--light, #50636e);
+}
+
+.setup-composer-background .from-you .bubble {
+  --pastel-message-gradient: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--message-blue) 14%, white),
+    color-mix(in srgb, var(--message-blue) 30%, white)
+  );
+  background: var(--dark, var(--message-blue-gradient)) var(--light, var(--pastel-message-gradient));
+  border-color: var(--dark, var(--message-blue-edge)) var(--light, #a5b9f3);
+  box-shadow:
+    var(--dark, var(--message-blue-shadow))
+    var(--light, inset 0 0 5px #fff9, 0 5px 12px #2f5ad926);
+  color: var(--dark, #fff) var(--light, #172b5c);
+}
+
+.setup-composer-background .setup-action {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 40px;
+  margin: 12px 0 0 auto;
+  padding: 8px 15px;
+  border: 1px solid var(--message-blue-edge);
+  border-radius: var(--bubble-radius);
+  background: var(--message-blue-gradient);
+  box-shadow: var(--message-blue-shadow);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.setup-composer-background .setup-action > span {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.setup-composer-background .setup-action:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+@media (max-width: 600px) {
+  .setup-composer-background {
+    --setup-header-height: 74px;
+  }
+
+  .setup-composer-background > header::before,
+  .setup-composer-background > header::after {
+    inset-inline: -18px;
+  }
+
+  .setup-composer-background .composer-area {
+    padding-inline: 14px;
+  }
+}

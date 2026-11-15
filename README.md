@@ -35,7 +35,7 @@ Address autocomplete uses [Photon/OpenStreetMap](https://github.com/komoot/photo
 
 Signup stays on personal details while an address is incomplete, unmatched, unavailable, or awaiting the user's confirmation. The server does not advance its stage or accept stale checklist submissions in those states. The client also hides later checklists and review controls, including after restoring a draft; only the current unanswered checklist is interactive and visible.
 
-Onboarding drafts stay in the current browser tab’s session storage until completion. The optional voice toggle uses browser text-to-speech. Run `npm run test:e2e -- e2e/landing.spec.ts e2e/signup.spec.ts` against the dev server on port 5184 for the landing and sign-up browser checks.
+Onboarding drafts stay in the current browser tab’s session storage until completion. Use the speaker button on an Eno message to hear it read aloud. Run `npm run test:e2e -- e2e/landing.spec.ts e2e/signup.spec.ts` against the dev server on port 5184 for the landing and sign-up browser checks.
 
 ## Deploy to Cloudflare Workers
 

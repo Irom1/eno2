@@ -2,6 +2,10 @@
 // for information about these interfaces
 declare global {
   namespace App {
+    interface PageState {
+      sentFirstAccountPrompt?: boolean;
+    }
+
     interface Platform {
       env?: Record<string, string | undefined>;
       context?: {
