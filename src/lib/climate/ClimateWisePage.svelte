@@ -4,17 +4,20 @@
 	import logoLight from '$lib/assets/climatewise-logo-light.png';
 	import logoDark from '$lib/assets/climatewise-logo-dark.png';
 	import { CATEGORIES, CATEGORY_BY_ID, type ClimateReport } from './emissions';
+	import { classifyClimateSize } from './layout';
 
 	type Theme = 'light' | 'dark' | 'system';
-	type Layout = 'portrait' | 'landscape';
 
 	let {
 		customerId = null,
 		backHref = '/dashboard',
+		fill = false,
 		theme = $bindable<Theme>(readTheme())
 	}: {
 		customerId?: string | null;
 		backHref?: string;
+		/** Fill the parent box (used by the resizable preview) instead of the viewport. */
+		fill?: boolean;
 		/** Pass the dashboard's theme in (bind:theme) to keep both pages in sync. */
 		theme?: Theme;
 	} = $props();
@@ -44,20 +47,23 @@
 		} catch {}
 	}
 
-	// Landscape only applies on wide screens (see CSS); narrower ones always get portrait.
-	let layout = $state<Layout>(readLayout());
-	function readLayout(): Layout {
-		try {
-			if (localStorage.getItem('climatewise-layout') === 'landscape') return 'landscape';
-		} catch {}
-		return 'portrait';
-	}
-	function toggleLayout() {
-		layout = layout === 'portrait' ? 'landscape' : 'portrait';
-		try {
-			localStorage.setItem('climatewise-layout', layout);
-		} catch {}
-	}
+	// The card adapts to the space it is actually given, not to the viewport or
+	// a manual toggle. ResizeObserver report is the card's content box.
+	let cardEl: HTMLElement | null = $state(null);
+	let cardWidth = $state(0);
+	let cardHeight = $state(0);
+	const climateSize = $derived(classifyClimateSize(cardWidth, cardHeight));
+
+	$effect(() => {
+		if (!cardEl) return;
+		const observer = new ResizeObserver(([entry]) => {
+			if (!entry) return;
+			cardWidth = entry.contentRect.width;
+			cardHeight = entry.contentRect.height;
+		});
+		observer.observe(cardEl);
+		return () => observer.disconnect();
+	});
 
 	const DAYS = 90;
 	let attempt = $state(0);
@@ -135,25 +141,31 @@
 	let activeId = $derived(hovered ?? selected);
 	let selectedCat = $derived(report && activeId ? report.categories.find((c) => c.id === activeId) ?? null : null);
 	let visiblePurchases = $derived(
-		report && selectedCat ? report.topPurchases.filter((p) => p.category === selectedCat.id).slice(0, 4) : []
+		report && selectedCat
+			? report.topPurchases
+					.filter((p) => p.category === selectedCat.id)
+					.slice(0, climateSize.listRows)
+			: []
 	);
 </script>
 
-<div class="cw" data-theme={theme} style={colorVars}>
-	<!-- Page-level controls, off the card, matching the dashboard's toggle -->
+<div class="cw" class:fill data-theme={theme} style={colorVars}>
+	<!-- Theme control, matching the dashboard's toggle -->
 	<div class="page-controls">
-		<button class="page-btn layout-toggle" onclick={toggleLayout}
-			aria-label={layout === 'portrait' ? 'Switch to landscape layout' : 'Switch to portrait layout'}
-			title={layout === 'portrait' ? 'Landscape layout' : 'Portrait layout'}>
-			<CategoryIcon id={layout === 'portrait' ? 'landscape' : 'portrait'} size={18} />
-		</button>
 		<button class="page-btn" onclick={toggleTheme} aria-pressed={isDark}
 			aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
 			<CategoryIcon id={isDark ? 'sun' : 'moon'} size={18} />
 		</button>
 	</div>
 
-	<article class="card {layout}" aria-labelledby="cw-title">
+	<article
+		class="card"
+		bind:this={cardEl}
+		data-mode={climateSize.mode}
+		data-density={climateSize.density}
+		data-layout={climateSize.layout}
+		aria-labelledby="cw-title"
+	>
 		<div class="sky" aria-hidden="true">
 			<div class="sky-day"></div>
 			<div class="sky-night"></div>
@@ -189,12 +201,12 @@
 						{/if}
 					</div>
 
-					<div class="ring-wrap">
+					<div class="ring-wrap" style="--ring:{climateSize.ringSize}px">
 						<RingChart
 							items={ringItems}
 							bind:selected
 							bind:hovered
-							size={220}
+							size={climateSize.ringSize}
 							ariaLabel="Carbon emissions by purchase category"
 							centerValue={String(report.score)}
 							centerUnit={report.tier}
@@ -268,14 +280,24 @@
 		color: var(--ink);
 		font: 15px/1.4 Inter, system-ui, sans-serif;
 	}
+	/* Fill mode: the card owns exactly the parent's box (resizable preview). */
+	.cw.fill {
+		position: relative;
+		min-height: 0;
+		height: 100%;
+		display: block;
+		padding: 0;
+		background: transparent;
+	}
 	.cw[data-theme='dark'] { --dark: initial; --light: ; }
 	@media (prefers-color-scheme: dark) { .cw[data-theme='system'] { --dark: initial; --light: ; } }
 	.cw :global(*), .cw :global(*::before), .cw :global(*::after) { box-sizing: border-box; }
 	h1, h2, p { margin: 0; }
 	button { font: inherit; }
 
-	/* Page controls: layout + theme, top-right of the screen */
+	/* Theme control: top-right of the page, or the card's top strip in fill mode */
 	.page-controls { position: fixed; top: 16px; right: 16px; z-index: 10; display: flex; gap: 8px; }
+	.cw.fill .page-controls { position: absolute; top: 10px; right: 10px; }
 	.page-btn {
 		display: grid; place-items: center; width: 42px; height: 42px; padding: 0;
 		border: 1px solid var(--border); border-radius: 50%; background: var(--page); color: var(--ink); cursor: pointer;
@@ -285,11 +307,16 @@
 	.card {
 		position: relative;
 		isolation: isolate;
-		width: min(440px, 100%);
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		width: min(820px, 100%);
+		height: min(820px, calc(100dvh - 96px));
 		border-radius: 26px;
 		box-shadow: 0 1px 2px #0000000f, 0 20px 50px #0b1a2a2e;
 		overflow: hidden;
 	}
+	.cw.fill .card { width: 100%; height: 100%; border-radius: 22px; }
 	.card > :not(.sky) { position: relative; z-index: 1; }
 
 	/* Sky: white-topped day in light mode, near-black night in dark mode */
@@ -328,13 +355,18 @@
 
 	/* ---- Portrait: logo | footprint, then chart, then purchases ---- */
 	.grid {
+		flex: 1;
+		min-height: 0;
 		display: grid;
-		grid-template-columns: 1fr auto;
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-rows: auto auto minmax(0, 1fr) auto;
 		grid-template-areas: 'logo foot' 'chart chart' 'list list' 'state state';
 		align-items: start;
 		gap: 14px 12px;
 		padding: 20px 16px 18px;
 	}
+	/* Leave a clean strip for the theme control in fill mode. */
+	.cw.fill .card .grid { padding-top: 52px; }
 	.logo { grid-area: logo; display: grid; width: 140px; margin-top: 4px; }
 	.logo img { grid-area: 1 / 1; width: 100%; height: auto; }
 	.logo-light { opacity: var(--dark, 0) var(--light, 1); }
@@ -367,29 +399,49 @@
 		background: var(--glass-strong); backdrop-filter: blur(18px); box-shadow: 0 10px 28px #0b1a2a33;
 		font-size: 12px; line-height: 1.4; color: var(--muted); text-align: center;
 	}
-	/* fixed size: the ring never grows or shrinks with the card */
-	.ring-wrap { flex: none; width: 240px; height: 240px; padding: 10px; border-radius: 50%; background: var(--glass-strong); backdrop-filter: blur(18px); box-shadow: 0 0 0 1px var(--glass-edge), 0 14px 36px rgba(20, 45, 70, 0.14); }
+	/* The ring diameter is driven by the measured card size (--ring). */
+	.ring-wrap {
+		flex: none;
+		width: calc(var(--ring) + 20px);
+		height: calc(var(--ring) + 20px);
+		max-width: 100%;
+		padding: 10px;
+		border-radius: 50%;
+		background: var(--glass-strong);
+		backdrop-filter: blur(18px);
+		box-shadow: 0 0 0 1px var(--glass-edge), 0 14px 36px rgba(20, 45, 70, 0.14);
+	}
 
-	.list { grid-area: list; padding: 14px 14px 10px; }
+	.list { grid-area: list; align-self: stretch; display: flex; flex-direction: column; min-height: 0; padding: 14px 14px 10px; }
 	/*
-	 * Everything in the list has a fixed height and one-line text, so hovering between categories
-	 * never changes the card's size (which would re-centre it and shift the ring).
+	 * The list head and CTA stay put; only the rows themselves scroll, so hovering
+	 * between categories never changes the card's size or shifts the ring.
 	 */
-	.list-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 44px; margin-bottom: 8px; }
+	.list-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 44px; margin-bottom: 8px; }
 	.list-head > div { min-width: 0; }
 	.list-head h2, .list-head p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.list-head h2 { font-size: 16px; font-weight: 750; letter-spacing: -0.02em; line-height: 1.2; }
 	.list-head p { margin-top: 2px; font-size: 12.5px; color: var(--muted); }
-	/* head 44 + 8 gap, rows 198: the filled panel's height */
-	.pick { display: grid; place-content: center; justify-items: center; gap: 6px; height: 250px; padding: 0 12px; text-align: center; }
+	.pick { flex: 1; min-height: 0; overflow: auto; display: grid; place-content: center; justify-items: center; gap: 6px; padding: 0 12px; text-align: center; }
 	.pick-icon { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 4px; border-radius: 12px; background: var(--sunken); color: var(--muted); }
 	.pick h2 { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
 	.pick p { max-width: 230px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 	.clear { flex: none; padding: 2px 0; border: 0; background: none; color: var(--link); font-size: 12.5px; font-weight: 650; cursor: pointer; }
 
 	/* Clean list items: pastel tile, bold title, quiet detail — no dividers */
-	/* exactly four fixed-height rows, filled or not */
-	.items { display: grid; align-content: start; grid-auto-rows: 48px; gap: 2px; height: 198px; margin: 0 -6px; }
+	.items {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		overflow-x: hidden;
+		display: grid;
+		align-content: start;
+		grid-auto-rows: 48px;
+		gap: 2px;
+		margin: 0 -6px;
+		padding-right: 6px;
+		scrollbar-width: thin;
+	}
 	.item { display: flex; align-items: center; gap: 12px; padding: 0 6px; border-radius: 14px; color: var(--ink); }
 	.ptile {
 		display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 10px;
@@ -400,47 +452,54 @@
 	.item-text small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.item-val { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 	.empty { padding: 10px 6px; color: var(--muted); font-size: 13px; }
-	.cta { display: inline-flex; align-items: center; gap: 2px; margin-top: 6px; color: var(--link); font-size: 13px; font-weight: 650; text-decoration: none; }
+	.cta { flex: none; display: inline-flex; align-items: center; gap: 2px; margin-top: 6px; color: var(--link); font-size: 13px; font-weight: 650; text-decoration: none; }
 	.cta:hover { text-decoration: underline; text-underline-offset: 3px; }
 
-	.state { grid-area: state; display: grid; gap: 12px; place-content: center; justify-items: center; min-height: 360px; padding: 32px; color: var(--muted); }
+	.state { position: absolute; inset: 0; z-index: 2; display: grid; gap: 12px; place-content: center; justify-items: center; padding: 32px; color: var(--muted); text-align: center; }
 	.solid { min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--link); color: #fff; font-weight: 700; cursor: pointer; }
 
-	/* ---- Landscape (wide screens only): logo over footprint | chart | purchases ---- */
-	@media (min-width: 700px) {
-		.cw:has(.card.landscape) { padding-left: 12px; padding-right: 12px; }
-		/* equal side columns keep the ring in the exact centre of the card */
-		.card.landscape { width: min(820px, 100%); }
-		.card.landscape .grid {
-			grid-template-columns: minmax(0, 1fr) 260px minmax(0, 1fr);
-			grid-template-rows: auto 1fr;
-			grid-template-areas: 'logo chart list' 'foot chart list' 'state state state';
-			gap: 16px clamp(14px, 2.4vw, 26px);
-			padding: 26px clamp(18px, 2.6vw, 28px) 24px;
-			min-height: 440px;
-		}
-		.card.landscape .logo { width: min(150px, 100%); margin: 2px 0 0 4px; }
-		.card.landscape .foot { align-self: end; justify-self: start; width: min(200px, 100%); min-width: 0; }
-		.card.landscape .chart { align-self: center; }
-		/* purchases run the full height of the right side */
-		.card.landscape .list { align-self: stretch; display: flex; flex-direction: column; }
-		.card.landscape .list .cta { margin-top: auto; }
+	/* ---- Wide: logo over footprint | chart | purchases ---- */
+	.card[data-layout='wide'] .grid {
+		grid-template-columns: minmax(0, 1fr) minmax(190px, 300px) minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+		grid-template-areas: 'logo chart list' 'foot chart list';
+		gap: 16px clamp(14px, 2.4vw, 26px);
+		padding: 26px clamp(18px, 2.6vw, 28px) 24px;
 	}
-	/* Landscape needs the room, so the toggle only appears where it can take effect */
-	@media (max-width: 699px) {
-		.layout-toggle { display: none; }
-	}
+	.card[data-layout='wide'] .logo { width: min(150px, 100%); margin: 2px 0 0 4px; }
+	.card[data-layout='wide'] .foot { align-self: end; justify-self: start; width: min(200px, 100%); min-width: 0; }
+	.card[data-layout='wide'] .chart { align-self: center; }
+	/* purchases run the full height of the right side */
+	.card[data-layout='wide'] .list { align-self: stretch; }
+	.card[data-layout='wide'] .list .cta { margin-top: auto; }
 
-	@media (max-width: 480px) {
-		.cw { padding: 0; place-items: stretch; }
-		.card { width: 100%; min-height: 100dvh; border-radius: 0; }
-		/* card fills the screen here, so the controls sit in its top strip */
-		.page-controls { top: 12px; right: 12px; }
-		.page-btn { width: 32px; height: 32px; }
-		/* start below the page controls, which share the top strip here */
-		.grid { padding: 54px 12px 16px; }
-		.logo { width: 124px; }
-		.foot { min-width: 0; }
-		.sun { width: 140vmax; margin-left: -70vmax; }
-	}
+	/* ---- Compact widths: tighter chrome, smaller logo, bigger sky ---- */
+	.card[data-mode='compact'] .grid { gap: 12px 10px; padding-left: 12px; padding-right: 12px; padding-bottom: 14px; }
+	.card[data-mode='compact'] .logo { width: 124px; }
+	.card[data-mode='compact'] .foot { min-width: 0; }
+	.card[data-mode='compact'] .chart-title { font-size: 14px; }
+	.card[data-mode='compact'] .sun { width: 140vmax; margin-left: -70vmax; }
+
+	/* ---- Short heights: compress fixed chrome so the list can still breathe ---- */
+	.card[data-density='short'] .grid { gap: 6px 10px; padding-bottom: 8px; }
+	.card[data-density='short'] .chart { gap: 2px; }
+	.card[data-density='short'] .chart-title { font-size: 12.5px; }
+	.card[data-density='short'] .info { width: 15px; height: 15px; font-size: 9px; }
+	.card[data-density='short'] .foot { padding: 6px 9px; }
+	.card[data-density='short'] .foot-label { font-size: 10.5px; }
+	.card[data-density='short'] .foot-icon { width: 17px; height: 17px; }
+	.card[data-density='short'] .foot-value { margin-top: 2px; font-size: 19px; }
+	.card[data-density='short'] .foot-value small { font-size: 11px; }
+	.card[data-density='short'] .foot-sub { font-size: 10px; }
+	.card[data-density='short'] .list { padding: 8px 10px 6px; }
+	.card[data-density='short'] .list-head { height: auto; min-height: 30px; margin-bottom: 3px; }
+	.card[data-density='short'] .list-head h2 { font-size: 14px; }
+	.card[data-density='short'] .list-head p { margin-top: 1px; font-size: 11.5px; }
+	.card[data-density='short'] .items { grid-auto-rows: 40px; }
+	.card[data-density='short'] .item-text strong { font-size: 13px; }
+	.card[data-density='short'] .pick { gap: 2px; }
+	.card[data-density='short'] .pick-icon { width: 28px; height: 28px; margin-bottom: 0; }
+	.card[data-density='short'] .pick h2 { font-size: 13.5px; }
+	.card[data-density='short'] .pick p { font-size: 11.5px; }
+	.card[data-density='short'] .cta { margin-top: 2px; font-size: 12px; }
 </style>
