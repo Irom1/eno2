@@ -1,4 +1,5 @@
 import { accountProduct } from '../../../products';
+import { isDemoActivity } from '../../../chat/anomalyReview';
 /**
  * Deterministic insight tools. All arithmetic happens here in TypeScript so
  * every dollar the model narrates can be traced to a tested calculation.
@@ -146,7 +147,7 @@ const CATEGORY_KEYWORDS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ],
   [
     "utilities",
-    ["ELECTRIC", "INTERNET", "COMCAST", "VERIZON", "T MOBILE", "AT T", "WATER", "UTILITY"],
+    ["ELECTRIC", "ENERGY", "INTERNET", "COMCAST", "VERIZON", "T MOBILE", "AT T", "WATER", "UTILITY"],
   ],
   [
     "subscriptions",
@@ -277,7 +278,7 @@ export function detectDuplicateCharges(
   transactions: readonly Transaction[],
   windowDays = 3,
 ): DuplicateFinding[] {
-  const sorted = [...transactions].sort((a, b) => a.date.getTime() - b.date.getTime());
+  const sorted = transactions.filter((tx) => !isDemoActivity(tx.description)).sort((a, b) => a.date.getTime() - b.date.getTime());
   const flagged = new Set<number>();
   const findings: DuplicateFinding[] = [];
 
@@ -331,7 +332,7 @@ export function detectOutliers(
   // Recurring descriptions skip the overall baseline. They still receive a
   // merchant-specific check, so a familiar merchant cannot hide a large spike.
   const monthsByDescription = new Map<string, Set<string>>();
-  for (const tx of transactions) {
+  for (const tx of transactions.filter((tx) => !isDemoActivity(tx.description))) {
     const key = normalizeText(tx.description);
     const months = monthsByDescription.get(key) ?? new Set<string>();
     months.add(monthKey(tx.date));
@@ -345,7 +346,7 @@ export function detectOutliers(
 
   const recentWindow = transactions.filter((tx) => {
     const age = daysBetween(tx.date, asOf);
-    return age >= 0 && age <= windowDays;
+    return age >= 0 && age <= windowDays && !isDemoActivity(tx.description);
   });
   if (recentWindow.length < 8) return [];
 
@@ -367,15 +368,6 @@ export function detectOutliers(
       threshold: toMoney(threshold),
     });
   }
-  if (recent.length) {
-    const amounts = recent.map((tx) => tx.amount);
-    const median = computeMedian(amounts);
-    const mad = computeMedian(amounts.map((amount) => Math.abs(amount - median)));
-    const threshold = median + 3 * mad;
-    if (mad > 0) for (const tx of recent) {
-      if (tx.amount > threshold) addFinding(tx, median, mad, threshold, "amount exceeds median + 3x MAD");
-    }
-  }
   const merchants = new Map<string, Transaction[]>();
   for (const tx of recentWindow) {
     const key = normalizeText(tx.description);
@@ -390,6 +382,36 @@ export function detectOutliers(
     for (const tx of group) {
       if (tx.amount > threshold) addFinding(tx, median, mad, threshold, "much larger than this merchant's usual purchases");
     }
+  }
+  const bill = (tx: Transaction) => /\b(?:bill|energy|electric|utilities|utility|rent|mortgage|internet|water)\b/i.test(tx.description);
+  const bills = recentWindow.filter(bill);
+  const billSet = new Set(bills);
+  const categories = new Map<Transaction, string>();
+  const categoryRows = new Map<string, Transaction[]>();
+  for (const tx of recentWindow) {
+    const category = categorizeDescription(tx.description);
+    categories.set(tx, category);
+    const group = categoryRows.get(category) ?? [];
+    group.push(tx);
+    categoryRows.set(category, group);
+  }
+  for (const tx of recent) {
+    if ((merchants.get(normalizeText(tx.description))?.length ?? 0) >= 3) continue;
+    const category = categories.get(tx) ?? 'other';
+    const peers = (billSet.has(tx) ? bills : categoryRows.get(category) ?? []).filter((other) => other !== tx);
+    if (billSet.has(tx)) {
+      if (peers.length < 3) continue; // No bill baseline: do not compare it to coffee.
+      const median = computeMedian(peers.map((other) => other.amount));
+      const mad = computeMedian(peers.map((other) => Math.abs(other.amount - median)));
+      const threshold = Math.max(median * 1.5, median + 6 * mad, median + 50);
+      if (tx.amount > threshold) addFinding(tx, median, mad, threshold, 'much larger than comparable bills');
+      continue;
+    }
+    const comparable = category !== 'other' && peers.length >= 5 ? peers : recentWindow.filter((other) => other !== tx);
+    const median = computeMedian(comparable.map((other) => other.amount));
+    const mad = computeMedian(comparable.map((other) => Math.abs(other.amount - median)));
+    const threshold = Math.max(median * 4, median + 6 * mad, median + (category !== 'other' && peers.length >= 5 ? 100 : 250));
+    if (tx.amount > threshold) addFinding(tx, median, mad, threshold, category !== 'other' && peers.length >= 5 ? 'much larger than comparable purchases' : 'substantially larger than recent account purchases');
   }
   return recentWindow.flatMap((tx) => findings.has(tx) ? [findings.get(tx)!] : []);
 }

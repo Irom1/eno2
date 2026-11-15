@@ -2406,9 +2406,9 @@ test.describe('chat prompts', () => {
       expect(link.href).toMatch(/^\/dashboard\?customer=[^&]+&account=acct-checking&txn=.+/);
     }
     expect(cardHrefs.map((link) => link.href)).toEqual([
-      expect.stringMatching(/txn=txn-apple$/),
       expect.stringMatching(/txn=txn-netflix$/),
-      expect.stringMatching(/txn=txn-spotify$/)
+      expect.stringMatching(/txn=txn-spotify$/),
+      expect.stringMatching(/txn=txn-apple$/)
     ]);
 
     // Single transaction rows render inside the assistant bubble, not as
@@ -2424,10 +2424,10 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.entity-card .transaction-card')).toHaveCount(0);
     await expect(page.locator('.bubble.assistant .transaction-card .open-icon')).toHaveCount(count);
 
-    // Exactly one assistant turn owns the cards; no archived card chrome.
+    // Duplicate and unusually high charges use separate assistant messages.
     await expect(
       page.locator('.assistant-turn').filter({ has: page.locator('.transaction-card') })
-    ).toHaveCount(1);
+    ).toHaveCount(2);
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(page.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
 
@@ -2459,15 +2459,7 @@ test.describe('chat prompts', () => {
         return [];
       });
     });
-    expect(order, 'text → card → text → card → text → card → text ordering').toEqual([
-      'text',
-      'card',
-      'text',
-      'card',
-      'text',
-      'card',
-      'text'
-    ]);
+    expect(order, 'the high-charge message explains its card before the next step').toEqual(['text', 'card', 'text']);
 
     const combined = `${cardsText}\n${await assistantText(page)}`;
     expect(combined).not.toMatch(/outlier|median|\bmad\b|threshold|findings/i);
@@ -2497,7 +2489,7 @@ test.describe('chat prompts', () => {
         count: 5,
         duplicateCount: 2,
         outlierCount: 3,
-        summary: 'I found several unusually large purchases and several possible duplicates.',
+        summary: 'These charges may be duplicates.',
         findings: [
           {
             _id: 'txn-netflix',
@@ -2589,13 +2581,13 @@ test.describe('chat prompts', () => {
 
     const prose = (await assistantText(page)).trim();
     expect(prose).toContain(
-      'I found several unusually large purchases and several possible duplicates.'
+      'These charges may be duplicates.'
     );
     expect(prose).toContain(
-      'NETFLIX on your Venture card and LOCAL BOOKSTORE on your Everyday Checking each look like possible duplicates.'
+      'NETFLIX on your Venture is a possible duplicate because'
     );
     expect(prose).toContain(
-      'APPLE ELECTRONICS PURCHASE on your Everyday Checking, OVERSEAS ELECTRONICS PURCHASE on your Venture card, and EXPRESS AIR FREIGHT on your Everyday Checking are unusually large purchases.'
+      'These charges are higher than normal.'
     );
     for (const name of names) {
       expect(prose).toContain(name);

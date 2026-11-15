@@ -30,7 +30,7 @@ test('uses the same composer styling before and after opening chat', async ({ pa
   const initialPlaceholder = 'Ask about your money, spending, or bills…';
 
   await expect(field).toHaveAttribute('placeholder', initialPlaceholder);
-  await expect(send).toHaveText('↑');
+  await expect(send.locator('svg')).toBeVisible();
   const styles = () =>
     composer.evaluate((form) => ({
       field: getComputedStyle(form).background,
@@ -42,7 +42,7 @@ test('uses the same composer styling before and after opening chat', async ({ pa
   await expect(page).toHaveURL(/\/chat(?:\?|$)/);
   await expect(field).toHaveAttribute('placeholder', initialPlaceholder);
   expect(await styles()).toEqual(dashboardStyles);
-  await expect(send).toHaveText('↑');
+  await expect(send.locator('svg')).toBeVisible();
 
   await field.fill('Hello Eno');
   await expect(field).toHaveAttribute('placeholder', initialPlaceholder);
@@ -64,8 +64,9 @@ test('every suspicious charge receives its own reason even when model prose is o
   await page.route('**/api/chat', (route) => route.fulfill({ contentType: 'text/event-stream', body: events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('') }));
   await page.goto('/chat?customer=maya');
   await ask(page, 'Any suspicious charges?');
-  const turn = page.locator('.assistant-turn').last();
+  const turn = page.locator('.chat-log');
   await expect(turn.locator('.transaction-card')).toHaveCount(3);
+  await expect(page.locator('.assistant-turn').filter({ has: page.locator('.transaction-card') })).toHaveCount(2);
   await expect(turn).toContainText('CAFE is an unusually large purchase compared with your usual purchases at this merchant.');
   await expect(turn).toContainText('LOCAL BOOKSTORE is a possible duplicate because the same merchant charged the same amount again within three days.');
   await expect(turn).toContainText('STREAMING SERVICE is a possible duplicate because the same merchant charged the same amount again within three days.');
@@ -157,7 +158,42 @@ test('an explicit suspicious-activity list includes findings beyond the eighth r
   await page.route('**/api/chat', (route) => route.fulfill({ contentType: 'text/event-stream', body: events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('') }));
   await page.goto('/chat?customer=maya');
   await ask(page, 'Show me suspicious transactions');
-  const turn = page.locator('.assistant-turn').last();
-  await expect(turn.locator('.transaction-card')).toHaveCount(12);
-  await expect(turn.locator('.transaction-card').last()).toContainText('LOCAL COFFEE');
+  const turns = page.locator('.assistant-turn').filter({ has: page.locator('.transaction-card') });
+  await expect(turns).toHaveCount(2);
+  await expect(turns.nth(0).locator('.transaction-card')).toHaveCount(8);
+  await expect(turns.nth(1).locator('.transaction-card')).toHaveCount(4);
+  await expect(turns.last().locator('.transaction-card').last()).toContainText('LOCAL COFFEE');
+});
+
+test('separates charge types, explains each card in place, and does not repeat or flag Demo activity', async ({ page }) => {
+  await mockProfile(page);
+  const findings = [...Array.from({ length: 10 }, (_, index) => ({ _id: `duplicate-${index}`, type: 'duplicate', description: `SUBSCRIPTION ${index}`, amount: 19, date: '2026-11-01', accountId: 'checking', accountLabel: '360 Checking' })), ...Array.from({ length: 9 }, (_, index) => ({ _id: `high-${index}`, type: 'outlier', description: `HIGH PURCHASE ${index}`, amount: 400, date: '2026-11-02', median: 30, reason: "much larger than this merchant's usual purchases", accountId: 'checking', accountLabel: '360 Checking' })), { _id: 'demo', type: 'outlier', description: 'DEMO OPENING PURCHASE', amount: 1000, date: '2026-11-01', accountId: 'checking', accountLabel: '360 Checking' }];
+  const events = [
+    { type: 'insight', kind: 'insight_anomalies', payload: { count: findings.length, findings } },
+    { type: 'text', delta: 'UNWANTED LONG SUMMARY OF EVERY MERCHANT' },
+    { type: 'insight', kind: 'insight_anomalies', payload: { count: findings.length, findings } },
+    { type: 'card', card: { id: 800, entityId: 'same-charge-from-present-card', kind: 'transaction', payload: { transactionId: 'high-0', accountId: 'checking', description: 'HIGH PURCHASE 0', amount: 400, date: '2026-11-02' } } },
+    { type: 'insight', kind: 'insight_recurring_charges', accountId: 'checking', payload: { recurringCharges: [{ description: 'MONTHLY INTERNET', monthsSeen: 3, averageAmount: 79, lastDate: '2026-11-01' }] } },
+    { type: 'done', sessionId: 'demo' }
+  ];
+  await page.route('**/api/chat', (route) => route.fulfill({ contentType: 'text/event-stream', body: events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('') }));
+  await page.goto('/chat?customer=maya');
+  await ask(page, 'Show suspicious purchases and recurring charges');
+  const turns = page.locator('.assistant-turn').filter({ has: page.locator('.transaction-card, .recurring-card') });
+  await expect(turns).toHaveCount(5);
+  await expect(page.locator('.transaction-card')).toHaveCount(19);
+  await expect(page.locator('.chat-log')).not.toContainText('DEMO OPENING PURCHASE');
+  await expect(page.locator('.chat-log')).not.toContainText('UNWANTED LONG SUMMARY');
+  for (const turn of await turns.all()) {
+    expect(await turn.locator('.transaction-card, .recurring-card').count()).toBeLessThanOrEqual(8);
+    const pairs = await turn.locator('.bubble.assistant').evaluateAll((bubbles) => bubbles.flatMap((bubble) => [...bubble.querySelectorAll('.transaction-card')].map((card) => ({ preceding: card.previousElementSibling?.textContent, text: card.textContent }))));
+    for (const pair of pairs) {
+      expect(pair.preceding).toMatch(/because|compared with/);
+      expect(pair.preceding).toContain('360 Checking');
+    }
+  }
+  await expect(turns.nth(0)).not.toContainText('HIGH PURCHASE');
+  await expect(turns.nth(1)).not.toContainText('HIGH PURCHASE');
+  await expect(turns.nth(2)).toContainText('recurring charges');
+  await expect(turns.nth(3)).not.toContainText('SUBSCRIPTION');
 });

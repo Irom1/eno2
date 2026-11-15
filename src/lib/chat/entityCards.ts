@@ -4,6 +4,7 @@
  */
 import { asItems, isRecord } from './payloads.js';
 import type { ClimateReport } from '$lib/climate/emissions.js';
+import { isDemoActivity } from './anomalyReview';
 
 export interface TransactionCardPayload {
   description: string;
@@ -12,7 +13,9 @@ export interface TransactionCardPayload {
   /** Set by anomaly inference only; present_card transactions have no flag. */
   flag?: 'duplicate' | 'unusual';
   duplicateOf?: string;
-  comparisonScope?: 'merchant' | 'account';
+  comparisonScope?: 'merchant' | 'category' | 'account';
+  comparisonAmount?: number;
+  accountLabel?: string;
   transactionId: string;
   accountId?: string;
   customerId?: string;
@@ -152,6 +155,7 @@ export interface RecurringChargeCardPayload {
   monthsSeen: number;
   lastDate: string;
   customerId?: string;
+  accountId?: string;
 }
 
 export interface RecurringChargeEntityCard {
@@ -447,6 +451,7 @@ export function anomalyTransactionCards(
       const type = typeof finding.type === 'string' ? finding.type : '';
       const flag = type === 'duplicate' ? 'duplicate' : 'unusual';
       const description = descriptionOf(finding.description);
+      if (isDemoActivity(description)) continue;
       const amount = amountOf(finding.amount);
       const date = dateOf(finding.date);
       const transactionId =
@@ -468,9 +473,14 @@ export function anomalyTransactionCards(
       if (typeof finding.duplicateOf === 'string') {
         payload.duplicateOf = finding.duplicateOf;
       }
-      if (flag === 'unusual') payload.comparisonScope = typeof finding.reason === 'string' && /merchant/i.test(finding.reason) ? 'merchant' : 'account';
+      if (typeof finding.accountLabel === 'string') payload.accountLabel = finding.accountLabel;
+      if (flag === 'unusual') {
+        payload.comparisonScope = typeof finding.reason === 'string' && /merchant/i.test(finding.reason) ? 'merchant' : /comparable/i.test(String(finding.reason)) ? 'category' : 'account';
+        if (typeof finding.median === 'number' && Number.isFinite(finding.median)) payload.comparisonAmount = finding.median;
+      }
 
-      const entityId = transactionId || entityIdFor(type || 'unusual', payload);
+      const identity = transactionId || entityIdFor(type || 'unusual', payload);
+      const entityId = payload.accountId ? `${payload.accountId}:${identity}` : identity;
 
       if (seen.has(entityId)) continue;
       seen.add(entityId);

@@ -1,4 +1,6 @@
 import type { Session } from './session';
+import { anomalyTransactionCards } from '../chat/entityCards';
+import { chargeReviewMessages } from '../chat/anomalyReview';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -8,7 +10,7 @@ export interface TransactionReference {
   description: string;
   amount: number;
 }
-interface Evidence { name: string; data: Row; args: Row }
+interface Evidence { name: string; data: Row; args: Row; index: number }
 
 /** Recover actual tool evidence, rather than interpreting assistant prose or
  * guessing a transaction from a merchant keyword. Newest results come first. */
@@ -26,7 +28,7 @@ export function transactionEvidence(session: Session): Evidence[] {
         const call = session.contents[before].parts.map((entry) => record(entry.functionCall)).find((call) => call.name === name);
         if (call) { args = record(call.args); break; }
       }
-      evidence.push({ name, data: record(result.result), args });
+      evidence.push({ name, data: record(result.result), args, index });
     }
   }
   return evidence;
@@ -34,6 +36,10 @@ export function transactionEvidence(session: Session): Evidence[] {
 
 function references(evidence: Evidence): TransactionReference[] {
   const assessment = record(evidence.data.assessment);
+  if (evidence.name === 'insight_anomalies' && !evidence.data.assessment) {
+    const pages = chargeReviewMessages(anomalyTransactionCards(evidence.data, 0, 1, { accountId: typeof evidence.args.accountId === 'string' ? evidence.args.accountId : undefined }));
+    return pages[pages.length - 1].inlineCards.flatMap((card) => card.kind === 'transaction' && card.payload.accountId && card.payload.transactionId && card.payload.amount !== null ? [{ id: card.payload.transactionId, accountId: card.payload.accountId, description: card.payload.description, amount: card.payload.amount }] : []);
+  }
   const rows = assessment.transaction ? [assessment.transaction] :
     Array.isArray(evidence.data.items) ? evidence.data.items :
     Array.isArray(evidence.data.findings) ? evidence.data.findings : [evidence.data];
@@ -51,7 +57,11 @@ export function resolveTransactionReference(message: string, session: Session): 
   const latest = evidence[0];
   if (!latest) return null;
   const newestTool = [...session.contents].reverse().flatMap((content) => content.parts.map((part) => record(part.functionResponse))).find((response) => response.name && response.name !== 'present_card');
-  if (newestTool && newestTool.name !== latest.name) return null;
+  if (newestTool && newestTool.name !== latest.name) {
+    let turnStart = -1;
+    session.contents.forEach((content, index) => { if (content.role === 'user' && content.parts.some((part) => typeof part.text === 'string')) turnStart = index; });
+    if (newestTool.name !== 'insight_recurring_charges' || latest.name !== 'insight_anomalies' || latest.index < turnStart) return null;
+  }
   const rows = references(latest).filter((row) => session.accounts.some((account) => account.id === row.accountId));
   if (latest.name !== 'insight_anomalies') rows.splice(8); // Match the rendered transaction-list rows.
   const text = message.toLowerCase();

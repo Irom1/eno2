@@ -495,6 +495,7 @@ export async function runGeminiAgent({
         fastTool &&
         !contextual &&
         (fastTool.name !== 'insight_anomalies' || requestsAnomalyList(message)) &&
+        !(fastTool.name === 'insight_anomalies' && /\b(?:recurring|subscriptions?)\b/i.test(message)) &&
         (fastTool.name !== 'insight_financial_overview' || /\b(?:overview|snapshot|summary|finances|cash ?flow)\b|how am i doing/i.test(message)) &&
         rounds === 1 &&
         round.text.trim().length === 0 &&

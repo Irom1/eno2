@@ -235,7 +235,7 @@ describe("outlier detection", () => {
     ).toHaveLength(0);
   });
 
-  it("uses median + 3*MAD", () => {
+  it("requires a substantial merchant-specific increase instead of flagging ordinary variation", () => {
     const asOf = new Date(Date.UTC(2026, 10, 14));
     const amounts = [10, 12, 14, 16, 18, 20, 22, 24, 500];
     const transactions = amounts.map((amount, index) =>
@@ -245,7 +245,20 @@ describe("outlier detection", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?._id).toBe("PURCHASE-2026-10-09-500");
     expect(findings[0]?.amount).toBe(500);
-    expect(findings[0]?.threshold).toBe(30);
+    expect(findings[0]?.threshold).toBe(118);
+  });
+
+  it('does not flag a $116 energy bill against comparable bills averaging about $100', () => {
+    const transactions = [tx('COAL ENERGY BILL', 116, '2026-11-01'), tx('SOLAR ENERGY BILL', 95, '2026-11-02'), tx('ELECTRIC BILL', 105, '2026-11-03'), tx('WATER BILL', 100, '2026-11-04'), ...Array.from({ length: 10 }, (_, i) => tx(`COFFEE ${i}`, 5 + i, '2026-11-05'))];
+    expect(detectOutliers(transactions, new Date('2026-11-15')).some((finding) => finding.description === 'COAL ENERGY BILL')).toBe(false);
+    const high = transactions.map((item) => item.description === 'COAL ENERGY BILL' ? { ...item, amount: 600 } : item);
+    expect(detectOutliers(high, new Date('2026-11-15'))).toContainEqual(expect.objectContaining({ description: 'COAL ENERGY BILL', reason: 'much larger than comparable bills', median: 100 }));
+  });
+
+  it('never flags Demo-labeled purchases or duplicate Demo activity', () => {
+    const transactions = [...Array.from({ length: 10 }, (_, i) => tx(`SHOP ${i}`, 10 + i, '2026-11-01')), tx('DEMO OPENING PURCHASE', 1000, '2026-11-02'), tx('Demo setup activity', 1000, '2026-11-03'), tx('Demo setup activity', 1000, '2026-11-04')];
+    expect(detectOutliers(transactions, new Date('2026-11-15')).some((finding) => /demo/i.test(finding.description))).toBe(false);
+    expect(detectDuplicateCharges(transactions)).toEqual([]);
   });
 
   it("does not flag recurring monthly obligations", () => {

@@ -114,6 +114,15 @@ const climatePayload = {
 };
 
 describe("mockAgent", () => {
+  it('fetches recurring evidence separately when the customer requests a combined review', async () => {
+    const calls: string[] = [];
+    const { events } = await run('Show suspicious purchases and recurring charges', async (name) => {
+      calls.push(name);
+      return name === 'insight_anomalies' ? ok({ count: 0, findings: [] }) : ok({ recurringCharges: [{ description: 'INTERNET', averageAmount: 79, monthsSeen: 3, lastDate: '2026-11-01' }] });
+    });
+    expect(calls).toEqual(['insight_anomalies', 'insight_recurring_charges']);
+    expect(events.filter((event) => event.type === 'insight').map((event) => event.kind)).toEqual(calls);
+  });
   it('keeps the merchant-list -> one charge -> why follow-up grounded in the same transaction', async () => {
     const session = createSession(customer, accounts);
     const events: AgentEvent[] = [];
@@ -305,7 +314,7 @@ describe("mockAgent", () => {
     expect(text).not.toContain("600");
   });
 
-  it("explains every anomaly across accounts with a synopsis", async () => {
+  it("explains anomalies individually with separate duplicate and high-charge introductions", async () => {
     const findings = [
       {
         type: "duplicate",
@@ -371,15 +380,15 @@ describe("mockAgent", () => {
     );
 
     expect(text).toContain(
-      "I found several unusually large purchases and several possible duplicates."
+      "These charges may be duplicates."
     );
-    expect(text).toContain("NETFLIX.COM on your Venture card");
+    expect(text).toContain("NETFLIX.COM on your Venture");
     expect(text).toContain("LOCAL BOOKSTORE on your Everyday Checking");
-    expect(text).toContain("each look like possible duplicates.");
+    expect(text).toContain("is a possible duplicate because");
     expect(text).toContain("APPLE STORE on your Everyday Checking");
-    expect(text).toContain("OVERSEAS ELECTRONICS PURCHASE on your Venture card");
+    expect(text).toContain("OVERSEAS ELECTRONICS PURCHASE on your Venture");
     expect(text).toContain("EXPRESS AIR FREIGHT on your Everyday Checking");
-    expect(text).toContain("are unusually large purchases.");
+    expect(text).toContain("These charges are higher than normal.");
     for (const finding of findings) {
       expect(text).toContain(finding.description);
     }
@@ -434,9 +443,10 @@ describe("mockAgent", () => {
       })
     );
 
-    expect(text).toContain("I found an unusually large purchase and a possible duplicate.");
-    expect(text).toContain("NETFLIX is a possible duplicate.");
-    expect(text).toContain("APPLE STORE is an unusually large purchase.");
+    expect(text).toContain("These charges may be duplicates.");
+    expect(text).toContain("These charges are higher than normal.");
+    expect(text).toContain("NETFLIX is a possible duplicate because");
+    expect(text).toContain("APPLE STORE is an unusually large purchase compared with");
     expect(text).not.toContain("on your");
     expect(text).not.toContain("$15");
     expect(text).not.toContain("$1,200");

@@ -8,6 +8,22 @@ const runtime = { NESSIE_API_KEY: 'secret', NESSIE_BASE_URL: 'https://nessie.tes
 const now = new Date('2026-11-14T12:00:00Z');
 
 describe('sample transaction history', () => {
+  it('caps unusual charges at four and double-charge instances at two across account profiles and dates', () => {
+    const categories = ['dining', 'groceries', 'entertainment', 'travel', 'shopping', 'gas', 'bills', 'other'] as const;
+    for (const type of ['Checking', 'Savings', 'Credit Card'] as const) {
+      for (let index = 0; index < 1000; index++) {
+        const asOf = new Date(Date.UTC(2026, index % 12, 1 + index % 28));
+        const preferences = index % 3 === 0 ? [] : index % 3 === 1 ? [categories[index % categories.length]] : [...categories];
+        const history = buildDemoTransactions(type, `limited-anomalies-${index}`, asOf, preferences);
+        const posted = history.filter((item) => item.kind === 'withdrawal')
+          .flatMap((item, id) => toTransaction({ ...item, _id: String(id) }, 'withdrawal') ?? []);
+        const context = `${type} account ${index} on ${asOf.toISOString()}`;
+        expect(detectOutliers(posted, asOf).length, context).toBeLessThanOrEqual(4);
+        expect(detectDuplicateCharges(posted), context).toHaveLength(2);
+        expect(buildDemoTransactions(type, `limited-anomalies-${index}`, asOf, preferences)).toEqual(history);
+      }
+    }
+  });
   it('puts an oversized gas-station charge in about 30% of new histories', () => {
     for (const type of ['Checking', 'Savings', 'Credit Card'] as const) {
       let withGas = 0;
@@ -31,8 +47,7 @@ describe('sample transaction history', () => {
       expect(history.filter((item) => demoTransactionImpact(item.description) === 'non-green')).toHaveLength(5);
       const posted = history.filter((item) => item.kind === 'withdrawal').map((item, index) => toTransaction({ ...item, _id: String(index) }, 'withdrawal')).filter((item) => item !== null);
       const duplicates = detectDuplicateCharges(posted);
-      expect(duplicates.length).toBeGreaterThanOrEqual(2);
-      expect(duplicates.length).toBeLessThanOrEqual(4);
+      expect(duplicates).toHaveLength(2);
       expect(duplicates.map((item) => item.description)).toEqual(expect.arrayContaining(['NETFLIX', 'LOCAL BOOKSTORE']));
       const suspicious = detectOutliers(posted, now).filter((finding) =>
         posted.some((item) => item.id !== finding._id && item.description === finding.description && item.amount < 100 && item.amount * 4 < finding.amount));
@@ -51,7 +66,9 @@ describe('sample transaction history', () => {
       for (let index = 0; index < 100; index++) {
         const history = buildDemoTransactions(type, `varied-account-${index}`, now, [categories[index % categories.length]]);
         const posted = history.filter((item) => item.kind === 'withdrawal').map((item, index) => toTransaction({ ...item, _id: String(index) }, 'withdrawal')).filter((item) => item !== null);
-        const suspicious = detectOutliers(posted, now).filter((finding) =>
+        const outliers = detectOutliers(posted, now);
+        expect(outliers.length, `${type} account ${index} unusual charges`).toBeLessThanOrEqual(4);
+        const suspicious = outliers.filter((finding) =>
           posted.some((item) => item.id !== finding._id && item.description === finding.description && item.amount < 100 && item.amount * 4 < finding.amount));
         expect(suspicious, `${type} account ${index}`).toHaveLength(2);
         merchantPairs.add(suspicious.map((item) => item.description).sort().join('|'));
@@ -62,7 +79,7 @@ describe('sample transaction history', () => {
           if (item.status === 'completed') postedBalance += (item.kind === 'withdrawal' ? -1 : 1) * item.amount * (type === 'Credit Card' ? -1 : 1);
           expect(postedBalance, `${type} account ${index} running balance`).toBeGreaterThanOrEqual(0);
         }
-        expect(detectDuplicateCharges(posted).length).toBeGreaterThanOrEqual(2);
+        expect(detectDuplicateCharges(posted), `${type} account ${index} double charges`).toHaveLength(2);
       }
     }
     expect(merchantPairs.size).toBeGreaterThan(10);

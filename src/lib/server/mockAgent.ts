@@ -7,10 +7,11 @@ import { GUEST_CUSTOMER_ID } from "../chat/guest";
 import type { AgentEvent, Emit } from "./events";
 import { trimContents, type Session } from "./session";
 import { summarizeToolResult, toolLabel } from "./toolBridge";
-import { summarizeAnomalyPatterns } from "./nessie/tools/insights";
 import { extractLocation } from "./locationQuery";
 import { isConversationFollowUp, requestsAnomalyList } from '../chat/requestScope';
 import { resolveTransactionReference, transactionEvidence } from './transactionContext';
+import { chargeReviewMessages } from '../chat/anomalyReview';
+import { anomalyTransactionCards } from '../chat/entityCards';
 
 export { extractLocation } from "./locationQuery";
 
@@ -337,23 +338,6 @@ function joinNames(names: string[]): string {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
-/** " on your Venture card" / " on your Everyday Checking" for a finding. */
-function findingAccountPhrase(finding: AnyRecord): string {
-  const label = String(finding.accountLabel ?? "").trim();
-  if (!label) return "";
-  const type = String(finding.accountType ?? "").toLowerCase();
-  if (type.includes("credit")) {
-    return /card$/i.test(label) ? ` on your ${label}` : ` on your ${label} card`;
-  }
-  return ` on your ${label}`;
-}
-
-/** Merchant plus its account label, e.g. "NETFLIX.COM on your Venture card". */
-function findingLabel(finding: AnyRecord): string {
-  const name = String(finding.description ?? "").trim() || "A charge";
-  return `${name}${findingAccountPhrase(finding)}`;
-}
-
 function anomaliesAnswer(data: unknown): string {
   const payload = rec(data);
   const findings = Array.isArray(payload.findings) ? payload.findings.map(rec) : [];
@@ -369,57 +353,7 @@ function anomaliesAnswer(data: unknown): string {
   if (findings.length === 0) {
     return payload.complete === false ? 'I could not check every account, so I cannot give you a complete suspicious-activity result.' : "Nothing unusual stood out across your accounts.";
   }
-  const visible = findings;
-  const duplicates = visible.filter((finding) => finding.type === "duplicate");
-  const outliers = visible.filter((finding) => finding.type === "outlier");
-  const others = visible.filter(
-    (finding) => finding.type !== "duplicate" && finding.type !== "outlier"
-  );
-  const duplicateCount =
-    typeof payload.duplicateCount === "number"
-      ? payload.duplicateCount
-      : findings.filter((finding) => finding.type === "duplicate").length;
-  const outlierCount =
-    typeof payload.outlierCount === "number"
-      ? payload.outlierCount
-      : findings.filter((finding) => finding.type === "outlier").length;
-
-  const summary =
-    typeof payload.summary === "string" && payload.summary.trim()
-      ? payload.summary.trim()
-      : summarizeAnomalyPatterns(duplicateCount, outlierCount);
-
-  const parts: string[] = [summary];
-
-  const duplicateLabels = duplicates.map(findingLabel);
-  if (duplicateLabels.length > 0) {
-    parts.push(
-      duplicateLabels.length === 1
-        ? `${duplicateLabels[0]} is a possible duplicate.`
-        : `${joinNames(duplicateLabels)} each look like possible duplicates.`
-    );
-  }
-
-  const outlierLabels = outliers.map(findingLabel);
-  if (outlierLabels.length > 0) {
-    parts.push(
-      outlierLabels.length === 1
-        ? `${outlierLabels[0]} is an unusually large purchase.`
-        : `${joinNames(outlierLabels)} are unusually large purchases.`
-    );
-  }
-
-  const otherLabels = others.map(findingLabel);
-  if (otherLabels.length > 0) {
-    parts.push(
-      otherLabels.length === 1
-        ? `${otherLabels[0]} also looks unusual.`
-        : `${joinNames(otherLabels)} also look unusual.`
-    );
-  }
-
-  if (payload.complete === false) parts.push('Some accounts could not be checked, so this list is incomplete.');
-  return parts.join(" ");
+  return chargeReviewMessages(anomalyTransactionCards(payload, 0, 1), payload.complete !== false).map((page) => page.text).join('\n\n');
 }
 
 function overviewAnswer(data: unknown): string {
@@ -827,6 +761,22 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
   }
 
   emit({ type: "text", delta: text });
+
+  // A combined review must not stop after the first tool. Recurring activity
+  // stays a separate result/message rather than being labeled suspicious.
+  if (intent.tool === 'insight_anomalies' && /\b(?:recurring|subscriptions?)\b/i.test(message) && !contextual) {
+    const name = 'insight_recurring_charges';
+    const args = { accountId: checkingAccountId(session) };
+    emit({ type: 'tool_start', name, label: toolLabel(name) });
+    try {
+      const result = await callTool(name, args);
+      emit({ type: 'tool_result', name, ok: result.ok, ms: 0, summary: result.ok ? summarizeToolResult(name, result.data) : 'Could not load recurring charges' });
+      if (result.ok) {
+        emit({ type: 'insight', kind: name, payload: result.data, accountId: args.accountId });
+        evidence.push({ role: 'model', parts: [{ functionCall: { name, args } }] }, { role: 'user', parts: [{ functionResponse: { name, response: { result: result.data } } }] });
+      }
+    } catch { emit({ type: 'tool_result', name, ok: false, ms: 0, summary: 'Could not load recurring charges' }); }
+  }
 
   const sessionText = intro ? `${intro}\n\n${text}` : text;
   session.contents = trimContents([

@@ -48,6 +48,7 @@
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
   import { groupInlineCards } from '$lib/chat/cardGroups.js';
+  import { chargeIdentity, chargeReviewMessages } from '$lib/chat/anomalyReview';
   import FollowUps from './FollowUps.svelte';
   import ChatCardView from './inline-cards/ChatCardView.svelte';
 
@@ -70,6 +71,9 @@
     pending?: boolean;
     inlineCards?: EntityCard[];
     intro?: boolean;
+    chargeReport?: boolean;
+    reportComplete?: boolean;
+    structured?: boolean;
   }
 
   let {
@@ -99,6 +103,19 @@
   }
 
   let messages = $state<ChatMessage[]>([introMessage()]);
+  const displayMessages = $derived.by(() => messages.flatMap((message) => {
+    if (!message.chargeReport) return [{ key: String(message.id), message }];
+    const cards = (message.inlineCards ?? []).map((card) => {
+      if (card.kind !== 'transaction' || card.payload.accountLabel) return card;
+      const label = accounts.find((account) => account.id === card.payload.accountId)?.nickname;
+      return label ? { ...card, payload: { ...card.payload, accountLabel: label } } : card;
+    });
+    const pages = chargeReviewMessages(cards, message.reportComplete !== false);
+    return pages.map((page, index) => ({
+      key: `${message.id}:review:${index}`,
+      message: { ...message, text: page.text, inlineCards: page.inlineCards, structured: true, pending: !!message.pending && index === pages.length - 1 }
+    }));
+  }));
   let streaming = $state(false);
   let status = $state('');
   let requestSeq = 0;
@@ -263,6 +280,7 @@
 
   /** Fill missing explanations, including charges omitted from otherwise nonempty prose. */
   function ensureExplanation(message: ChatMessage): void {
+    if (message.chargeReport) return; // Structured review messages own their exact anchors.
     const cards = message.inlineCards ?? [];
     if (cards.some((card) => card.kind === 'transaction' && card.payload.flag)) {
       const original = message.text.trim();
@@ -283,6 +301,7 @@
   function markError(id: number, notice = 'Something went wrong. Please try again.'): void {
     const message = findMessage(id);
     if (!message) return;
+    if (message.chargeReport) message.reportComplete = false;
     message.text = message.text ? `${message.text}\n\n${notice}` : notice;
     message.pending = false;
   }
@@ -380,6 +399,11 @@
               }
             }
             if (data.kind === 'insight_anomalies' && !requestsExplanationOnly(message.prompt ?? '') && (!isConversationFollowUp(message.prompt ?? '') || (payload && typeof payload === 'object' && 'assessment' in payload))) {
+              const result = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+              if (!result.assessment) {
+                message.chargeReport = true;
+                message.reportComplete = message.reportComplete !== false && result.complete !== false;
+              }
               // If the tool result arrives before any prose, anchor the cards at
               // the end of the text so the answer reads first and the cited
               // charges follow it. If an intro already exists, anchor inline.
@@ -494,6 +518,20 @@
               }
             }
             if (data.kind === 'insight_recurring_charges') {
+              if (!isConversationFollowUp(message.prompt ?? '') && !requestsExplanationOnly(message.prompt ?? '')) {
+                message.chargeReport = true;
+                const result = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+                const rows = Array.isArray(result.recurringCharges) ? result.recurringCharges : [];
+                for (const row of rows) {
+                  const card = recurringCard({ recurringCharges: [row] }, 0, ++cardSeq, { customerId });
+                  if (!card) continue;
+                  card.payload.accountId = accountId;
+                  card.entityId = `${accountId}:${card.entityId}`;
+                  const current = message.inlineCards ?? [];
+                  if (!current.some((existing) => chargeIdentity(existing) === chargeIdentity(card))) message.inlineCards = [...current, card];
+                }
+                break;
+              }
               // One primitive recurring-charge card per turn: the largest
               // average amount wins, and a later insight replaces the card.
               const anchor =
@@ -656,8 +694,9 @@
 
             const current = message.inlineCards ?? [];
             const index = current.findIndex(
-              (card) => card.entityId === incoming.entityId
+              (card) => chargeIdentity(card) === chargeIdentity(incoming)
             );
+            if (index >= 0 && current[index].kind === 'transaction' && (current[index] as Extract<EntityCard, { kind: 'transaction' }>).payload.flag && incoming.kind === 'transaction' && !incoming.payload.flag) break;
             message.inlineCards =
               index >= 0
                 ? current.map((card, position) => (position === index ? incoming : card))
@@ -772,14 +811,15 @@
 >
   <div class="chat-log" role="log" aria-relevant="additions text" aria-live="polite" aria-label="Conversation">
     {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
-    {#each messages as message (message.id)}
+    {#each displayMessages as displayed (displayed.key)}
+      {@const message = displayed.message}
       {#if message.role === 'user'}
         <div class="from-you">
           <div class="bubble user" use:sentMotion.bubble={true}>{message.text}</div>
           <span class="sender">You</span>
         </div>
       {:else}
-        {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [], { pending: !!message.pending })}
+        {@const arrangedCards = message.structured ? message.inlineCards ?? [] : anchorEntityCards(message.text, message.inlineCards ?? [], { pending: !!message.pending })}
         {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
         {@const blocks = inlineBlocks(message.text, readyCards)}
         {@const groups = groupInlineCards(blocks)}

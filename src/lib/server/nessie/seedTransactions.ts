@@ -2,7 +2,7 @@ import type { RuntimeEnv } from '../env';
 import type { FetchLike } from './client';
 import type { SpendingCategory } from '../../spending';
 import { GREEN_DEMO_MERCHANTS, NON_GREEN_DEMO_MERCHANTS } from '../../transactionImpact';
-import { merchantOutlierBaseline } from './tools/insights';
+import { detectOutliers, merchantOutlierBaseline, toTransaction } from './tools/insights';
 
 export type DemoAccountType = 'Checking' | 'Savings' | 'Credit Card';
 
@@ -105,6 +105,18 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
   // Six recent unsettled records stay visible but do not affect posted totals.
   for (let index = 46; index < 50; index++) Object.assign(withdrawals[index], { status: 'pending', transaction_date: dateAgo(index % 2) });
   for (let index = 48; index < 50; index++) Object.assign(credits[index], { status: 'pending', transaction_date: dateAgo(index % 2) });
+  // Random ordinary purchases must not introduce additional double charges.
+  // Reserve both intentional pairs before checking the rest of the history.
+  const duplicateExamples = new Set([withdrawals[39], withdrawals[40], withdrawals[43], withdrawals[44]]);
+  const matchesNearby = (purchase: DemoTransaction, other: DemoTransaction) => other !== purchase &&
+    other.description === purchase.description && other.amount === purchase.amount &&
+    Math.abs(Date.parse(other.transaction_date) - Date.parse(purchase.transaction_date)) <= 3 * 86_400_000;
+  const settled = [...duplicateExamples];
+  for (const purchase of withdrawals) {
+    if (purchase.status !== 'completed' || duplicateExamples.has(purchase)) continue;
+    while (settled.some((other) => matchesNearby(purchase, other))) purchase.amount++;
+    settled.push(purchase);
+  }
   for (const purchase of unusualPurchases) {
     const ordinary = withdrawals.filter((item) => item !== purchase && item.description === purchase.description && item.status === 'completed').map((item) => item.amount);
     const largest = Math.max(...ordinary, 1);
@@ -113,6 +125,21 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
     // at a gas station and overwhelming the spend-based ClimateWise estimate.
     const { threshold } = merchantOutlierBaseline([...ordinary, largest * 1000]);
     purchase.amount = Math.ceil(Math.max(threshold, largest)) + random(25, 75);
+  }
+  // Mixed spending categories can create incidental outliers as well. Keep at
+  // most four findings using the same detector as the app, preserving the two
+  // deliberate oversized purchases and the card's opening balance owed.
+  const protectedPurchases = new Set([withdrawals[0], ...unusualPurchases]);
+  for (;;) {
+    const posted = withdrawals.flatMap((item, index) => toTransaction({ ...item, _id: String(index) }, 'withdrawal') ?? []);
+    const outliers = detectOutliers(posted, now);
+    if (outliers.length <= 4) break;
+    const incidental = outliers.find((finding) => !protectedPurchases.has(withdrawals[Number(finding._id)]))!;
+    const purchase = withdrawals[Number(incidental._id)];
+    // Bring one incidental spike back to its baseline, then recalculate because
+    // changing an amount also changes the baseline for the remaining purchases.
+    purchase.amount = Math.max(1, Math.floor(incidental.median));
+    while (settled.some((other) => matchesNearby(purchase, other))) purchase.amount++;
   }
   return result;
 }

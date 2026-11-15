@@ -28,3 +28,11 @@ it('does not guess an ambiguous charge, an unavailable row, or a stale topic', (
   session.contents.push({ role: 'user', parts: [{ functionResponse: { name: 'insight_upcoming_bills', response: { result: { bills: [] } } } }] });
   expect(resolveTransactionReference('Is the first one suspicious?', session)).toBeNull();
 });
+
+it('resolves ordinals against the latest visible eight-card review message', () => {
+  const session = conversation();
+  const findings = Array.from({ length: 10 }, (_, index) => ({ _id: `high-${index}`, description: `PURCHASE ${index}`, type: 'outlier', accountId: 'checking', amount: 300 + index, date: '2026-11-01' }));
+  session.contents.push({ role: 'user', parts: [{ text: 'Show suspicious and recurring charges' }] }, { role: 'user', parts: [{ functionResponse: { name: 'insight_anomalies', response: { result: { findings } } } }, { functionResponse: { name: 'insight_recurring_charges', response: { result: { recurringCharges: [] } } } }] });
+  expect(resolveTransactionReference('is that first one suspicious', session)?.id).toBe('high-8');
+  expect(resolveTransactionReference('is that last one suspicious', session)?.id).toBe('high-9');
+});
