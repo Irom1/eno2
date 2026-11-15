@@ -233,9 +233,8 @@
 				</section>
 
 				<section class="list panel" aria-labelledby="list-title" aria-live="polite">
-					<!-- Always present in both states, so it never changes the card's height.
-					     Only the text is hidden once a category is active. -->
-					<h2 class="chart-title list-title" class:is-hidden={selectedCat} id="chart-title">Carbon emissions by category</h2>
+					<!-- The panel heading is always present in both states (pick or selected),
+					     so switching categories never changes the card's height. -->
 					{#if selectedCat}
 						<div class="list-head">
 							<div>
@@ -318,10 +317,8 @@
 		padding: 0;
 		background: transparent;
 		/* Fixed list contract (normal density):
-		   24px padding + 20px title + 8px gap + 52px head (44 + 8) + 198px body. */
+		   24px padding + 52px head (44 + 8) + 198px body = 274px. */
 		--cw-list-pad: 24px;
-		--cw-list-title: 20px;
-		--cw-list-title-gap: 8px;
 		--cw-list-head: 52px;
 		--cw-list-body: 198px;
 	}
@@ -337,10 +334,7 @@
 	.cw.embedded .list {
 		flex: none;
 		min-width: 0;
-		height: calc(
-			var(--cw-list-pad) + var(--cw-list-title) + var(--cw-list-title-gap) + var(--cw-list-head) +
-				var(--cw-list-body)
-		);
+		height: calc(var(--cw-list-pad) + var(--cw-list-head) + var(--cw-list-body));
 	}
 	/* The list body fills whatever the fixed height leaves; never grow the list. */
 	.cw.embedded .pick,
@@ -348,11 +342,9 @@
 		flex: 1;
 		min-height: 0;
 	}
-	/* Short density: 14px padding + 16px title + 5px gap + 33px head (30 + 3) + 124px body. */
+	/* Short density: 14px padding + 33px head (30 + 3) + 124px body = 171px. */
 	.cw.embedded .card[data-density='short'] {
 		--cw-list-pad: 14px;
-		--cw-list-title: 16px;
-		--cw-list-title-gap: 5px;
 		--cw-list-head: 33px;
 		--cw-list-body: 124px;
 	}
@@ -433,7 +425,7 @@
 			'list list'
 			'state state';
 		align-items: start;
-		gap: 14px 12px;
+		gap: 20px 14px;
 		padding: 20px 16px 18px;
 	}
 	/* Leave a clean strip for the theme control in fill mode. */
@@ -459,10 +451,9 @@
 	.foot-value small { margin-left: 2px; font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
 	.foot-sub { font-size: 11px; color: var(--muted); }
 
-	.chart { grid-area: chart; align-self: start; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+	.chart { grid-area: chart; align-self: start; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 0 0 4px; }
 	/* Info control owns the card's top-right corner, above the ring. */
 	.chart-head { position: relative; z-index: 4; display: flex; justify-content: flex-end; align-items: center; gap: 6px; width: 100%; }
-	.chart-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
 	.info { width: 17px; height: 17px; padding: 0; border: 1.3px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font-family: Georgia, serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
 	.info:hover, .info[aria-expanded='true'] { border-color: var(--link); color: var(--link); }
 	.info-text {
@@ -487,20 +478,6 @@
 	}
 
 	.list { grid-area: list; align-self: stretch; display: flex; flex-direction: column; min-height: 0; padding: 14px 14px 10px; }
-	/* Title lives here in both the pick and selected states, outside the pick/items height math.
-	   A fixed line box + ellipsis means wrapping can never change the list (and card) height. */
-	.list-title {
-		flex: none;
-		min-width: 0;
-		height: 20px;
-		line-height: 20px;
-		margin-bottom: 8px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	/* Hidden text still reserves the fixed title row, keeping card height stable. */
-	.list-title.is-hidden { visibility: hidden; }
 	/*
 	 * The list head and CTA stay put; only the rows themselves scroll, so hovering
 	 * between categories never changes the card's size or shifts the ring.
@@ -549,20 +526,18 @@
 	.card[data-mode='compact'] .grid {
 		grid-template-columns: minmax(0, 1fr) auto;
 		grid-template-areas: 'logo foot' 'chart chart' 'list list' 'state state';
-		gap: 12px 10px;
+		gap: 14px 12px;
 		padding-left: 12px;
 		padding-right: 12px;
 		padding-bottom: 14px;
 	}
 	.card[data-mode='compact'] .logo { width: 124px; }
 	.card[data-mode='compact'] .foot { min-width: 0; }
-	.card[data-mode='compact'] .chart-title { font-size: 14px; }
 	.card[data-mode='compact'] .sun { width: 140vmax; margin-left: -70vmax; }
 
 	/* ---- Short heights: compress fixed chrome so the list can still breathe ---- */
-	.card[data-density='short'] .grid { gap: 6px 10px; padding-bottom: 8px; }
-	.card[data-density='short'] .chart { gap: 2px; }
-	.card[data-density='short'] .chart-title { font-size: 12.5px; }
+	.card[data-density='short'] .grid { gap: 10px 12px; padding-bottom: 8px; }
+	.card[data-density='short'] .chart { gap: 8px; padding-block: 0; }
 	.card[data-density='short'] .info { width: 15px; height: 15px; font-size: 9px; }
 	.card[data-density='short'] .foot { padding: 6px 9px; }
 	.card[data-density='short'] .foot-label { font-size: 10.5px; }
@@ -571,7 +546,6 @@
 	.card[data-density='short'] .foot-value small { font-size: 11px; }
 	.card[data-density='short'] .foot-sub { font-size: 10px; }
 	.card[data-density='short'] .list { padding: 8px 10px 6px; }
-	.card[data-density='short'] .list-title { height: 16px; line-height: 16px; margin-bottom: 5px; }
 	.card[data-density='short'] .list-head { height: auto; min-height: 30px; margin-bottom: 3px; }
 	.card[data-density='short'] .list-head h2 { font-size: 14px; }
 	.card[data-density='short'] .list-head p { margin-top: 1px; font-size: 11.5px; }

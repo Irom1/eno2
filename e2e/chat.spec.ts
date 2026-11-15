@@ -531,12 +531,13 @@ test.describe('chat prompts', () => {
     await expect(card.locator('.ring svg')).toBeVisible();
     await expect(card.locator('.list')).toBeVisible();
 
-    // The category title now lives in the purchases panel, not the chart head.
-    await expect(card.locator('#chart-title')).toHaveCount(1);
-    await expect(card.locator('.list .chart-title')).toHaveText('Carbon emissions by category');
-    await expect(card.locator('.list .chart-title')).toBeVisible();
-    await expect(card.locator('.chart .chart-title')).toHaveCount(0);
-    await expect(card.locator('.chart-head')).not.toContainText('Carbon emissions by category');
+    // The redundant "Carbon emissions by category" title is gone; the panel
+    // heading is the active category (or the pick prompt), never the old title.
+    await expect(card.locator('#chart-title')).toHaveCount(0);
+    await expect(card.locator('.chart-title')).toHaveCount(0);
+    await expect(card.locator('.list-title')).toHaveCount(0);
+    expect(await card.innerText()).not.toContain('Carbon emissions by category');
+    await expect(card.locator('.list h2#list-title')).toHaveCount(1);
 
     // The info control sits at the chart/card top-right, not centered above the ring.
     const info = card.locator('.chart .info');
@@ -590,6 +591,7 @@ test.describe('chat prompts', () => {
         logo: box('.logo'),
         foot: box('.foot'),
         chart: box('.chart'),
+        ring: box('.ring-wrap'),
         list: box('.list')
       };
     });
@@ -630,6 +632,32 @@ test.describe('chat prompts', () => {
       Math.min(layout.foot.left, layout.chart.left) + 1
     );
 
+    // Breathing room: the footprint and chart both clear the purchases panel,
+    // and the ring stays fully inside the card instead of being clipped.
+    expect(
+      layout.list.top - layout.foot.bottom,
+      'the footprint has a visible gap above the purchases panel'
+    ).toBeGreaterThanOrEqual(16);
+    expect(
+      layout.list.top - layout.chart.bottom,
+      'the chart has a visible gap above the purchases panel'
+    ).toBeGreaterThanOrEqual(16);
+    expect(layout.ring, 'the ring renders').not.toBeNull();
+    if (layout.ring) {
+      expect(layout.ring.top, 'the ring is not clipped at the card top').toBeGreaterThanOrEqual(
+        layout.card.top - 1
+      );
+      expect(layout.ring.bottom, 'the ring is not clipped at the card bottom').toBeLessThanOrEqual(
+        layout.card.bottom + 1
+      );
+      expect(layout.ring.left, 'the ring is not clipped on the left').toBeGreaterThanOrEqual(
+        layout.card.left - 1
+      );
+      expect(layout.ring.right, 'the ring is not clipped on the right').toBeLessThanOrEqual(
+        layout.card.right + 1
+      );
+    }
+
     // The card is standalone, never folded into the assistant bubble.
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
@@ -666,20 +694,18 @@ test.describe('chat prompts', () => {
 
     await card.locator('.ring .seg[aria-label^="Travel & transport:"]').hover();
     await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
-    await expect(card.locator('.list .chart-title')).toBeHidden();
     await expectSameBox(emptyBox, 'hovering a ring slice');
 
     // Clicking another category also leaves the card the same size.
     await card.getByRole('button', { name: /Food & dining:/ }).click();
     await expect(card.locator('.list-head h2')).toHaveText('Food & dining');
-    await expect(card.locator('.list .chart-title')).toBeHidden();
     await expectSameBox(emptyBox, 'selecting a category');
 
     // Clearing the category returns to the pick state without resizing the card.
     await page.mouse.move(0, 0);
     await card.locator('.list-head .clear').click();
     await expect(card.locator('.pick')).toBeVisible();
-    await expect(card.locator('.list .chart-title')).toBeVisible();
+    await expect(card.locator('.list-title')).toHaveCount(0);
     await expectSameBox(emptyBox, 'clearing the selected category');
 
     // Selecting a ring slice reveals that category's purchases.

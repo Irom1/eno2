@@ -268,11 +268,11 @@ test.describe('360x640 keyboard viewport', () => {
     await expect(card.locator('.list')).toBeVisible();
     await expect(card.locator('.ring .seg').first()).toBeVisible();
 
-    // The category title sits in the purchases panel, not inside the chart.
-    await expect(card.locator('#chart-title')).toHaveCount(1);
-    await expect(card.locator('.list .chart-title')).toHaveText('Carbon emissions by category');
-    await expect(card.locator('.list .chart-title')).toBeVisible();
-    await expect(card.locator('.chart .chart-title')).toHaveCount(0);
+    // The redundant "Carbon emissions by category" title is removed entirely.
+    await expect(card.locator('#chart-title')).toHaveCount(0);
+    await expect(card.locator('.chart-title')).toHaveCount(0);
+    await expect(card.locator('.list-title')).toHaveCount(0);
+    expect(await card.innerText()).not.toContain('Carbon emissions by category');
 
     // The info control owns the card's top-right corner and opens a popover.
     const info = card.locator('.chart .info');
@@ -339,7 +339,6 @@ test.describe('360x640 keyboard viewport', () => {
     // the segment's focus handler (the same `hovered` state a pointer uses).
     const travelSeg = card.getByRole('button', { name: /Travel & transport:/ });
     await travelSeg.focus();
-    await expect(card.locator('.list .chart-title')).toBeHidden();
     await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
     const hoverBox = await cardEl.boundingBox();
 
@@ -348,16 +347,15 @@ test.describe('360x640 keyboard viewport', () => {
     // segment with the keyboard (same toggle handler as a tap).
     await travelSeg.press('Enter');
     await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
-    await expect(card.locator('.list .chart-title')).toBeHidden();
     await expect(card.locator('.items .item')).toHaveCount(1);
     await expect(card.locator('.items .item')).toContainText(/shell/i);
     const selectedBox = await cardEl.boundingBox();
     await expectNoHorizontalOverflow(page);
 
-    // Clearing the selection restores the pick state and its visible title.
+    // Clearing the selection restores the pick state.
     await card.getByRole('button', { name: 'Clear' }).click();
     await expect(card.locator('.pick')).toBeVisible();
-    await expect(card.locator('.list .chart-title')).toBeVisible();
+    await expect(card.locator('.list-title')).toHaveCount(0);
     const clearedBox = await cardEl.boundingBox();
 
     console.log(
