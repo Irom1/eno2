@@ -170,6 +170,13 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(page.locator('.entity-card .loan-card')).toHaveCount(0);
     expect(
+      await loan.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { top: style.marginTop, bottom: style.marginBottom };
+      }),
+      'the product card keeps the inline 6px vertical rhythm'
+    ).toEqual({ top: '6px', bottom: '6px' });
+    expect(
       await loan.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
       'the loan card renders inline inside the prose bubble'
     ).toBe(true);
@@ -3348,6 +3355,13 @@ test.describe('primitive bill and account cards', () => {
 
     await expect(page.locator('.chat-card')).toHaveCount(0);
     await expect(card.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    expect(
+      await card.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { top: style.marginTop, bottom: style.marginBottom };
+      }),
+      'the product card keeps the inline 6px vertical rhythm'
+    ).toEqual({ top: '6px', bottom: '6px' });
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
       'the account card renders inline inside the prose bubble'

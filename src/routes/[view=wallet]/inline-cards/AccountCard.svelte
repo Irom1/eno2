@@ -80,6 +80,8 @@
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
+    /* Same vertical rhythm the former CardFrame provided inline. */
+    margin: 6px 0;
   }
   .account-card:not(.product) {
     border: 1px solid color-mix(in srgb, var(--ink) 16%, var(--border));
