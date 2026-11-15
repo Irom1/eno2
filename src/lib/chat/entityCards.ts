@@ -893,7 +893,7 @@ export function billCard(
 }
 
 /**
- * Normalize insight_upcoming_bills into one series card: up to eight valid
+ * Normalize insight_upcoming_bills into one series card: all valid
  * bills in the tool's order (earliest due first). Invalid entries are skipped
  * rather than thrown on. Returns null without a valid bill so the caller keeps
  * the single-bill card path.
@@ -946,12 +946,11 @@ export function billListCard(
 
     if (rows.length === 0) return null;
 
-    const visible = rows.slice(0, 8);
     const card: BillListEntityCard = {
       id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
       entityId: BILL_LIST_ENTITY_ID,
       kind: 'bill-list',
-      payload: { rows: visible, more: Math.max(0, rows.length - visible.length) }
+      payload: { rows, more: 0 }
     };
     if (typeof afterText === 'number' && Number.isFinite(afterText)) {
       card.afterText = afterText;

@@ -343,7 +343,9 @@
     <div class="composer-area" use:keyboardComposer>
       <form class="composer message-composer" onsubmit={send}>
         <AddressAutocomplete bind:this={autocomplete} query={reply} context={{ city: answers.city, state: answers.state, zip: answers.zip }} disabled={!ready || busy || recovery || !!createdCustomerId} bind:open={suggestionsOpen} bind:activeId={activeAddressId} onselect={selectAddress} />
-        <input bind:this={input} bind:value={reply} aria-label="Message Eno" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen} aria-controls={suggestionsOpen ? 'address-suggestions' : undefined} aria-activedescendant={activeAddressId} onkeydown={(event) => autocomplete?.handleKeydown(event)} placeholder={recovery ? 'Find your profile through Sign in' : 'Message Eno…'} disabled={!ready || submitting || recovery || !!createdCustomerId} maxlength="2000" {...inputHints} />
+        {#key inputHints.autocomplete}
+          <input id={`signup-${inputHints.name}`} bind:this={input} bind:value={reply} aria-label="Message Eno" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen} aria-controls={suggestionsOpen ? 'address-suggestions' : undefined} aria-activedescendant={activeAddressId} onkeydown={(event) => autocomplete?.handleKeydown(event)} placeholder={recovery ? 'Find your profile through Sign in' : 'Message Eno…'} disabled={!ready || submitting || recovery || !!createdCustomerId} maxlength="2000" {...inputHints} />
+        {/key}
         <button class="message-send" type="submit" aria-label="Send message" disabled={!ready || busy || !reply.trim() || recovery}><ActionIcon name="up" size={22} /></button>
       </form>
     </div>

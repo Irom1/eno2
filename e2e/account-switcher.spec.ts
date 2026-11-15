@@ -115,17 +115,37 @@ test('an explicit profile link takes precedence over the remembered selection', 
   await expect(page.locator('.profile-name')).toHaveText('Demo');
 });
 
-test('switcher fits on mobile and follows dark mode', async ({ page }) => {
-  await fixtures(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/dashboard?customer=maya');
-  await expect(page.locator('.profile-name')).toHaveText('Maya');
-  await page.locator('.theme-toggle').click();
-  await page.locator('.profile').click();
-  await expect(page.locator('.customer-dropdown')).toHaveClass(/dark/);
-  await expect(page.getByRole('menuitemradio', { name: /Maya Chen/ })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-});
+for (const view of ['dashboard', 'chat']) {
+  for (const width of [320, 390, 600]) {
+    test(`${view} switcher stays inside a ${width}px mobile viewport`, async ({ page }) => {
+      await fixtures(page);
+      await page.route('**/api/customers', (route) => route.fulfill({ json: { customers: [
+        maya, demo, future,
+        { id: 'long', firstName: 'Hayden', lastName: 'IWantToBeACatboy', city: 'Wiscasset', state: 'ME' },
+        { id: 'longer', firstName: 'Mori', lastName: 'Finlayson-Johnecheck', city: 'Arlington', state: 'MA' },
+        { id: 'last', firstName: 'Liam', lastName: 'Gallagher', city: 'Arlington', state: 'MA' }
+      ] } }));
+      await page.setViewportSize({ width, height: 700 });
+      await page.goto(`/${view}?customer=maya`);
+      await expect(page.getByRole('button', { name: 'Switch account: Maya Chen' })).toBeVisible();
+      await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+      await page.locator('.profile').click();
+      const switcher = page.getByRole('menu', { name: 'Switch account' });
+      await expect(switcher).toHaveClass(/dark/);
+      await expect(switcher.getByRole('menuitemradio', { name: /Maya Chen/ })).toBeVisible();
+      const bounds = await switcher.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(12);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width - 12);
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(700);
+      expect(await switcher.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await expect(switcher.getByRole('menuitemradio', { name: /Mori Finlayson-Johnecheck/ })).toBeVisible();
+      await switcher.getByRole('menuitemradio', { name: /Future Person/ }).click();
+      await expect(page.getByRole('button', { name: 'Switch account: Future Person' })).toBeVisible();
+      await expect(switcher).toBeHidden();
+    });
+  }
+}
 
 test('a removed remembered profile falls back to Maya and repairs the URL', async ({ page }) => {
   await fixtures(page);

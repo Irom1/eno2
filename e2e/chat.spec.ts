@@ -2149,10 +2149,9 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.bill-card')).toHaveCount(0);
     await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
-    // The list shows the due bills in tool order, capped at eight rows.
+    // The list shows all due bills in tool order.
     const rowCount = await list.locator('.bill-row').count();
     expect(rowCount, 'a multi-bill result renders several rows').toBeGreaterThan(1);
-    expect(rowCount, 'the list caps visible rows at eight').toBeLessThanOrEqual(8);
 
     await expectNoCardValueDuplicate(page, ['$4,283.59', '$65.59']);
     await expect(list.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
@@ -3002,19 +3001,18 @@ test.describe('chat prompts', () => {
       'the ATM locator map renders as a standalone card, not inside the prose bubble'
     ).toBe(false);
 
-    // The Apple/Google actions sit below the map card, outside its surface and
-    // outside the prose bubble.
+    // The Apple/Google actions sit below the map inside the same card.
     const actions = page.locator('.atm-actions');
     await expect(actions).toHaveCount(1);
     await expect(actions).toBeVisible();
-    await expect(page.locator('.entity-card .atm-actions')).toHaveCount(0);
+    await expect(page.locator('.entity-card .atm-actions')).toHaveCount(1);
     expect(
       await actions.evaluate((element) => ({
         inCard: Boolean(element.closest('.entity-card')),
         inBubble: Boolean(element.closest('.bubble.assistant'))
       })),
-      'the actions row sits outside both the map card and the prose bubble'
-    ).toEqual({ inCard: false, inBubble: false });
+      'the actions row sits inside the map card'
+    ).toEqual({ inCard: true, inBubble: false });
 
     // The explicit external links open Apple Maps and Google Maps.
     const apple = actions.getByRole('link', { name: 'Open in Apple Maps', exact: true });

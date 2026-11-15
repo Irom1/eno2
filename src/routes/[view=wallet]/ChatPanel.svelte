@@ -1050,7 +1050,7 @@
   /*
    * Inner card surfaces are standalone inside the bubble: they never inherit
    * its sharp tail corner, and they use a tighter radius than the 24px bubble
-   * with roomier padding. The assistant bubble itself keeps its sharp tail.
+   * with roomier padding. Only the final assistant surface keeps its sharp tail.
    */
   .bubble.assistant.inline-entities :global(.entity-card),
   .bubble.assistant.inline-entities :global(.account-card),
@@ -1080,6 +1080,10 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
+  }
+  /* Round earlier surfaces; loading/status rows do not count as messages. */
+  .assistant-content > :global(:has(~ :not(.loading-line):not(.status-line))) {
+    --assistant-bubble-radius: var(--bubble-radius);
   }
   .chat-followups-row {
     display: flex;

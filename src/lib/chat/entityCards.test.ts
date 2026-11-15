@@ -1270,15 +1270,15 @@ describe('billListCard', () => {
     expect(list.payload).not.toHaveProperty('shortfall');
   });
 
-  it('caps rows at eight and reports the remainder', () => {
+  it('shows every bill without truncating the list', () => {
     const bills = Array.from({ length: 11 }, (_, index) =>
       bill({ billId: `bill-${index + 1}`, payee: `Bill ${index + 1}` })
     );
     const card = billListCard({ bills }, 0, 1) as BillListEntityCard;
-    expect(card.payload.rows).toHaveLength(8);
+    expect(card.payload.rows).toHaveLength(11);
     expect(card.payload.rows[0].id).toBe('bill-1');
-    expect(card.payload.rows[7].id).toBe('bill-8');
-    expect(card.payload.more).toBe(3);
+    expect(card.payload.rows[10].id).toBe('bill-11');
+    expect(card.payload.more).toBe(0);
   });
 
   it('skips malformed entries and keeps valid rows in order', () => {
