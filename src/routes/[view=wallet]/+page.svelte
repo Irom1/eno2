@@ -1109,13 +1109,14 @@
     --composer-bottom-padding: var(--composer-bottom-space);
   }
   .wallet-gradient {
+    --divider-color: var(--dark, color-mix(in srgb, var(--border) 65%, transparent)) var(--light, rgb(80 99 110 / 30%));
     --composer-gradient-center: calc(100% - var(--composer-bottom-padding) - var(--composer-half-height));
     position: absolute;
     inset: 0 0 auto;
     height: 100%;
     box-sizing: border-box;
     pointer-events: none;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 0.5px solid var(--divider-color);
   }
   .chat .wallet-gradient {
     position: fixed;
@@ -1168,7 +1169,7 @@
   .content > footer { grid-column: 1 / -1; }
   .stack { display: grid; gap: 14px; }
   .score-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-  .section-title { font-size: 23px; }
+  .section-title { font-size: 23px; color: var(--muted); }
   .skeleton-card {
     height: 108px;
     border: 1px solid var(--border);
