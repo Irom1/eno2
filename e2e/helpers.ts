@@ -147,6 +147,7 @@ export async function askChat(page: Page, prompt: string): Promise<void> {
 export const PRIMITIVE_CARD_SELECTOR = [
   '.transaction-card',
   '.transaction-list-card',
+  '.bill-list-card',
   '.pie-chart-card',
   '.bill-card',
   '.account-card',
@@ -190,7 +191,7 @@ export async function assistantText(page: Page): Promise<string> {
  * no lift shadow, no accent strip, and a width capped by the bubble. Account
  * and loan product cards are the single inline surface and have no extra
  * `.entity-card` frame. Multi or series cards (`transaction-list`,
- * `spending-pie`) stay standalone: a framed `.entity-card` surface with a
+ * `bill-list`, `spending-pie`) stay standalone: a framed `.entity-card` surface with a
  * border, left alignment, and the same 88% column cap as the Eno chat bubble.
  * The full ClimateWise card is standalone without a second `CardFrame`: its own
  * `article.card` surface is the frame.

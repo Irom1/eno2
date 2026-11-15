@@ -21,6 +21,15 @@ function list(id: number): EntityCard {
   };
 }
 
+function billList(id: number): EntityCard {
+  return {
+    id,
+    entityId: 'bill-list',
+    kind: 'bill-list',
+    payload: { rows: [], more: 0 }
+  };
+}
+
 function pie(id: number): EntityCard {
   return {
     id,
@@ -190,6 +199,7 @@ describe('groupInlineCards', () => {
 
   it('classifies standalone kinds', () => {
     expect(isInlineCardKind('transaction-list')).toBe(false);
+    expect(isInlineCardKind('bill-list')).toBe(false);
     expect(isInlineCardKind('spending-pie')).toBe(false);
     expect(isInlineCardKind('climatewise')).toBe(false);
     expect(isInlineCardKind('transaction')).toBe(true);
@@ -201,6 +211,7 @@ describe('groupInlineCards', () => {
     expect(isInlineCard(branch(10))).toBe(true);
     expect(isInlineCard(single(11))).toBe(true);
     expect(isInlineCard(list(12))).toBe(false);
+    expect(isInlineCard(billList(14))).toBe(false);
     expect(isInlineCard(pie(13))).toBe(false);
   });
 });

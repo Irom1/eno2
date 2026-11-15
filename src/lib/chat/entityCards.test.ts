@@ -9,6 +9,7 @@ import {
   anomalyTransactionCards,
   billCard,
   billHref,
+  billListCard,
   cashflowCard,
   climateWiseCard,
   goalCard,
@@ -28,6 +29,7 @@ import {
   transactionListCard,
   type AccountEntityCard,
   type BillEntityCard,
+  type BillListEntityCard,
   type CashflowPointEntityCard,
   type ClimateWiseEntityCard,
   type EntityCard,
@@ -1145,6 +1147,128 @@ describe('billCard', () => {
     expect(billCard({ bills: [] }, 0, 1)).toBeNull();
     expect(billCard({ bills: 'nope' }, 0, 1)).toBeNull();
     expect(billCard({ items: [bill()] }, 0, 1)).toBeNull();
+  });
+});
+
+describe('billListCard', () => {
+  const bill = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    billId: 'bill-1',
+    payee: 'City Power',
+    nickname: 'Home utilities',
+    amount: 120,
+    dueDate: '2026-11-18',
+    daysUntil: 4,
+    status: 'pending',
+    accountId: 'acct-checking',
+    ...overrides
+  });
+
+  it('keeps the tool order and whitelists each row', () => {
+    const card = billListCard(
+      {
+        count: 2,
+        total: 3120,
+        coverageRatio: 1.4,
+        shortfall: 0,
+        bills: [
+          bill(),
+          bill({ billId: 'bill-2', payee: 'Maple Property', amount: 3000, dueDate: '2026-11-20' })
+        ]
+      },
+      42,
+      7,
+      { customerId: 'cust-1' }
+    );
+
+    expect(card).not.toBeNull();
+    const list = card as BillListEntityCard;
+    expect(list).toMatchObject({
+      id: 7,
+      entityId: 'bill-list',
+      kind: 'bill-list',
+      afterText: 42,
+      payload: { more: 0 }
+    });
+    expect(list.payload.rows.map((row) => row.id)).toEqual(['bill-1', 'bill-2']);
+    expect(list.payload.rows.map((row) => row.payee)).toEqual(['City Power', 'Maple Property']);
+    expect(list.payload.rows[0]).toMatchObject({
+      payee: 'City Power',
+      amount: 120,
+      dueDate: '2026-11-18',
+      status: 'pending',
+      accountId: 'acct-checking',
+      customerId: 'cust-1'
+    });
+    expect(Object.keys(list.payload.rows[0]).sort()).toEqual([
+      'accountId',
+      'amount',
+      'customerId',
+      'dueDate',
+      'id',
+      'payee',
+      'status'
+    ]);
+    expect(list.payload).not.toHaveProperty('total');
+    expect(list.payload).not.toHaveProperty('coverageRatio');
+    expect(list.payload).not.toHaveProperty('shortfall');
+  });
+
+  it('caps rows at eight and reports the remainder', () => {
+    const bills = Array.from({ length: 11 }, (_, index) =>
+      bill({ billId: `bill-${index + 1}`, payee: `Bill ${index + 1}` })
+    );
+    const card = billListCard({ bills }, 0, 1) as BillListEntityCard;
+    expect(card.payload.rows).toHaveLength(8);
+    expect(card.payload.rows[0].id).toBe('bill-1');
+    expect(card.payload.rows[7].id).toBe('bill-8');
+    expect(card.payload.more).toBe(3);
+  });
+
+  it('skips malformed entries and keeps valid rows in order', () => {
+    const card = billListCard(
+      {
+        bills: [
+          null,
+          'nope',
+          bill({ payee: '   ' }),
+          bill({ payee: 'Refund', amount: -5 }),
+          bill({ payee: 'No date', dueDate: '' }),
+          bill({ payee: 'No id', billId: '' }),
+          bill({ billId: 'bill-zero', payee: 'Zero', amount: 0 }),
+          bill({ _id: 'bill-underscore', billId: undefined, payee: 'Underscore' })
+        ]
+      },
+      0,
+      1
+    ) as BillListEntityCard;
+
+    expect(card.payload.rows.map((row) => row.payee)).toEqual(['Zero', 'Underscore']);
+    expect(card.payload.rows[0].amount).toBe(0);
+    expect(card.payload.rows[0].id).toBe('bill-zero');
+    expect(card.payload.rows[1].id).toBe('bill-underscore');
+  });
+
+  it('normalizes a missing amount to null and omits absent fields', () => {
+    const card = billListCard(
+      { bills: [bill({ amount: undefined, status: '  ', accountId: undefined })] },
+      0,
+      1
+    ) as BillListEntityCard;
+    expect(card.payload.rows[0].amount).toBeNull();
+    expect(card.payload.rows[0]).not.toHaveProperty('status');
+    expect(card.payload.rows[0]).not.toHaveProperty('accountId');
+    expect(card.payload.rows[0]).not.toHaveProperty('customerId');
+  });
+
+  it('returns null for empty or malformed payloads and never throws', () => {
+    expect(billListCard(null, 0, 1)).toBeNull();
+    expect(billListCard(undefined, 0, 1)).toBeNull();
+    expect(billListCard('bills', 0, 1)).toBeNull();
+    expect(billListCard({}, 0, 1)).toBeNull();
+    expect(billListCard({ bills: [] }, 0, 1)).toBeNull();
+    expect(billListCard({ bills: 'nope' }, 0, 1)).toBeNull();
+    expect(billListCard({ items: [bill()] }, 0, 1)).toBeNull();
+    expect(billListCard({ bills: [null, 'nope'] }, 0, 1)).toBeNull();
   });
 });
 

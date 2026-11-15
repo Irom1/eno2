@@ -87,6 +87,29 @@ export interface BillEntityCard {
   afterText?: number;
 }
 
+export interface BillListRow {
+  id: string;
+  payee: string;
+  amount: number | null;
+  dueDate: string;
+  status?: string;
+  accountId?: string;
+  customerId?: string;
+}
+
+export interface BillListPayload {
+  rows: BillListRow[];
+  more: number; // valid bills not shown beyond the cap
+}
+
+export interface BillListEntityCard {
+  id: number;
+  entityId: 'bill-list'; // one list card per turn
+  kind: 'bill-list';
+  payload: BillListPayload;
+  afterText?: number;
+}
+
 export interface AccountCardPayload {
   accountId: string;
   nickname: string;
@@ -262,6 +285,7 @@ export type EntityCard =
   | TransactionListEntityCard
   | SpendingPieEntityCard
   | BillEntityCard
+  | BillListEntityCard
   | AccountEntityCard
   | LoanEntityCard
   | LocationEntityCard
@@ -275,6 +299,7 @@ export type EntityCard =
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
 export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
+export const BILL_LIST_ENTITY_ID = 'bill-list';
 
 /**
  * Deep link into the dashboard account activity view for one transaction.
@@ -836,6 +861,76 @@ export function billCard(
       entityId,
       kind: 'bill',
       payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Normalize insight_upcoming_bills into one series card: up to eight valid
+ * bills in the tool's order (earliest due first). Invalid entries are skipped
+ * rather than thrown on. Returns null without a valid bill so the caller keeps
+ * the single-bill card path.
+ */
+export function billListCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): BillListEntityCard | null {
+  try {
+    if (!isRecord(payload) || !Array.isArray(payload.bills)) return null;
+
+    const customerId = optionalTrimmed(context?.customerId);
+    const rows: BillListRow[] = [];
+    for (const entry of payload.bills) {
+      if (!isRecord(entry)) continue;
+
+      const payee = trimmedString(entry.payee);
+      if (!payee) continue;
+
+      const amount = finiteNumberOrNull(entry.amount);
+      // Negative amounts are malformed for a bill; zero stays visible.
+      if (amount !== null && amount < 0) continue;
+
+      const dueDate = trimmedString(entry.dueDate);
+      if (!dueDate) continue;
+
+      const rawId = entry.billId ?? entry._id;
+      const id =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+      if (!id) continue;
+
+      const row: BillListRow = {
+        id,
+        payee,
+        amount,
+        dueDate,
+        ...(optionalTrimmed(entry.status) ? { status: optionalTrimmed(entry.status) } : {}),
+        ...(optionalTrimmed(entry.accountId)
+          ? { accountId: optionalTrimmed(entry.accountId) }
+          : {}),
+        ...(customerId ? { customerId } : {})
+      };
+      rows.push(row);
+    }
+
+    if (rows.length === 0) return null;
+
+    const visible = rows.slice(0, 8);
+    const card: BillListEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: BILL_LIST_ENTITY_ID,
+      kind: 'bill-list',
+      payload: { rows: visible, more: Math.max(0, rows.length - visible.length) }
     };
     if (typeof afterText === 'number' && Number.isFinite(afterText)) {
       card.afterText = afterText;

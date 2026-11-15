@@ -1256,10 +1256,11 @@ test.describe('chat prompts', () => {
     await waitForChatSettled(page);
 
     await expect(page.locator('.assistant-turn')).toHaveCount(turnsBefore + 1);
-    await expect.poll(() => page.locator('.bill-card').count(), { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => page.locator('.bill-list-card').count(), { timeout: 20_000 }).toBe(1);
 
     await expect(page.locator('.loan-card')).toHaveCount(1);
-    await expect(page.locator('.bill-card')).toHaveCount(1);
+    await expect(page.locator('.bill-list-card')).toHaveCount(1);
+    await expect(page.locator('.bill-card')).toHaveCount(0);
     await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
     await expectCardStyle(page);
@@ -1813,33 +1814,32 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Show me my bills" renders one primitive bill card and no duplicated totals', async ({
+  test('"Show me my bills" renders one bill list and no duplicated totals', async ({
     page
   }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my bills');
 
     await expectCardCount(page, { min: 1, max: 1 });
-    const bill = page.locator('.bill-card');
-    await expect(bill).toHaveCount(1);
-    await expect(bill).toHaveAttribute('data-kind', 'bill');
+    const list = page.locator('.bill-list-card');
+    await expect(list).toHaveCount(1);
+    await expect(list).toHaveAttribute('data-kind', 'bill-list');
+    await expect(page.locator('.bill-card')).toHaveCount(0);
     await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
+    // The list shows the due bills in tool order, capped at eight rows.
+    const rowCount = await list.locator('.bill-row').count();
+    expect(rowCount, 'a multi-bill result renders several rows').toBeGreaterThan(1);
+    expect(rowCount, 'the list caps visible rows at eight').toBeLessThanOrEqual(8);
+
     await expectNoCardValueDuplicate(page, ['$4,283.59', '$65.59']);
-    await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    await expect(list.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
     await expectCardStyle(page);
 
-    // The bill card shows the largest bill's payee, amount, and due date, so
-    // the prose must use timing analytically instead of restating those fields.
+    // Each row is evidence for the prose, which adds analysis instead of
+    // restating the same payees, amounts, or dates.
     const prose = await assistantText(page);
-    expect(prose, 'prose must not restate the card payee').not.toContain('MIT Bursar');
-    expect(prose, 'prose must not restate the card amount').not.toContain('1,800');
-    expect(prose, 'prose must not restate the card due date').not.toMatch(
-      /2026-12-05|Dec 5/
-    );
-    expect(prose, 'prose uses relative timing').toMatch(
-      /largest payment is due (within the next three weeks|in the coming weeks)/
-    );
+    expect(prose, 'prose must not restate the largest card amount').not.toContain('1,800');
     expect(prose, 'prose has a natural next step without labels').toMatch(
       /you can|consider|worth|move money|review|check/i
     );
@@ -3260,7 +3260,7 @@ test.describe('Eno mascot', () => {
 
 
 test.describe('primitive bill and account cards', () => {
-  test('"Show me my bills" renders one primitive bill card and no legacy chrome', async ({
+  test('"Show me my bills" renders one bill list with both due bills', async ({
     page
   }) => {
     const errors = collectErrors(page);
@@ -3269,7 +3269,7 @@ test.describe('primitive bill and account cards', () => {
     const events = [
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'The largest bill is City Power: '
+        delta: 'Two payments land within the next week.'
       })}`,
       `event: insight\ndata: ${JSON.stringify({
         type: 'insight',
@@ -3307,7 +3307,7 @@ test.describe('primitive bill and account cards', () => {
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'it is the largest item in the window.'
+        delta: 'Together they fit comfortably in the window.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -3322,39 +3322,47 @@ test.describe('primitive bill and account cards', () => {
 
     await askChat(page, 'Show me my bills');
 
-    const bill = page.locator('.bill-card');
-    await expect(bill).toHaveCount(1, { timeout: 20_000 });
-    await expect(bill).toBeVisible();
-    await expect(bill).toHaveAttribute('data-kind', 'bill');
+    const list = page.locator('.bill-list-card');
+    await expect(list).toHaveCount(1, { timeout: 20_000 });
+    await expect(list).toBeVisible();
+    await expect(list).toHaveAttribute('data-kind', 'bill-list');
+    await expect(page.locator('.bill-card')).toHaveCount(0);
+    await expect(list.locator('.bill-row')).toHaveCount(2);
 
-    const text = await bill.innerText();
-    // The largest bill wins even though it is not the earliest.
-    expect(text).toContain('Maple Property');
-    expect(text).not.toContain('City Power');
-    expect(text, 'amount is shown').toContain('$3,000.00');
-    expect(text, 'due date is shown').toMatch(/Nov 20/);
-    expect(text, 'factual status is shown').toContain('Pending');
+    const rows = list.locator('.bill-row');
+    await expect(rows.nth(0)).toContainText('Maple Property');
+    await expect(rows.nth(1)).toContainText('City Power');
+    await expect(rows.nth(0)).toContainText('$3,000.00');
+    await expect(rows.nth(0)).toContainText('Nov 20');
+    await expect(rows.nth(1)).toContainText('$120.00');
+    await expect(rows.nth(1)).toContainText('Nov 18');
+    await expect(rows.nth(0)).toContainText('Pending');
 
+    const text = await list.innerText();
     // Primitive: no coverage, total, insight, or recommendation copy.
     expect(text.toLowerCase()).not.toMatch(/coverage|covered|shortfall|recommend|insight|top bill/);
     await expect(page.locator('.chat-card')).toHaveCount(0);
-    await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
-    await expect(page.locator('.entity-card .bill-card')).toHaveCount(1);
+    await expect(list.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    await expect(page.locator('.entity-card .bill-list-card')).toHaveCount(1);
     expect(
-      await bill.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the bill card renders inline inside the prose bubble'
-    ).toBe(true);
-    await expectInlineCardCorners(page);
+      await list.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the bill list renders standalone, outside the prose bubble'
+    ).toBe(false);
+    await expectCardStyle(page);
 
-    // It deep-links to the owning account when the ids are present.
-    const link = bill.locator('a.bill-link');
-    await expect(link).toHaveCount(1);
-    await expect(link).not.toHaveAttribute('target', '_blank');
-    await expect(link).toHaveAttribute(
+    // Every row deep-links to its owning account bill.
+    const links = list.locator('a.bill-link');
+    await expect(links).toHaveCount(2);
+    await expect(links.nth(0)).not.toHaveAttribute('target', '_blank');
+    await expect(links.nth(0)).toHaveAttribute(
       'href',
       /^\/dashboard\?customer=[^&]+&account=acct-checking&tab=bills&bill=bill-rent$/
     );
-    await expect(bill.locator('.open-icon')).toBeVisible();
+    await expect(links.nth(1)).toHaveAttribute(
+      'href',
+      /^\/dashboard\?customer=[^&]+&account=acct-checking&tab=bills&bill=bill-power$/
+    );
+    await expect(list.locator('.open-icon')).toHaveCount(2);
 
     expectNoErrors(errors);
   });

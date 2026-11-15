@@ -5,6 +5,7 @@
   import TransactionListCard from './TransactionListCard.svelte';
   import PieChartCard from './PieChartCard.svelte';
   import BillCard from './BillCard.svelte';
+  import BillListCard from './BillListCard.svelte';
   import AccountCard from './AccountCard.svelte';
   import LoanCard from './LoanCard.svelte';
   import LocationCard from './LocationCard.svelte';
@@ -35,6 +36,8 @@
   <PieChartCard {card} />
 {:else if card.kind === 'bill'}
   <BillCard {card} />
+{:else if card.kind === 'bill-list'}
+  <BillListCard {card} />
 {:else if card.kind === 'account'}
   <AccountCard {card} />
 {:else if card.kind === 'loan'}

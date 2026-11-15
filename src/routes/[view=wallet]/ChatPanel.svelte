@@ -12,6 +12,7 @@
     anomalyTransactionCards,
     completeAnomalyContext,
     billCard,
+    billListCard,
     cashflowCard,
     climateWiseCard,
     goalCard,
@@ -231,11 +232,43 @@
     cardSeq = Math.max(cardSeq, incoming.id);
   }
 
+  /**
+   * A turn shows either one single bill card or one bill list, never both.
+   * Replace the first bill-family card in place and drop any extra so an
+   * earlier insight cannot leave a stale single card next to the list.
+   */
+  function replaceBillCard(message: ChatMessage, incoming: EntityCard): void {
+    const current = message.inlineCards ?? [];
+    const exists = current.some(
+      (card) => card.kind === 'bill' || card.kind === 'bill-list'
+    );
+    if (!exists) {
+      message.inlineCards = [...current, incoming];
+      cardSeq = Math.max(cardSeq, incoming.id);
+      return;
+    }
+    let placed = false;
+    const next: EntityCard[] = [];
+    for (const card of current) {
+      if (card.kind === 'bill' || card.kind === 'bill-list') {
+        if (!placed) {
+          next.push(incoming);
+          placed = true;
+        }
+        continue;
+      }
+      next.push(card);
+    }
+    message.inlineCards = next;
+    cardSeq = Math.max(cardSeq, incoming.id);
+  }
+
   const SUPPORTED_CARD_KINDS = new Set<EntityCard['kind']>([
     'transaction',
     'transaction-list',
     'spending-pie',
     'bill',
+    'bill-list',
     'account',
     'loan',
     'location',
@@ -413,22 +446,20 @@
               }
             }
             if (data.kind === 'insight_upcoming_bills') {
-              // One primitive bill card per turn. The prose names the largest
-              // bill; a later bills insight replaces the earlier card.
+              // One bill family card per turn: a single bill keeps its inline
+              // card, while multiple due bills become one standalone list in the
+              // tool's order. A later insight replaces the earlier card.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
-              const incoming = billCard(payload, anchor, cardSeq + 1, { customerId });
-              if (incoming) {
-                const existing = (message.inlineCards ?? []).some(
-                  (card) => card.kind === 'bill'
-                );
-                message.inlineCards = existing
-                  ? (message.inlineCards ?? []).map((card) =>
-                      card.kind === 'bill' ? incoming : card
-                    )
-                  : [...(message.inlineCards ?? []), incoming];
-                cardSeq = Math.max(cardSeq, incoming.id);
-              }
+              const bills =
+                payload && typeof payload === 'object' && !Array.isArray(payload)
+                  ? (payload as Record<string, unknown>).bills
+                  : undefined;
+              const incoming =
+                Array.isArray(bills) && bills.length > 1
+                  ? billListCard(payload, anchor, cardSeq + 1, { customerId })
+                  : billCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceBillCard(message, incoming);
             }
             if (data.kind === 'nessie_get_account') {
               // Accounts are single-entity cards; an all-accounts list stays in
@@ -652,6 +683,15 @@
             }
 
             const current = message.inlineCards ?? [];
+            // The bill list already covers every due bill in this turn; a
+            // present_card single bill would duplicate one of its rows.
+            if (
+              incoming.kind === 'bill' &&
+              current.some((card) => card.kind === 'bill-list')
+            ) {
+              scrollToLatest();
+              break;
+            }
             const index = current.findIndex(
               (card) => card.entityId === incoming.entityId
             );

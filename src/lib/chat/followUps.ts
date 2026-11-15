@@ -155,6 +155,7 @@ const KIND_TOPIC: Readonly<Record<EntityCard['kind'], Topic>> = {
   transaction: 'transactions',
   'transaction-list': 'transactions',
   bill: 'bills',
+  'bill-list': 'bills',
   account: 'accounts',
   loan: 'loans',
   'spending-pie': 'spending',
@@ -173,6 +174,7 @@ const CARD_PRIORITY: readonly EntityCard['kind'][] = [
   'transaction',
   'transaction-list',
   'bill',
+  'bill-list',
   'loan',
   'account',
   'spending-pie',
@@ -233,6 +235,11 @@ function labelForCard(card: EntityCard | null | undefined): string {
     }
     case 'bill':
       return textField(payload, 'payee');
+    case 'bill-list': {
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      const first = rows[0];
+      return isRecord(first) ? textField(first, 'payee') : '';
+    }
     case 'loan':
       return textField(payload, 'type');
     case 'account':
@@ -285,6 +292,7 @@ function dynamicCandidates(card: EntityCard | null | undefined): string[] {
       out.push('Anything unusual in my transactions?', 'Where did my money go last month?');
       break;
     case 'bill':
+    case 'bill-list':
       if (label) out.push(`Can I cover my ${label} bill?`);
       out.push('Show me my loans', 'Show my checking balance');
       break;
