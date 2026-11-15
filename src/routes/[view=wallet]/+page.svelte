@@ -778,7 +778,7 @@
 
             {#if liveAccounts.length > 0}
             <div class="score-cards">
-              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={routeCustomerId} />
+              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={routeCustomerId} onAsk={() => send('What is my ClimateWise score?')} />
               <ScoreCard
                 title="CreditWise"
                 logoLight={creditWiseLogoLight}

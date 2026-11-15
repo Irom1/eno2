@@ -5,7 +5,7 @@
 	import { fetchWithSession } from '$lib/sessionRecovery';
 	import { SCORE_MAX, scoreFraction, type ClimateReport } from './emissions';
 
-	let { href = '/climatewise', refresh = 0, customerId = '' }: { href?: string; /** Change to refetch, e.g. after switching customers. */ refresh?: number; customerId?: string } = $props();
+	let { href = '/climatewise', refresh = 0, customerId = '', onAsk }: { href?: string; /** Change to refetch, e.g. after switching customers. */ refresh?: number; customerId?: string; /** Plain-click action; the href stays as the modifier/middle-click fallback. */ onAsk?: () => void } = $props();
 	let report = $state<ClimateReport | null>(null);
 	let loading = $state(true);
 
@@ -40,6 +40,7 @@
 	note={report ? `Based on your last ${report.days} days` : undefined}
 	{href}
 	linkLabel="Check your LORAX® score"
+	onActivate={onAsk}
 >
 	{#snippet description()}
 		{#if report}

@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 
 	let {
-		title, logoLight, logoDark, score, rating, scoreLabel, color, progress, description, note, href, linkLabel
+		title, logoLight, logoDark, score, rating, scoreLabel, color, progress, description, note, href, linkLabel, onActivate
 	}: {
 		title: string;
 		logoLight: string;
@@ -16,7 +16,18 @@
 		note?: string;
 		href: string;
 		linkLabel: string;
+		onActivate?: () => void;
 	} = $props();
+
+	function activate(event: MouseEvent) {
+		// Keep modifier/middle clicks (new tab, new window, download) on the plain
+		// href fallback; only a plain primary click runs the in-app action.
+		if (!onActivate) return;
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		if (event.defaultPrevented) return;
+		event.preventDefault();
+		onActivate();
+	}
 </script>
 
 <article class="score-card">
@@ -31,7 +42,7 @@
 		<p>{@render description()}</p>
 		{#if note}<small class="muted">{note}</small>{/if}
 	</div>
-	<a href={href}>
+	<a href={href} onclick={activate}>
 		{linkLabel}
 		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
 	</a>
