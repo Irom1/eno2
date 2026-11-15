@@ -409,14 +409,18 @@
 	/* kept faint so the white top stays white */
 	.sun-day { background: radial-gradient(circle, rgba(255, 246, 180, 0.95) 0%, rgba(255, 226, 110, 0.5) 22%, transparent 55%); opacity: var(--dark, 0) var(--light, 0.1); }
 
-	/* ---- Portrait: logo | footprint, then chart, then purchases ---- */
+	/* ---- Portrait/wide: logo over footprint on the left, chart top-right, then purchases ---- */
 	.grid {
 		flex: 1;
 		min-height: 0;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		grid-template-rows: auto auto minmax(0, 1fr) auto;
-		grid-template-areas: 'logo foot' 'chart chart' 'list list' 'state state';
+		grid-template-areas:
+			'logo chart'
+			'foot chart'
+			'list list'
+			'state state';
 		align-items: start;
 		gap: 14px 12px;
 		padding: 20px 16px 18px;
@@ -444,7 +448,7 @@
 	.foot-value small { margin-left: 2px; font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
 	.foot-sub { font-size: 11px; color: var(--muted); }
 
-	.chart { grid-area: chart; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+	.chart { grid-area: chart; align-self: start; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 	.chart-head { position: relative; z-index: 4; display: flex; align-items: center; gap: 6px; }
 	.chart-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
 	.info { width: 17px; height: 17px; padding: 0; border: 1.3px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font-family: Georgia, serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
@@ -512,22 +516,16 @@
 	.state { position: absolute; inset: 0; z-index: 2; display: grid; gap: 12px; place-content: center; justify-items: center; padding: 32px; color: var(--muted); text-align: center; }
 	.solid { min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--link); color: #fff; font-weight: 700; cursor: pointer; }
 
-	/* ---- Wide: logo over footprint | chart | purchases ---- */
-	.card[data-layout='wide'] .grid {
-		grid-template-columns: minmax(0, 1fr) minmax(190px, 300px) minmax(0, 1fr);
-		grid-template-rows: auto minmax(0, 1fr);
-		grid-template-areas: 'logo chart list' 'foot chart list';
-		gap: 16px clamp(14px, 2.4vw, 26px);
-		padding: 26px clamp(18px, 2.6vw, 28px) 24px;
-	}
-	.card[data-layout='wide'] .logo { width: min(150px, 100%); margin: 2px 0 0 4px; }
-	.card[data-layout='wide'] .foot { align-self: end; justify-self: start; width: min(200px, 100%); min-width: 0; }
-	.card[data-layout='wide'] .chart { align-self: center; }
-	/* purchases run the full height of the right side */
-	.card[data-layout='wide'] .list { align-self: stretch; }
-
 	/* ---- Compact widths: tighter chrome, smaller logo, bigger sky ---- */
-	.card[data-mode='compact'] .grid { gap: 12px 10px; padding-left: 12px; padding-right: 12px; padding-bottom: 14px; }
+	/* Stacked fallback: footprint stays beside the logo and the chart spans the card. */
+	.card[data-mode='compact'] .grid {
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-areas: 'logo foot' 'chart chart' 'list list' 'state state';
+		gap: 12px 10px;
+		padding-left: 12px;
+		padding-right: 12px;
+		padding-bottom: 14px;
+	}
 	.card[data-mode='compact'] .logo { width: 124px; }
 	.card[data-mode='compact'] .foot { min-width: 0; }
 	.card[data-mode='compact'] .chart-title { font-size: 14px; }

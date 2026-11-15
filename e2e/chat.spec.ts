@@ -531,6 +531,61 @@ test.describe('chat prompts', () => {
     await expect(card.locator('.ring svg')).toBeVisible();
     await expect(card.locator('.list')).toBeVisible();
 
+    // Layout: footprint on the left below the logo, ring top-right, purchases below both.
+    await expect(card.locator('article.card')).not.toHaveAttribute('data-mode', 'compact');
+    const layout = await card.locator('article.card').evaluate((element) => {
+      const box = (selector: string) => {
+        const node = element.querySelector(selector) as HTMLElement | null;
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+      };
+      const rect = element.getBoundingClientRect();
+      return {
+        card: { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left },
+        logo: box('.logo'),
+        foot: box('.foot'),
+        chart: box('.chart'),
+        list: box('.list')
+      };
+    });
+    expect(layout.logo, 'the logo renders').not.toBeNull();
+    expect(layout.foot, 'the footprint panel renders').not.toBeNull();
+    expect(layout.chart, 'the ring chart renders').not.toBeNull();
+    expect(layout.list, 'the purchases list renders').not.toBeNull();
+    if (!layout.logo || !layout.foot || !layout.chart || !layout.list) return;
+
+    // Chart occupies the top-right corner; footprint sits left of it.
+    expect(
+      layout.chart.left,
+      'the chart sits to the right of the footprint'
+    ).toBeGreaterThan(layout.foot.left);
+    expect(
+      layout.chart.top - layout.card.top,
+      'the chart starts at the top of the card'
+    ).toBeLessThan(64);
+    expect(
+      layout.card.right - layout.chart.right,
+      'the chart hugs the right edge of the card'
+    ).toBeLessThan(40);
+
+    // Footprint is on the left, below the logo.
+    expect(layout.foot.left, 'the footprint is on the left').toBeLessThan(layout.chart.left);
+    expect(layout.foot.top, 'the footprint sits below the logo').toBeGreaterThanOrEqual(
+      layout.logo.top
+    );
+
+    // Purchases run below the footprint and the chart.
+    expect(layout.list.top, 'the purchases list sits below the chart').toBeGreaterThanOrEqual(
+      layout.chart.bottom - 1
+    );
+    expect(layout.list.top, 'the purchases list sits below the footprint').toBeGreaterThanOrEqual(
+      layout.foot.bottom - 1
+    );
+    expect(layout.list.left, 'the purchases list runs across the card').toBeLessThanOrEqual(
+      Math.min(layout.foot.left, layout.chart.left) + 1
+    );
+
     // The card is standalone, never folded into the assistant bubble.
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
