@@ -35,7 +35,7 @@ function expectReviewableCharges(bodies: unknown[]) {
   const suspicious = detectOutliers(posted, new Date()).filter((finding) =>
     posted.some((item) => item.id !== finding._id && item.description === finding.description && item.amount < 100 && item.amount * 4 < finding.amount));
   expect(suspicious).toHaveLength(2);
-  expect(detectDuplicateCharges(posted).length).toBeGreaterThanOrEqual(2);
+  expect(detectDuplicateCharges(posted)).toHaveLength(1);
 }
 
 it('persists the matching credit card and its exact transaction-derived balance and points', async () => {
@@ -96,6 +96,32 @@ it('makes no write requests when no accounts are selected', async () => {
   const transport = vi.fn();
   await expect(createNessieAccounts('customer-id', [], runtime, transport)).resolves.toEqual({});
   expect(transport).not.toHaveBeenCalled();
+});
+it('shares the five-charge and three-duplicate allowance across signup accounts and setup continuations', async () => {
+  const card = recommendDemoCard({ status: 'personalize', categories: ['travel'] })!;
+  const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    if (new URL(String(url)).pathname.endsWith('/accounts')) {
+      const body = JSON.parse(String(init?.body));
+      return Response.json({ objectCreated: { _id: body.type.replaceAll(' ', '-') } }, { status: 201 });
+    }
+    return Response.json({}, { status: 201 });
+  });
+  expect(await createNessieAccounts('signup-profile', ['Checking', 'Savings', 'Credit Card'], runtime, transport, { card, categories: ['travel'] })).toEqual({});
+  let totalOutliers = 0, totalDuplicates = 0;
+  for (const type of ['Checking', 'Savings', 'Credit-Card']) {
+    const rows = transport.mock.calls.filter(([url]) => new URL(String(url)).pathname === `/accounts/${type}/withdrawals`)
+      .map(([, init], id) => ({ ...JSON.parse(String(init?.body)), _id: String(id) }));
+    expect(rows).toHaveLength(50);
+    const posted = rows.flatMap((row) => toTransaction(row, 'withdrawal') ?? []);
+    const outliers = detectOutliers(posted, new Date());
+    const duplicates = detectDuplicateCharges(posted);
+    expect(outliers).toHaveLength(type === 'Credit-Card' ? 1 : 2);
+    expect(duplicates).toHaveLength(1);
+    totalOutliers += outliers.length;
+    totalDuplicates += duplicates.length;
+  }
+  expect(totalOutliers).toBe(5);
+  expect(totalDuplicates).toBe(3);
 });
 it('stops and reports uncertainty without retrying an account write', async () => {
   const transport = vi.fn(async () => { throw new Error('Failed'); });

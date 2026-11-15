@@ -6,6 +6,10 @@ import { detectOutliers, merchantOutlierBaseline, toTransaction } from './tools/
 
 export type DemoAccountType = 'Checking' | 'Savings' | 'Credit Card';
 
+export interface DemoAnomalyLimits { outliers: number; duplicates: number }
+export const DEMO_CARD_ANOMALY_LIMITS: Readonly<DemoAnomalyLimits> = { outliers: 2, duplicates: 1 };
+export const DEMO_PROFILE_ANOMALY_LIMITS: Readonly<DemoAnomalyLimits> = { outliers: 5, duplicates: 3 };
+
 export interface DemoTransaction {
   kind: 'deposit' | 'withdrawal';
   medium: 'balance';
@@ -23,7 +27,9 @@ export function demoAccountTotals(transactions: readonly DemoTransaction[], type
 }
 
 /** Fifty deposits + fifty withdrawals fit both existing 50-row Nessie tools. */
-export function buildDemoTransactions(type: DemoAccountType, accountId: string, now = new Date(), categories: readonly SpendingCategory[] = []): DemoTransaction[] {
+export function buildDemoTransactions(type: DemoAccountType, accountId: string, now = new Date(), categories: readonly SpendingCategory[] = [], limits: Readonly<DemoAnomalyLimits> = DEMO_CARD_ANOMALY_LIMITS): DemoTransaction[] {
+  const outlierLimit = Math.max(0, Math.min(DEMO_CARD_ANOMALY_LIMITS.outliers, Math.floor(limits.outliers)));
+  const duplicateLimit = Math.max(0, Math.min(DEMO_CARD_ANOMALY_LIMITS.duplicates, Math.floor(limits.duplicates)));
   let state = [...accountId].reduce((hash, letter) => (Math.imul(hash, 31) + letter.charCodeAt(0)) >>> 0, 2166136261);
   const random = (min: number, max: number) => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return min + state % (max - min + 1); };
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -88,7 +94,7 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
   const includeGas = random(0, 99) < 30;
   const candidates = unusualMerchants.filter(([description]) => description !== 'SHELL GAS STATION');
   const unusualPurchases: DemoTransaction[] = [];
-  for (let index = 0; index < 2; index++) {
+  for (let index = 0; index < outlierLimit; index++) {
     const [description, min, max] = index === 0 && includeGas ? unusualMerchants[0] : candidates.splice(random(0, candidates.length - 1), 1)[0];
     Object.assign(withdrawals[1 + index * 2], { description, amount: random(min, Math.floor((min + max) / 2)) });
     Object.assign(withdrawals[2 + index * 2], { description, amount: random(Math.floor((min + max) / 2) + 1, max) });
@@ -97,17 +103,19 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
     unusualPurchases.push(purchase);
   }
   const dateAgo = (days: number) => new Date(today - days * 86_400_000).toISOString().slice(0, 10);
-  // Only two deliberate duplicate pairs among 100 total records.
-  Object.assign(withdrawals[39], { description: 'NETFLIX', amount: 19, transaction_date: dateAgo(18) });
-  Object.assign(withdrawals[40], { description: 'NETFLIX', amount: 19, transaction_date: dateAgo(17) });
-  Object.assign(withdrawals[43], { description: 'LOCAL BOOKSTORE', amount: 47, transaction_date: dateAgo(10) });
-  Object.assign(withdrawals[44], { description: 'LOCAL BOOKSTORE', amount: 47, transaction_date: dateAgo(9) });
+  // At most one deliberate duplicate pair among 100 total records.
+  const duplicateExamples = new Set<DemoTransaction>();
+  if (duplicateLimit) {
+    Object.assign(withdrawals[39], { description: 'NETFLIX', amount: 19, transaction_date: dateAgo(18) });
+    Object.assign(withdrawals[40], { description: 'NETFLIX', amount: 19, transaction_date: dateAgo(17) });
+    duplicateExamples.add(withdrawals[39]);
+    duplicateExamples.add(withdrawals[40]);
+  }
   // Six recent unsettled records stay visible but do not affect posted totals.
   for (let index = 46; index < 50; index++) Object.assign(withdrawals[index], { status: 'pending', transaction_date: dateAgo(index % 2) });
   for (let index = 48; index < 50; index++) Object.assign(credits[index], { status: 'pending', transaction_date: dateAgo(index % 2) });
   // Random ordinary purchases must not introduce additional double charges.
-  // Reserve both intentional pairs before checking the rest of the history.
-  const duplicateExamples = new Set([withdrawals[39], withdrawals[40], withdrawals[43], withdrawals[44]]);
+  // Reserve the intentional pair before checking the rest of the history.
   const matchesNearby = (purchase: DemoTransaction, other: DemoTransaction) => other !== purchase &&
     other.description === purchase.description && other.amount === purchase.amount &&
     Math.abs(Date.parse(other.transaction_date) - Date.parse(purchase.transaction_date)) <= 3 * 86_400_000;
@@ -127,19 +135,23 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
     purchase.amount = Math.ceil(Math.max(threshold, largest)) + random(25, 75);
   }
   // Mixed spending categories can create incidental outliers as well. Keep at
-  // most four findings using the same detector as the app, preserving the two
-  // deliberate oversized purchases and the card's opening balance owed.
-  const protectedPurchases = new Set([withdrawals[0], ...unusualPurchases]);
+  // most the allocated number of findings using the same detector as the app,
+  // preserving the deliberate oversized purchases.
+  const protectedPurchases = new Set(unusualPurchases);
   for (;;) {
     const posted = withdrawals.flatMap((item, index) => toTransaction({ ...item, _id: String(index) }, 'withdrawal') ?? []);
     const outliers = detectOutliers(posted, now);
-    if (outliers.length <= 4) break;
+    if (outliers.length <= outlierLimit) break;
     const incidental = outliers.find((finding) => !protectedPurchases.has(withdrawals[Number(finding._id)]))!;
     const purchase = withdrawals[Number(incidental._id)];
     // Bring one incidental spike back to its baseline, then recalculate because
     // changing an amount also changes the baseline for the remaining purchases.
     purchase.amount = Math.max(1, Math.floor(incidental.median));
     while (settled.some((other) => matchesNearby(purchase, other))) purchase.amount++;
+  }
+  if (type === 'Credit Card') {
+    // A normalized opening purchase still needs a smaller opening payment.
+    credits[0].amount = Math.min(credits[0].amount, Math.max(1, Math.floor(withdrawals[0].amount * 0.6)));
   }
   return result;
 }
