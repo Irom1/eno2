@@ -133,7 +133,7 @@
     box-sizing: border-box;
     margin-top: 8px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--bubble-radius);
     background: color-mix(in srgb, var(--surface) 80%, var(--ink) 8%);
   }
   /* Matches the CardFrame max width in .assistant-content: two equal columns. */
@@ -159,7 +159,7 @@
     min-height: 44px;
     padding: 10px 10px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--bubble-radius);
     background: var(--surface);
     color: var(--ink);
     font-size: 12px;
@@ -169,7 +169,7 @@
     overflow-wrap: anywhere;
     box-sizing: border-box;
     transition: background-color 160ms ease, border-color 160ms ease,
-      color 160ms ease, box-shadow 160ms ease;
+      color 160ms ease;
   }
   .atm-action:only-child {
     grid-column: 1 / -1;
@@ -180,7 +180,6 @@
     border-color: color-mix(in srgb, var(--link) 55%, var(--border));
     color: var(--link);
     text-decoration: none;
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--link) 16%, transparent);
   }
   .atm-action:focus-visible {
     outline: 2px solid var(--link);
@@ -194,7 +193,7 @@
     height: 72px;
     margin-top: 8px;
     border: 1px dashed var(--border);
-    border-radius: 8px;
+    border-radius: var(--bubble-radius);
     color: var(--muted);
     font-size: 11.5px;
     line-height: 1.35;

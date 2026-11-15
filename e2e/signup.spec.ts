@@ -17,6 +17,9 @@ test('the landing prompt sends the first setup chat turn', async ({ page }) => {
     message, answers: emptyAnswers(), accountChoice: 'undecided',
     spending: skipSpending, includeCreditCard: null, stage: 'details', ready: false, confirmed: false
   } }));
+  await page.goto('/setup');
+  await expect(page.getByRole('log')).toContainText('What should I call you?');
+  await page.waitForFunction(() => sessionStorage.getItem('eno-signup-conversation-v2') !== null);
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Already have an account? Sign in', exact: true })).toBeEnabled();
 
@@ -26,6 +29,8 @@ test('the landing prompt sends the first setup chat turn', async ({ page }) => {
   const request = await firstTurn;
   expect(request.method()).toBe('POST');
   expect(request.postDataJSON()).toMatchObject({ message: firstAccountPrompt, history: [] });
+  await expect(page.getByRole('log').locator('.bubble > p')).toHaveText([firstAccountPrompt, message]);
+  await page.reload();
   await expect(page.getByRole('log').locator('.bubble > p')).toHaveText([firstAccountPrompt, message]);
 });
 

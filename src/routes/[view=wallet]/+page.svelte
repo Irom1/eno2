@@ -8,7 +8,8 @@
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
-  import { GUEST_CUSTOMER_ID, OPEN_ACCOUNT_MESSAGE } from '$lib/chat/guest';
+  import { chatAction } from '$lib/chat/actions';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
   import { dateLabel, money } from '$lib/format';
   import {
     accountEnding,
@@ -16,7 +17,6 @@
     formatAmount,
     isCredit,
     scheduledTotal,
-    upcomingBills,
     type WalletAccount,
     type WalletBill,
     type WalletCustomer,
@@ -34,6 +34,7 @@
   import ViewShell from './ViewShell.svelte';
   import ChatPanel from './ChatPanel.svelte';
   import CapitalOneLogo from './CapitalOneLogo.svelte';
+  import { CLIMATE_SCORE_PROMPT } from '$lib/chat/starters';
   import ClimateWiseWidget from '$lib/climate/ClimateWiseWidget.svelte';
   import ScoreCard from '$lib/components/ScoreCard.svelte';
   import creditWiseLogoLight from '$lib/assets/creditwise-card-logo-light.png';
@@ -57,11 +58,13 @@
   const FULL_COMPOSER_PLACEHOLDER = 'Ask about your money, spending, or bills…';
   const COMPACT_COMPOSER_PLACEHOLDER = 'Ask about your money…';
 
+  type ActivityTransaction = WalletTransaction & { accountId: string };
+
   interface AccountsSnapshot {
     customer?: WalletCustomer;
     accounts?: WalletAccount[];
     bills?: WalletBill[];
-    recentActivity?: WalletTransaction[];
+    recentActivity?: ActivityTransaction[];
   }
 
   type WalletTab = 'activity' | 'details' | 'bills';
@@ -95,7 +98,7 @@
   let liveCustomer = $state<WalletCustomer | null>(null);
   let liveAccounts = $state<WalletAccount[]>([]);
   let liveBills = $state<WalletBill[]>([]);
-  let recentActivity = $state<WalletTransaction[]>([]);
+  let recentActivity = $state<ActivityTransaction[]>([]);
   let snapshotLoading = $state(true);
   let snapshotError = $state('');
   let accountNotice = $state('');
@@ -157,12 +160,6 @@
       });
   });
 
-  let upcoming = $derived(upcomingBills(liveBills));
-  let primaryCheckingId = $derived(
-    liveAccounts.find((account) => account.type.toLowerCase().includes('checking'))?.id ??
-      liveAccounts[0]?.id ??
-      ''
-  );
   function focusActiveOption(): void {
     const active = accountMenuEl?.querySelector<HTMLElement>(
       '.account-option[aria-checked="true"]'
@@ -270,7 +267,7 @@
       const currentSession = sessionResponse?.ok
         ? await sessionResponse.json() as { customer?: Customer; accounts?: { id: string }[] }
         : null;
-      if (seq !== customersSeq || guestChat) return;
+      if (seq !== customersSeq) return;
       const sessionCustomerId = currentSession?.customer?.id;
       const requestedCustomerId = page.url.searchParams.get('customer') ||
         (sessionCustomerId === GUEST_CUSTOMER_ID ? '' : sessionCustomerId) ||
@@ -282,10 +279,10 @@
         const selected = selectedPayload.customers?.find((customer) => customer.id === requestedCustomerId);
         if (selected) list.push(selected);
       }
-      if (seq !== customersSeq || guestChat) return;
+      if (seq !== customersSeq) return;
       customers = orderCustomers(list);
-      const preferred =
-        customers.find((customer) => customer.id === requestedCustomerId) ?? customers[0];
+      const selected = customers.find((customer) => customer.id === requestedCustomerId);
+      const preferred = selected ?? (inChat ? undefined : customers[0]);
       if (preferred) {
         // Another tab or an account-opening flow may have changed this wallet
         // while its short-lived snapshot still looks fresh. Refresh the wallet
@@ -310,7 +307,10 @@
       snapshotError = "We couldn't load your accounts.";
       snapshotLoading = false;
     } finally {
-      if (seq === customersSeq) customersLoading = false;
+      if (seq === customersSeq) {
+        customersLoading = false;
+        if (inChat && !chatOpen) void goto('/', { replaceState: true });
+      }
     }
   }
 
@@ -331,7 +331,7 @@
     return true;
   }
 
-  async function loadSnapshot(customerId: string): Promise<void> {
+  async function loadSnapshot(customerId: string, refresh = false): Promise<void> {
     if (!customerId) return;
     const seq = ++snapshotSeq;
     snapshotError = '';
@@ -339,14 +339,14 @@
 
     // A fresh cache renders without any network call. This is the fast path for
     // a transaction card opened in a new tab moments after the insight arrived.
-    const fresh = readWalletCache<AccountsSnapshot>(key, FRESH_MS);
+    const fresh = refresh ? null : readWalletCache<AccountsSnapshot>(key, FRESH_MS);
     if (fresh && applySnapshot(fresh, customerId)) {
       snapshotLoading = false;
       return;
     }
 
     // A stale cache paints immediately, then revalidates in the background.
-    const stale = readWalletCache<AccountsSnapshot>(key, STALE_MS);
+    const stale = refresh ? null : readWalletCache<AccountsSnapshot>(key, STALE_MS);
     const showingCache = Boolean(stale && applySnapshot(stale, customerId));
     snapshotLoading = !showingCache;
 
@@ -431,24 +431,28 @@
 
   async function handleAccountDeleted(accountId: string): Promise<void> {
     if (walletView?.accountId !== accountId) return;
-    if (primaryCheckingId === accountId) recentActivity = [];
+    recentActivity = recentActivity.filter((transaction) => transaction.accountId !== accountId);
     liveAccounts = liveAccounts.filter((account) => account.id !== accountId);
     liveBills = liveBills.filter((bill) => bill.accountId !== accountId);
     await closeAccountView();
     accountNotice = 'Account deleted.';
-    void loadSnapshot(activeCustomerId);
+    void loadSnapshot(activeCustomerId, true);
     await tick();
     accountButton?.focus();
   }
   let inChat = $derived(page.params.view === 'chat');
-  let guestChat = $derived(inChat && page.url.searchParams.get('topic') === 'open-account');
-  let routeCustomerId = $derived(guestChat ? '' : page.url.searchParams.get('customer') || activeCustomerId);
+  let routeCustomerId = $derived(page.url.searchParams.get('customer') || activeCustomerId);
+  let chatOpen = $derived(
+    inChat && activeCustomer !== null && activeCustomerId === routeCustomerId &&
+      activeCustomerId !== GUEST_CUSTOMER_ID
+  );
   let dashboardHref = $derived(customerHref('/dashboard', routeCustomerId));
   let openAccountsHref = $derived(`${customerHref('/setup', routeCustomerId)}${routeCustomerId ? '&' : '?'}mode=accounts`);
   let query = $state('');
   let compactComposer = $state(false);
+  let hasUserMessage = $state(false);
   const composerPlaceholder = $derived(
-    inChat ? 'Message Eno…' : compactComposer ? COMPACT_COMPOSER_PLACEHOLDER : FULL_COMPOSER_PLACEHOLDER
+    hasUserMessage ? 'Message Eno…' : compactComposer ? COMPACT_COMPOSER_PLACEHOLDER : FULL_COMPOSER_PLACEHOLDER
   );
   let keyboardOpen = $state(false);
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
@@ -499,7 +503,7 @@
     const requestedId = to?.url.searchParams.get('customer');
     const customerChanged = requestedId && requestedId !== activeCustomerId &&
       requestedId !== from?.url.searchParams.get('customer');
-    if (!guestChat && (from?.route.id !== to?.route.id || customerChanged)) {
+    if (from?.route.id !== to?.route.id || customerChanged) {
       if (requestedId && customers.some((customer) => customer.id === requestedId)) {
         customersSeq++;
         customersLoading = false;
@@ -507,13 +511,8 @@
       } else {
         void loadCustomers();
       }
-    } else if (!guestChat && from?.url.searchParams.get('topic') === 'open-account') {
-      if (activeCustomerId) void loadSnapshot(activeCustomerId);
-      else void loadCustomers();
-    }
-
-    if (guestChat && from?.url.searchParams.get('topic') !== 'open-account') {
-      chatPrompt = { text: OPEN_ACCOUNT_MESSAGE, id: ++promptSeq };
+    } else if (inChat && !customersLoading && !chatOpen) {
+      void goto('/', { replaceState: true });
     }
     if (!previousComposerBounds) return;
 
@@ -526,7 +525,7 @@
       [{ transform: `translate(${x}px, ${y}px)` }, { transform: 'translate(0, 0)' }],
       slideTiming
     );
-    if (inChat) {
+    if (chatOpen) {
       // Keep the history's reveal edge just above the moving composer.
       chatRevealAnimation = chatResults.animate(
         [{ clipPath: `inset(0 0 ${Math.max(0, -y)}px 0)` }, { clipPath: 'inset(0)' }],
@@ -554,7 +553,21 @@
 
   function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || signingOut) return;
+    if (inChat) {
+      const action = chatAction(trimmed);
+      if (action === 'sign-out') {
+        query = '';
+        void handleSignOut();
+        return;
+      }
+      if (action === 'open-account') {
+        if (!chatOpen) return;
+        query = '';
+        void goto(openAccountsHref);
+        return;
+      }
+    }
     if (inChat && !canSend) {
       // The panel is still booting or a turn is in flight. Queue through the
       // ChatPanel's initialPrompt flush instead of dropping the text; it sends
@@ -613,7 +626,7 @@
     };
     composerMedia.addEventListener('change', onComposerMediaChange);
 
-    // Keep the chat band sized to the visual viewport so the composer stays
+    // Use the visual viewport insets so the sticky composer stays
     // above the on-screen keyboard. `interactive-widget=resizes-content` in
     // app.html is the progressive enhancement; visualViewport is the fallback.
     const root = document.documentElement;
@@ -684,85 +697,77 @@
   <div class="dashboard-body" inert={walletView !== null}>
     <div class="wallet-band" style:--composer-half-height={`${composerHeight / 2}px`}>
       <div class="wallet-gradient" bind:this={gradient} aria-hidden="true"></div>
-      <div class="container header-inner" class:wallet-chat-header={inChat}>
-        <a class="brand" href={dashboardHref}><CapitalOneLogo label="Capital One dashboard" /></a>
-        <div class="header-actions">
-          {#if guestChat}
-            <div class="profile">
-              <span class="avatar" aria-hidden="true">G</span>
-              <span class="profile-name">Guest</span>
+      <div class="container header-inner">
+        <header class="wallet-header" class:wallet-chat-header={inChat}>
+          <a class="brand" href={dashboardHref}><CapitalOneLogo label="Capital One dashboard" /></a>
+          <div class="header-actions">
+            <div class="account-menu" role="presentation" bind:this={accountMenuEl} onkeydown={handleMenuKeydown}>
+              <button
+                class="profile"
+                bind:this={accountButton}
+                aria-label={`Switch account${activeName ? `: ${activeName}` : ''}`}
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+                aria-controls="account-dropdown"
+                onclick={toggleAccountMenu}
+              >
+                <span class="avatar" aria-hidden="true">{activeInitial}</span>
+                <span class="profile-name">{activeFirstName}</span>
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              {#if accountOpen}
+                <CustomerDropdown id="account-dropdown" {customers} dark={isDark} activeId={activeCustomerId}
+                  loading={customersLoading} error={customersError} onretry={loadCustomers} onselect={selectCustomer}
+                  onsignout={handleSignOut} {signingOut} {signOutError} />
+              {/if}
             </div>
-          {:else}
-          <div class="account-menu" role="presentation" bind:this={accountMenuEl} onkeydown={handleMenuKeydown}>
             <button
-              class="profile"
-              bind:this={accountButton}
-              aria-label={`Switch account${activeName ? `: ${activeName}` : ''}`}
-              aria-haspopup="menu"
-              aria-expanded={accountOpen}
-              aria-controls="account-dropdown"
-              onclick={toggleAccountMenu}
+              class="theme-toggle"
+              aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-pressed={isDark}
+              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+              onclick={toggleTheme}
             >
-              <span class="avatar" aria-hidden="true">{activeInitial}</span>
-              <span class="profile-name">{activeFirstName}</span>
-              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              {#if isDark}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+              {:else}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
+              {/if}
             </button>
-            {#if accountOpen}
-              <CustomerDropdown id="account-dropdown" {customers} dark={isDark} activeId={activeCustomerId}
-                loading={customersLoading} error={customersError} onretry={loadCustomers} onselect={selectCustomer}
-                onsignout={handleSignOut} {signingOut} {signOutError} />
+            {#if inChat}
+              <a class="chat-exit" href={dashboardHref} aria-label="Back to dashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+              </a>
             {/if}
           </div>
-          {/if}
-          <button
-            class="theme-toggle"
-            aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-            aria-pressed={isDark}
-            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-            onclick={toggleTheme}
-          >
-            {#if isDark}
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-            {:else}
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
-            {/if}
-          </button>
-          {#if inChat}
-            <a class="chat-exit" href={guestChat ? '/' : dashboardHref} aria-label={guestChat ? 'Back to home' : 'Back to dashboard'}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
-            </a>
-          {/if}
-        </div>
-        <main class="chat-results" aria-label="Wallet chat" hidden={!inChat} bind:this={chatResults}>
+        </header>
+        <main class="chat-results" aria-label="Wallet chat" hidden={!chatOpen} bind:this={chatResults}>
           <ChatPanel
             bind:this={chatPanel}
-            open={inChat}
-            customerId={guestChat ? GUEST_CUSTOMER_ID : activeCustomerId}
+            open={chatOpen}
+            customerId={activeCustomerId}
             initialPrompt={chatPrompt}
             bind:canSend
+            bind:hasUserMessage
             variant={isDark ? 'dark' : 'light'}
             accounts={displayAccounts}
             onClose={() => void goto(dashboardHref)}
           />
         </main>
         <div class="composer-area">
-          <form class="composer" class:message-composer={inChat} bind:this={composer} bind:offsetHeight={composerHeight} onsubmit={search}>
+          {#if inChat && !accountOpen && signOutError}<p role="alert">{signOutError}</p>{/if}
+          <form class="composer message-composer" bind:this={composer} bind:offsetHeight={composerHeight} onsubmit={search}>
             <div class="composer-field" data-value={query || composerPlaceholder}>
               <textarea bind:value={query} onfocus={openChat} onkeydown={handleComposerKeydown} rows="1" aria-label="Ask Capital One" placeholder={composerPlaceholder}></textarea>
             </div>
-            <button class="send" class:primary={!inChat} class:message-send={inChat} aria-label="Ask" disabled={!query.trim() || (inChat && !canSend)}>
-              {#if inChat}
-                <span aria-hidden="true">↑</span>
-              {:else}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
-              {/if}
+            <button class="send message-send" aria-label="Ask" disabled={!query.trim() || signingOut || (inChat && !canSend)}>
+              <span aria-hidden="true">↑</span>
             </button>
           </form>
         </div>
       </div>
     </div>
 
-    {#if !guestChat}
       <main class="account-overview" aria-label="Account overview" inert={inChat} hidden={inChat && !coveringDashboard}
         style:--dashboard-header-height={`${dashboardHeaderHeight}px`}>
         <div class="container content">
@@ -819,11 +824,11 @@
               <article class="panel activity-panel">
                 <div class="panel-heading">
                   <h2>Recent activity</h2>
-                  <button class="link" onclick={() => openAccountView(primaryCheckingId, 'activity')}>View all {@render arrowIcon()}</button>
+                  <button class="link" onclick={() => send('Show me my 10 most recent transactions across all accounts.')}>View more {@render arrowIcon()}</button>
                 </div>
                 <div class="activity-rows">
-                  {#each recentActivity as transaction (transaction.id)}
-                    <button class="activity-row" onclick={() => openAccountView(primaryCheckingId, 'activity', transaction.id)}>
+                  {#each recentActivity as transaction (`${transaction.accountId}:${transaction.id}`)}
+                    <button class="activity-row" onclick={() => openAccountView(transaction.accountId, 'activity', transaction.id)}>
                       <span class="activity-main">
                         <strong>{transaction.description || 'Transaction'}</strong>
                         <small>{dateLabel(transaction.date)} · {transaction.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}{#if transaction.status.toLowerCase() === 'pending'} · Pending{/if}</small>
@@ -836,26 +841,6 @@
                 </div>
               </article>
             {/if}
-
-            {#if liveAccounts.length > 0 && upcoming.length}
-              <article class="panel bills-panel">
-                <div class="panel-heading">
-                  <h2>Upcoming bills</h2>
-                  <button class="link" onclick={() => openAccountView(primaryCheckingId, 'bills')}>View all {@render arrowIcon()}</button>
-                </div>
-                <div class="bill-rows">
-                  {#each upcoming.slice(0, 3) as bill (bill.id)}
-                    <button class="bill-row" onclick={() => openAccountView(bill.accountId || primaryCheckingId, 'bills')}>
-                      <span class="bill-main">
-                        <strong>{bill.payee || bill.nickname || 'Bill'}</strong>
-                        <small>{dateLabel(bill.upcomingDate)}</small>
-                      </span>
-                      <span class="bill-amount">{money(bill.amount, { decimals: 2 })}</span>
-                    </button>
-                  {/each}
-                </div>
-              </article>
-            {/if}
           </section>
 
           <section class="stack tools" aria-labelledby="tools-title">
@@ -863,7 +848,7 @@
 
             {#if liveAccounts.length > 0}
             <div class="score-cards">
-              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={snapshotCustomerId || routeCustomerId} accountIds={liveAccounts.map((account) => account.id)} onAsk={() => send('What is my LORAXⓇ Score?')} />
+              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={snapshotCustomerId || routeCustomerId} accountIds={liveAccounts.map((account) => account.id)} onAsk={() => send(CLIMATE_SCORE_PROMPT)} />
               <ScoreCard
                 title="CreditWise"
                 logoLight={creditWiseLogoLight}
@@ -922,7 +907,6 @@
           </footer>
         </div>
       </main>
-    {/if}
   </div>
 
   <dialog
@@ -974,7 +958,6 @@
 <style>
   :global(body:has(.dashboard)) { margin: 0; }
   :global(html:has(.dashboard)) { scrollbar-gutter: stable; }
-  :global(html:has(.dashboard.chat)) { overflow: hidden; }
   :global(html:has(.dashboard.view-open)) { overflow: hidden; }
   .dashboard {
     --dark: ;
@@ -1023,25 +1006,36 @@
   .composer-area { grid-column: 2; grid-row: 1; }
   .chat .account-overview {
     position: absolute;
-    inset: var(--dashboard-header-height) 0 auto;
+    inset: var(--dashboard-header-height) 0 0;
+    overflow: clip;
   }
   .account-overview[hidden] { display: none; }
-  .chat .dashboard-body { overflow: clip; }
+  .wallet-header { display: contents; }
   .chat .header-inner {
-    width: min(1200px, calc(100% - 72px));
-    height: 100%;
-    grid-template-rows: var(--setup-header-height) minmax(0, 1fr) auto;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    min-height: calc(var(--chat-viewport-height, 100dvh) + var(--chat-viewport-offset, 0px) + var(--chat-viewport-inset));
     row-gap: 0;
-    padding-block: 0;
+    padding-block: var(--chat-viewport-offset, 0px) var(--chat-viewport-inset);
   }
-  .chat .header-inner::before { inset: 0 -36px auto; height: calc(var(--setup-header-height) + 42px); }
-  .chat .header-inner::after { inset: 0 -36px auto; height: calc(var(--setup-header-height) + 12px); }
-  .chat .header-inner::before, .chat .header-inner::after { z-index: 1; pointer-events: none; }
-  .chat .header-inner .brand, .chat .header-actions {
-    z-index: 2;
-    align-self: center;
-    margin-top: 0;
+  .chat .wallet-header {
+    position: sticky;
+    top: var(--chat-viewport-offset, 0px);
+    z-index: 3;
+    display: flex;
+    min-height: var(--setup-header-height);
+    padding-inline: max(36px, calc((100% - 1200px) / 2));
+    align-items: center;
+    justify-content: space-between;
+    pointer-events: none;
   }
+  .chat .wallet-header::before { inset: 0 0 -42px; }
+  .chat .wallet-header::after { inset: 0 0 -12px; }
+  .chat .wallet-header > * { pointer-events: auto; }
+  .chat .header-inner .brand, .chat .header-actions { margin-top: 0; }
   .chat .brand :global(svg) { width: 110px; height: 40px; }
   .chat .header-actions { gap: 16px; color: var(--ink); }
   .chat .theme-toggle, .chat-exit {
@@ -1059,26 +1053,19 @@
   .chat-exit:hover, .chat .theme-toggle:hover { background: var(--surface); }
   .chat-exit svg { width: 20px; height: 20px; }
   .dashboard.chat {
-    min-height: var(--chat-viewport-height, 100dvh);
+    --chat-viewport-inset: max(0px, calc(100dvh - var(--chat-viewport-height, 100dvh) - var(--chat-viewport-offset, 0px)));
+    min-height: 100dvh;
     font: 15px/1.65 var(--font-sans);
   }
   .dashboard.chat::before { content: none; }
   .chat .composer-area {
-    grid-column: 1 / -1;
-    grid-row: 3;
-    position: relative;
-    z-index: 2;
-    justify-self: center;
-    width: min(800px, calc(100% + 72px));
+    bottom: var(--chat-viewport-inset);
     padding-bottom: var(--composer-bottom-padding);
   }
   .chat-results {
-    grid-column: 1 / -1;
-    width: min(800px, calc(100% + 72px));
-    justify-self: center;
-    grid-row: 2;
-    align-self: stretch;
-    min-height: 0;
+    flex: 1;
+    width: min(800px, 100%);
+    margin-inline: auto;
   }
   .brand { display: inline-flex; flex: none; padding: 3px 8px; margin-left: -8px; border-radius: 8px; color: var(--dark, #fff) var(--light, #013d5b); }
   .brand :global(svg) { display: block; width: 122px; height: 44px; }
@@ -1137,8 +1124,6 @@
   .wallet-band { position: relative; z-index: 1; }
   .wallet-band { --composer-bottom-padding: 28px; }
   .chat .wallet-band {
-    height: var(--chat-viewport-height, 100dvh);
-    transform: translateY(var(--chat-viewport-offset, 0px));
     --composer-bottom-padding: var(--composer-bottom-space);
   }
   .chat.keyboard-open .wallet-band { --composer-bottom-padding: 12px; }
@@ -1151,20 +1136,26 @@
     pointer-events: none;
     border-bottom: 1px solid var(--border);
   }
-  .chat .wallet-gradient { border-color: transparent; }
+  .chat .wallet-gradient {
+    position: fixed;
+    top: var(--chat-viewport-offset, 0px);
+    height: var(--chat-viewport-height, 100dvh);
+    border-color: transparent;
+  }
   .composer { position: relative; z-index: 1; }
-  .composer:not(.message-composer) { background: var(--surface); border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 8px 24px #102b421c; }
   .composer-field {
+    flex: 1;
+    min-width: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    margin-right: 52px;
   }
   .composer-field::after, .composer textarea {
     grid-area: 1 / 1;
     min-width: 0;
     max-height: 152px;
-    padding: 16px 8px 16px 20px;
+    padding: 9px 0;
     font: inherit;
+    font-size: 16px;
     line-height: 24px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -1181,13 +1172,6 @@
     outline: 0;
     background: transparent;
     color: inherit;
-  }
-  .composer:not(.message-composer) textarea::placeholder { color: var(--muted); }
-  .composer:not(.message-composer) .send { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; padding: 0; }
-  .chat .composer-field { flex: 1; min-width: 0; margin-right: 0; }
-  .chat .composer-field::after, .chat .composer textarea {
-    padding: 9px 0;
-    font-size: 16px;
   }
   .send:disabled { opacity: .55; cursor: default; }
   .link { display: inline-flex; align-items: center; gap: 5px; color: var(--link); font-weight: 650; text-align: left; }
@@ -1233,8 +1217,8 @@
     border-bottom: 1px solid var(--border);
   }
   .panel-heading h2 { font-size: 15px; }
-  .activity-rows, .bill-rows { display: grid; }
-  .activity-row, .bill-row {
+  .activity-rows { display: grid; }
+  .activity-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1247,12 +1231,12 @@
     color: var(--ink);
     text-align: left;
   }
-  .activity-row:last-child, .bill-row:last-child { border-bottom: 0; }
-  .activity-row:hover, .bill-row:hover { background: var(--page); }
-  .activity-main, .bill-main { display: grid; gap: 2px; min-width: 0; }
-  .activity-main strong, .bill-main strong { font-size: 14px; font-weight: 600; }
-  .activity-main small, .bill-main small { color: var(--muted); font-size: 11px; }
-  .activity-amount, .bill-amount { flex: none; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .activity-row:last-child { border-bottom: 0; }
+  .activity-row:hover { background: var(--page); }
+  .activity-main { display: grid; gap: 2px; min-width: 0; }
+  .activity-main strong { font-size: 14px; font-weight: 600; }
+  .activity-main small { color: var(--muted); font-size: 11px; }
+  .activity-amount { flex: none; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .activity-amount.deposit { color: #568825; }
   .account, .panel { box-shadow: var(--shadow); }
   .account-notice:empty { position: absolute; }
@@ -1337,7 +1321,7 @@
     }
     .header-inner .brand { margin-top: 0; }
     .header-actions { grid-column: 2; grid-row: 1; justify-self: end; margin-top: 0; }
-    .composer-area, .chat-results {
+    .composer-area {
       grid-column: 1 / -1;
       grid-row: 2;
     }
@@ -1347,11 +1331,9 @@
     .content { grid-template-columns: minmax(0, 1fr); }
   }
   @container (max-width: 600px) {
-    .chat .header-inner { width: calc(100% - 36px); }
-    .chat .header-inner::before, .chat .header-inner::after { inset-inline: -18px; }
+    .chat .wallet-header { padding-inline: 18px; }
     .chat .header-actions { gap: 10px; }
     .chat .brand :global(svg) { width: 94px; height: 34px; }
-    .chat .chat-results, .chat .composer-area { width: calc(100% + 36px); }
   }
   @container (max-width: 380px) {
     .chat .profile-name { display: none; }

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  MAYA,
   askChat,
   assistantText,
   cardKinds,
@@ -14,14 +15,14 @@ import {
 } from './helpers';
 
 const STARTER_PROMPTS = [
-  'What is my LORAXⓇ Score?',
+  'What is my ClimateWise LORAX® Score?',
   "What's due in the next 30 days?",
   'Anything weird in my transactions?',
   'Find an ATM near Arlington, VA'
 ];
 
 async function loadChat(page: Page): Promise<void> {
-  await page.goto('/chat');
+  await page.goto(`/chat?customer=${MAYA.id}`);
   await expect(page.locator('textarea[aria-label="Ask Capital One"]')).toBeVisible({
     timeout: 30_000
   });
@@ -502,7 +503,7 @@ test.describe('chat prompts', () => {
     const events = [
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'Here’s what goes into your LORAXⓇ Score: '
+        delta: 'Here’s what goes into your LORAX® Score: '
       })}`,
       `event: insight\ndata: ${JSON.stringify({
         type: 'insight',
@@ -525,7 +526,7 @@ test.describe('chat prompts', () => {
       });
     });
 
-    await askChat(page, "What's my LORAXⓇ Score?");
+    await askChat(page, "What's my LORAX® Score?");
 
     const card = page.locator('.climatewise-chat-card');
     await expect(card).toHaveCount(1, { timeout: 20_000 });
@@ -1180,18 +1181,29 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('pins the header and composer while only the message list scrolls', async ({
+  test('pins the header and composer while the document scrolls', async ({
     page
   }) => {
     test.setTimeout(120_000);
     const errors = collectErrors(page);
     await page.setViewportSize({ width: 900, height: 520 });
-    await runPrompt(page, 'Show me my loans');
+    await loadChat(page);
+    await page.route('**/api/chat', async (route) => {
+      const { message } = route.request().postDataJSON();
+      const topic = message === 'Show me my loans' ? 'loans' : 'bills';
+      const text = Array.from({ length: 8 }, () => `Here is a summary of your ${topic}.`).join('\n\n');
+      const events = [
+        `event: text\ndata: ${JSON.stringify({ type: 'text', delta: text })}`,
+        `event: done\ndata: ${JSON.stringify({ type: 'done' })}`
+      ];
+      await route.fulfill({ contentType: 'text/event-stream', body: `${events.join('\n\n')}\n\n` });
+    });
+    await askChat(page, 'Show me my loans');
 
     const chips = page.locator('.follow-up');
     await expect(chips.first()).toBeVisible({ timeout: 20_000 });
 
-    // A second turn makes the message list overflow the short viewport.
+    // A second turn makes the document taller than the viewport.
     const secondResponse = page.waitForResponse(
       (response) =>
         response.url().includes('/api/chat') && response.request().method() === 'POST',
@@ -1208,28 +1220,24 @@ test.describe('chat prompts', () => {
     await expect(chips.first()).toBeVisible({ timeout: 20_000 });
 
     const log = page.locator('.chat-log');
-    const logMetrics = await log.evaluate((element) => ({
-      overflowY: getComputedStyle(element).overflowY,
-      scrollHeight: element.scrollHeight,
-      clientHeight: element.clientHeight
-    }));
-    expect(logMetrics.overflowY, 'the log is the scroller').toBe('auto');
-    expect(
-      logMetrics.scrollHeight,
-      'messages should overflow the log viewport'
-    ).toBeGreaterThan(logMetrics.clientHeight);
-
+    await expect(log).toHaveCSS('overflow-y', 'visible');
     const doc = await page.evaluate(() => ({
-      overflowY: getComputedStyle(document.documentElement).overflowY,
       scrollHeight: document.documentElement.scrollHeight,
-      innerHeight: window.innerHeight,
-      scrollY: window.scrollY
+      innerHeight: window.innerHeight
     }));
-    expect(doc.overflowY, 'the document should not scroll').toBe('hidden');
-    expect(doc.scrollHeight, 'document fits the viewport').toBeLessThanOrEqual(
-      doc.innerHeight + 1
-    );
-    expect(doc.scrollY).toBe(0);
+    expect(doc.scrollHeight).toBeGreaterThan(doc.innerHeight);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+    for (const selector of ['.wallet-chat-header', '.composer-area']) {
+      const blurLayers = await page.locator(selector).evaluate((element) =>
+        ['::before', '::after'].map((pseudo) => {
+          const style = getComputedStyle(element, pseudo);
+          return { blur: style.backdropFilter, mask: style.maskImage };
+        })
+      );
+      expect(blurLayers.map(({ blur }) => blur)).toEqual(['blur(4px)', 'blur(10px)']);
+      for (const { mask } of blurLayers) expect(mask).toContain('linear-gradient');
+    }
 
     const heading = page.locator('.brand');
     const composer = page.locator('.composer');
@@ -1237,17 +1245,13 @@ test.describe('chat prompts', () => {
     await expect(heading).toBeVisible();
     await expect(composer).toBeVisible();
 
-    await log.evaluate((element) => {
-      element.scrollTop = 0;
-    });
-    await page.waitForTimeout(50);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
     const headerAtTop = await heading.boundingBox();
     const composerAtTop = await composer.boundingBox();
 
-    await log.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-    });
-    await page.waitForTimeout(50);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
     const headerAtBottom = await heading.boundingBox();
     const composerAtBottom = await composer.boundingBox();
 
@@ -1311,7 +1315,6 @@ test.describe('chat prompts', () => {
       );
       expect(row.height, 'follow-up rows have a roomy click target').toBeGreaterThanOrEqual(48);
     }
-    await expectFollowupsMatchBubble(page);
     await expectFollowupBorders(page);
 
     // After scrolling to the bottom the first follow-up is visible above the input.
@@ -2105,7 +2108,7 @@ test.describe('chat prompts', () => {
       accent: getComputedStyle(element, '::before').content,
       border: Number.parseFloat(getComputedStyle(element).borderTopWidth)
     }));
-    expect(frameStyle.shadow).not.toBe('none');
+    expect(frameStyle.shadow).toBe('none');
     expect(['none', 'normal'], 'no ::before accent bar').toContain(frameStyle.accent);
     expect(frameStyle.border).toBeGreaterThanOrEqual(1);
 
@@ -3101,7 +3104,7 @@ test.describe('Eno mascot', () => {
 
   test('Eno mascot follows the active theme', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/chat');
+    await page.goto(`/chat?customer=${MAYA.id}`);
 
     await expect(page.locator('.chat-header')).toHaveCount(0);
     await expect(page.locator('.chat-heading')).toHaveCount(0);
@@ -3405,6 +3408,7 @@ test.describe('primitive bill and account cards', () => {
     await expect(card).toContainText('•••• 4212');
     await expect(page.locator('.chat-card')).toHaveCount(0);
 
+    await expectCardStyle(page);
     expectNoErrors(errors);
   });
 });

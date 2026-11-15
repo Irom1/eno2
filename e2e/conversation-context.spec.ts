@@ -14,6 +14,42 @@ async function ask(page: Page, text: string) {
   await page.getByRole('button', { name: 'Ask', exact: true }).click();
 }
 
+test('uses the same composer styling before and after opening chat', async ({ page }) => {
+  await mockProfile(page);
+  await page.route('**/api/chat', (route) =>
+    route.fulfill({
+      contentType: 'text/event-stream',
+      body: 'event: text\ndata: {"type":"text","delta":"Hello!"}\n\n'
+    })
+  );
+  await page.goto('/dashboard?customer=maya');
+  await expect(page.locator('.profile-name')).toHaveText('Maya');
+  const composer = page.locator('form.composer');
+  const field = composer.getByRole('textbox');
+  const send = composer.getByRole('button', { name: 'Ask' });
+  const initialPlaceholder = 'Ask about your money, spending, or bills…';
+
+  await expect(field).toHaveAttribute('placeholder', initialPlaceholder);
+  await expect(send).toHaveText('↑');
+  const styles = () =>
+    composer.evaluate((form) => ({
+      field: getComputedStyle(form).background,
+      button: getComputedStyle(form.querySelector('button')!).backgroundColor
+    }));
+  const dashboardStyles = await styles();
+
+  await field.click();
+  await expect(page).toHaveURL(/\/chat(?:\?|$)/);
+  await expect(field).toHaveAttribute('placeholder', initialPlaceholder);
+  expect(await styles()).toEqual(dashboardStyles);
+  await expect(send).toHaveText('↑');
+
+  await field.fill('Hello Eno');
+  await expect(field).toHaveAttribute('placeholder', initialPlaceholder);
+  await field.press('Enter');
+  await expect(field).toHaveAttribute('placeholder', 'Message Eno…');
+});
+
 test('every suspicious charge receives its own reason even when model prose is only a list', async ({ page }) => {
   await mockProfile(page);
   const events = [

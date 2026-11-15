@@ -116,8 +116,8 @@
     gap: 10px;
     margin: 6px 0;
     padding: 7px 10px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    border: var(--chat-bubble-border);
+    border-radius: var(--assistant-bubble-radius);
     background: color-mix(in srgb, var(--surface) 72%, transparent);
     box-shadow: none;
     min-width: 0;

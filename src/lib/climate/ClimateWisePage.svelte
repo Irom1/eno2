@@ -214,10 +214,10 @@
 
 				<section class="chart" aria-label="Carbon emissions by category">
 					<div class="chart-head">
-						<button class="info" aria-expanded={showInfo} aria-controls="score-info" aria-label="How your LORAXⓇ Score is estimated"
+						<button class="info" aria-expanded={showInfo} aria-controls="score-info" aria-label="How your LORAX® Score is estimated"
 							onclick={() => (showInfo = !showInfo)}>i</button>
 						{#if showInfo}
-							<p class="info-text" id="score-info">Your LORAXⓇ Score is estimated from purchases over the past {report.days} days.</p>
+							<p class="info-text" id="score-info">Your LORAX® Score is estimated from purchases over the past {report.days} days.</p>
 						{/if}
 					</div>
 
@@ -227,7 +227,7 @@
 							bind:selected
 							bind:hovered
 							size={climateSize.ringSize}
-							ariaLabel={`LORAXⓇ Score: ${report.score}, ${report.tier}. Carbon emissions by purchase category.`}
+							ariaLabel={`LORAX® Score: ${report.score}, ${report.tier}. Carbon emissions by purchase category.`}
 							centerValue={String(report.score)}
 							centerUnit={report.tier}
 						/>
@@ -329,6 +329,10 @@
 		width: 100%;
 		max-width: 100%;
 		height: auto;
+		box-sizing: border-box;
+		border: var(--chat-bubble-border);
+		border-radius: var(--assistant-bubble-radius);
+		box-shadow: none;
 	}
 	/* With no fixed card height, let the grid size to its content and pin the
 	   list to one exact height, so hover/select/clear can never resize the card. */

@@ -18,7 +18,7 @@
     gap: 6px;
     padding: 12px 14px;
     border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--border));
-    border-radius: 14px;
+    border-radius: var(--bubble-radius);
     background: color-mix(in srgb, var(--surface) 60%, transparent);
   }
   .skeleton {

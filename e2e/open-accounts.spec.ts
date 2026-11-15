@@ -68,6 +68,18 @@ test('dashboard opens a personalized account dropdown without repeating signup a
   await expect(page.getByRole('checkbox', { name: /Discover it Cash Back/ })).toBeVisible();
 });
 
+test('chat hands off account-opening requests to setup for the selected customer', async ({ page }) => {
+  const state = await fixtures(page);
+  await page.route('**/api/chat', () => { throw new Error('Account opening should be handled by setup'); });
+  await page.goto(`/chat?customer=${customer.id}`);
+  await page.getByRole('textbox', { name: 'Ask Capital One' }).fill('Can you add a new account?');
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await expect(page).toHaveURL(`/setup?customer=${customer.id}&mode=accounts`);
+  await expect(page.getByRole('group', { name: 'Available accounts' })).toBeVisible();
+  expect(state.submissions).toHaveLength(0);
+  state.noOnboardingCalls();
+});
+
 test('empty profiles can open accounts and the button submits once', async ({ page }) => {
   const state = await fixtures(page, []);
   await page.goto(`/dashboard?customer=${customer.id}`);

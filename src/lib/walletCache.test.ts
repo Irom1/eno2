@@ -30,7 +30,7 @@ afterEach(() => {
 
 describe('wallet cache keys', () => {
   it('namespaces snapshot and account entries', () => {
-    expect(cache.snapshotCacheKey('cust-1')).toBe('eno:wallet:cache:v1:snapshot:cust-1');
+    expect(cache.snapshotCacheKey('cust-1')).toBe('eno:wallet:cache:v1:snapshot:v2:cust-1');
     expect(cache.accountCacheKey('acct-1')).toBe('eno:wallet:cache:v1:account:acct-1');
   });
 });

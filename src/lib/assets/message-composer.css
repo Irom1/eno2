@@ -183,7 +183,7 @@
   pointer-events: auto;
 }
 
-.setup-composer-background .message-composer {
+form.message-composer {
   background: var(--dark, #000) var(--light, #fff);
   color: var(--dark, #fff) var(--light, #142632);
   box-shadow:
@@ -191,7 +191,7 @@
     var(--light, 0 2px 6px #17334a14, 0 12px 28px #17334a24);
 }
 
-.setup-composer-background .message-composer :is(input, textarea)::placeholder {
+.message-composer :is(input, textarea)::placeholder {
   color: var(--dark, #c3cfda) var(--light, #50636e);
 }
 

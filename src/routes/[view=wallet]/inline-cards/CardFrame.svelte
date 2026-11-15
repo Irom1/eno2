@@ -24,14 +24,11 @@
     min-width: 0;
     box-sizing: border-box;
     background: var(--surface);
-    border: 1px solid color-mix(in srgb, var(--ink) 24%, var(--border));
-    border-radius: 14px;
+    border: var(--chat-bubble-border);
+    border-radius: var(--assistant-bubble-radius);
     padding: 12px 14px;
     color: var(--ink);
     font-variant-numeric: tabular-nums;
-    box-shadow:
-      0 8px 24px color-mix(in srgb, var(--ink) 12%, transparent),
-      0 1px 2px color-mix(in srgb, var(--ink) 10%, transparent);
   }
 
   @media (max-width: 570px) {

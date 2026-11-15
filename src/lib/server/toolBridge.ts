@@ -138,7 +138,7 @@ export const TOOL_LABELS: Readonly<Record<string, string>> = Object.freeze({
   insight_recurring_charges: "Finding subscriptions",
   insight_anomalies: "Looking for odd charges",
   insight_goal_projection: "Projecting a savings goal",
-  insight_climatewise: "Checking your LORAXⓇ Score",
+  insight_climatewise: "Checking your LORAX® Score",
   find_nearby_atms: "Finding nearby ATMs",
   find_nearby_branches: "Finding nearby branches"
 });

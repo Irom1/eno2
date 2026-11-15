@@ -89,6 +89,21 @@ for (const view of ['dashboard', 'chat']) {
   });
 }
 
+test('chat signs out on request and returns home', async ({ page }) => {
+  await fixtures(page);
+  await page.route('**/api/chat', () => { throw new Error('Sign-out should be handled by the session'); });
+  await page.goto('/chat?customer=future');
+  await expect(page.locator('.profile-name')).toHaveText('Future');
+  const sessionDeleted = page.waitForResponse((response) =>
+    response.url().endsWith('/api/session') && response.request().method() === 'DELETE'
+  );
+  await page.getByRole('textbox', { name: 'Ask Capital One' }).fill('Please sign me out');
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  expect((await sessionDeleted).status()).toBe(204);
+  await expect(page).toHaveURL(/\/$/);
+  expect(await page.evaluate(() => localStorage.getItem('eno-active-customer'))).toBeNull();
+});
+
 test('an explicit profile link takes precedence over the remembered selection', async ({ page }) => {
   await fixtures(page);
   await page.goto('/dashboard?customer=future');
@@ -157,13 +172,13 @@ test('wallet navigation keeps the customer and restores card tabs from the URL',
   await expect(page.getByRole('link', { name: 'Return to dashboard' })).toHaveCount(0);
   await page.getByRole('link', { name: 'Capital One dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
-  const climateLink = page.getByRole('link', { name: 'Check your LORAXⓇ Score' });
+  const climateLink = page.getByRole('link', { name: 'Check your LORAX® Score' });
   await expect(climateLink).toHaveAttribute('href', '/climatewise?customer=future');
   await climateLink.click();
   // A plain click opens Eno chat and sends the starter prompt; the href above
   // remains the fallback for modifier and middle clicks.
   await expect(page).toHaveURL(/\/chat\?customer=future$/);
-  await expect(page.locator('.bubble.user')).toContainText('What is my LORAXⓇ Score?');
+  await expect(page.locator('.bubble.user')).toContainText('What is my ClimateWise LORAX® Score?');
   await page.getByRole('link', { name: 'Capital One dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
 

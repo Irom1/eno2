@@ -876,7 +876,7 @@ describe("mockAgent", () => {
       return ok(climatePayload);
     });
 
-    expect(text).toContain("Here’s what goes into your LORAXⓇ Score:");
+    expect(text).toContain("Here’s what goes into your LORAX® Score:");
     expect(text).toContain("small habit changes can bring it down");
     expect(text).toContain("swap two drives a week for the T or a bike");
     expect(text).toContain("You can open the full report for a breakdown of your emissions.");
@@ -912,6 +912,6 @@ describe("mockAgent", () => {
   });
 
   it("uses a friendly ClimateWise intro", () => {
-    expect(composeIntro("insight_climatewise")).toBe("Here’s what goes into your LORAXⓇ Score:");
+    expect(composeIntro("insight_climatewise")).toBe("Here’s what goes into your LORAX® Score:");
   });
 });

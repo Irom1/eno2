@@ -2,10 +2,12 @@
   import '$lib/assets/message-composer.css';
   import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import ReadAloudButton from '$lib/components/ReadAloudButton.svelte';
+  import ThemeIcon from '$lib/components/ThemeIcon.svelte';
   import { createConversationPacer } from '$lib/conversationPacing';
   import { finishAccountSetup } from '$lib/accountSetup';
   import { asksToConfirmAddress, isAffirmative, reviewFingerprint as profileFingerprint } from '$lib/signupConfirmation';
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
   import CapitalOneLogo from '../../routes/[view=wallet]/CapitalOneLogo.svelte';
   import SignupChoices from '$lib/components/SignupChoices.svelte';
@@ -23,7 +25,6 @@
   interface ConversationReply { message: string; answers: SignupAnswers; accountChoice: AccountChoice; spending: SpendingPreferences; includeCreditCard: boolean | null; recommendedCard: DemoCard | null; stage: SignupStage; card: DemoCard | null; ready: boolean; confirmed: boolean; addressCheck?: AddressCheck }
   const draftKey = 'eno-signup-conversation-v2';
   const pacing = createConversationPacer();
-  let { sentFirstAccountPrompt = false }: { sentFirstAccountPrompt?: boolean } = $props();
   let answers = $state(emptyAnswers());
   let accountChoice = $state<AccountChoice>('undecided');
   let spending = $state<SpendingPreferences>(emptySpending());
@@ -86,8 +87,9 @@
     speechSupported = supportsReadAloud();
     try { const saved = localStorage.getItem('dashboard-theme'); if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved; } catch { /* Use the system theme. */ }
     attemptKey = crypto.randomUUID();
+    const fromHomepage = page.url.searchParams.get('start') === 'signup';
     try {
-      const draft = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
+      const draft = fromHomepage ? null : JSON.parse(sessionStorage.getItem(draftKey) || 'null');
       if (draft && SIGNUP_FIELDS.every((key) => typeof draft.answers?.[key] === 'string') && accountChoiceSchema.safeParse(draft.accountChoice).success && Array.isArray(draft.messages) && draft.messages.every((entry: Message) => ['eno', 'you'].includes(entry.role) && typeof entry.text === 'string' && typeof entry.id === 'number')) {
         pendingAddress = draft.pendingAddress;
         answers = draft.answers; accountChoice = draft.accountChoice; messages = draft.messages.slice(-40);
@@ -108,13 +110,14 @@
     const onTheme = (event: MediaQueryListEvent) => { systemDark = event.matches; };
     media.addEventListener('change', onTheme);
     ready = true;
-    if (messages.length === 0) {
-      if (sentFirstAccountPrompt) {
-        void sendText(firstAccountPrompt);
-      } else {
-        messages.push({ id: ++nextId, role: 'eno', text: 'Hey, I’m Eno. Really glad you’re here.\n\nLet’s get you set up. What should I call you?' });
-        pacing.enoShown();
-      }
+    if (fromHomepage) {
+      const url = new URL(page.url);
+      url.searchParams.delete('start');
+      replaceState(url, page.state);
+      void sendText(firstAccountPrompt);
+    } else if (messages.length === 0) {
+      messages.push({ id: ++nextId, role: 'eno', text: 'Hey, I’m Eno. Really glad you’re here.\n\nLet’s get you set up. What should I call you?' });
+      pacing.enoShown();
     } else if (messages.length === 1 && messages[0].role === 'you' && messages[0].text === firstAccountPrompt) {
       void retryTurn(firstAccountPrompt);
     }
@@ -282,7 +285,9 @@
   <header>
     <a class="brand" href="/" aria-label="Capital One home"><CapitalOneLogo label="Capital One" /></a>
     <div class="header-actions">
-      <button class="theme-toggle" disabled={!ready} aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={isDark} onclick={toggleTheme}>{#if isDark}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5" /></svg>{:else}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" /></svg>{/if}</button>
+      <button class="theme-toggle" disabled={!ready} aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={isDark} onclick={toggleTheme}>
+        <ThemeIcon {isDark} />
+      </button>
     <a class="exit" href="/" aria-label="Back to home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg></a>
     </div>
   </header>
@@ -382,7 +387,6 @@
   @keyframes pulse { 50% { opacity: .3; transform: translateY(-2px); } }
   .composer { position: relative; }
   .theme-toggle { display: grid; place-items: center; flex: none; width: 38px; height: 38px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: transparent; }
-  .theme-toggle svg { width: 18px; height: 18px; }
   @media (max-width: 600px) {
     .header-actions { gap: 10px; }
     header { width: calc(100% - 36px); padding: 18px 0; }
