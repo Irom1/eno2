@@ -70,7 +70,8 @@ describe('sample transaction history', () => {
       const posted = history.filter((item) => item.kind === 'withdrawal').map((item, index) => toTransaction({ ...item, _id: String(index) }, 'withdrawal')).filter((item) => item !== null);
       const duplicates = detectDuplicateCharges(posted);
       expect(duplicates).toHaveLength(1);
-      expect(duplicates.map((item) => item.description)).toEqual(['NETFLIX']);
+      const duplicate = duplicates[0];
+      expect(posted.filter((item) => item.description === duplicate.description && item.amount === duplicate.amount)).toHaveLength(2);
       const suspicious = detectOutliers(posted, now).filter((finding) =>
         posted.some((item) => item.id !== finding._id && item.description === finding.description && item.amount < 100 && item.amount * 4 < finding.amount));
       expect(suspicious).toHaveLength(2);
@@ -80,6 +81,36 @@ describe('sample transaction history', () => {
       expect(demoAccountTotals(withLargePending, type)).toEqual(totals);
     });
   }
+  it('varies duplicate vendors, amounts, dates, and gaps while keeping each account reproducible', () => {
+    for (const type of ['Checking', 'Savings', 'Credit Card'] as const) {
+      const vendors = new Set<string>();
+      const amounts = new Set<number>();
+      const dates = new Set<string>();
+      const gaps = new Set<number>();
+      for (let index = 0; index < 100; index++) {
+        const accountId = `duplicate-variety-${index}`;
+        const history = buildDemoTransactions(type, accountId, now);
+        const posted = history.filter((item) => item.kind === 'withdrawal')
+          .flatMap((item, id) => toTransaction({ ...item, _id: String(id) }, 'withdrawal') ?? []);
+        const duplicates = detectDuplicateCharges(posted);
+        expect(duplicates).toHaveLength(1);
+        const duplicate = duplicates[0];
+        vendors.add(duplicate.description);
+        amounts.add(duplicate.amount);
+        dates.add(duplicate.date);
+        const gap = (Date.parse(duplicate.date) - Date.parse(duplicate.duplicateOf)) / 86_400_000;
+        expect(gap).toBeGreaterThanOrEqual(1);
+        expect(gap).toBeLessThanOrEqual(3);
+        gaps.add(gap);
+        expect(buildDemoTransactions(type, accountId, now)).toEqual(history);
+      }
+      expect(vendors.size).toBeGreaterThanOrEqual(5);
+      expect([...vendors].some((vendor) => ['PETCO', 'HOME DEPOT', 'PANERA BREAD', 'UBER EATS', 'STAPLES'].includes(vendor))).toBe(true);
+      expect(amounts.size).toBeGreaterThan(10);
+      expect(dates.size).toBeGreaterThan(5);
+      expect(gaps.size).toBe(3);
+    }
+  });
   it('varies suspicious merchants, amounts and dates across accounts while always flagging them', () => {
     const merchantPairs = new Set<string>();
     const amounts = new Set<number>();

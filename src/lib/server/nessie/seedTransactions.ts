@@ -103,11 +103,23 @@ export function buildDemoTransactions(type: DemoAccountType, accountId: string, 
     unusualPurchases.push(purchase);
   }
   const dateAgo = (days: number) => new Date(today - days * 86_400_000).toISOString().slice(0, 10);
-  // At most one deliberate duplicate pair among 100 total records.
+  // At most one deliberate duplicate pair among 100 total records. Use the
+  // account's seeded randomness so vendors, amounts, and dates vary across
+  // accounts but remain stable when account setup resumes.
   const duplicateExamples = new Set<DemoTransaction>();
   if (duplicateLimit) {
-    Object.assign(withdrawals[39], { description: 'NETFLIX', amount: 19, transaction_date: dateAgo(18) });
-    Object.assign(withdrawals[40], { description: 'NETFLIX', amount: 19, transaction_date: dateAgo(17) });
+    const duplicateMerchants = [
+      ['NETFLIX', 15, 25], ['HULU', 10, 25], ['DISNEY PLUS', 10, 22],
+      ['ADOBE', 20, 65], ['AMAZON PRIME', 15, 20], ['PETCO', 15, 85],
+      ['HOME DEPOT', 20, 95], ['PANERA BREAD', 12, 45],
+      ['UBER EATS', 18, 60], ['STAPLES', 15, 75]
+    ] as const;
+    const [description, min, max] = duplicateMerchants[random(0, duplicateMerchants.length - 1)];
+    const amount = random(min, max);
+    const daysAgo = random(10, 23);
+    const gap = random(1, 3);
+    Object.assign(withdrawals[39], { description, amount, transaction_date: dateAgo(daysAgo) });
+    Object.assign(withdrawals[40], { description, amount, transaction_date: dateAgo(daysAgo - gap) });
     duplicateExamples.add(withdrawals[39]);
     duplicateExamples.add(withdrawals[40]);
   }
