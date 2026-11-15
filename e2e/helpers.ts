@@ -218,6 +218,7 @@ export async function expectCardStyle(page: Page): Promise<void> {
       const bubbleRect = bubble?.getBoundingClientRect();
       const target = frame ?? (fullCard ? card.querySelector('.card') ?? card : card);
       const style = getComputedStyle(target);
+      const bubbleRadius = bubble ? getComputedStyle(bubble).borderTopLeftRadius : null;
       const accent = getComputedStyle(target, '::before');
       const column = target.closest('.assistant-content');
       const targetRect = target.getBoundingClientRect();
@@ -229,6 +230,11 @@ export async function expectCardStyle(page: Page): Promise<void> {
         shadow: style.boxShadow,
         border: style.border,
         radius: style.borderRadius,
+        topLeft: style.borderTopLeftRadius,
+        bottomLeft: style.borderBottomLeftRadius,
+        bubbleRadius,
+        paddingTop: style.paddingTop,
+        paddingLeft: style.paddingLeft,
         accentContent: accent.content,
         leftAligned: columnRect ? Math.abs(targetRect.left - columnRect.left) <= 1 : false,
         withinBubbleWidth: columnRect
@@ -243,8 +249,31 @@ export async function expectCardStyle(page: Page): Promise<void> {
 
   for (const surface of surfaces) {
     expect(surface.border, 'cards share the assistant bubble border').toBe(bubbleSurface.border);
-    expect(surface.radius, 'cards share the assistant bubble corner radii').toBe(bubbleSurface.radius);
+    if (!surface.inline) {
+      expect(surface.radius, 'cards share the assistant bubble corner radii').toBe(
+        bubbleSurface.radius
+      );
+    }
     if (surface.inline) {
+      // Inline cards are standalone surfaces inside the bubble: every corner is
+      // rounded, so they never inherit the assistant bubble's sharp bottom-left
+      // tail.
+      expect(
+        parseFloat(surface.bottomLeft),
+        'inline cards keep a rounded bottom-left corner'
+      ).toBeGreaterThan(0);
+      expect(
+        Math.abs(parseFloat(surface.bottomLeft) - parseFloat(surface.topLeft)),
+        'inline card bottom-left radius matches the top-left radius'
+      ).toBeLessThanOrEqual(1);
+      expect(
+        parseFloat(surface.bottomLeft),
+        'inline card radius is tighter than the assistant bubble radius'
+      ).toBeLessThan(parseFloat(surface.bubbleRadius ?? '0'));
+      expect(
+        { top: surface.paddingTop, left: surface.paddingLeft },
+        'inline cards use the roomier 12px/14px inner padding'
+      ).toEqual({ top: '12px', left: '14px' });
       // Inline cards keep the shared border but lose the standalone lift and
       // accent, and never exceed the bubble they sit in.
       expect(surface.shadow, 'inline cards must not use the standalone frame lift').toBe(

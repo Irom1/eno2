@@ -896,6 +896,18 @@
     padding: 8px 10px;
     background: color-mix(in srgb, var(--surface) 72%, transparent);
   }
+  /*
+   * Inner card surfaces are standalone inside the bubble: they never inherit
+   * its sharp tail corner, and they use a tighter radius than the 24px bubble
+   * with roomier padding. The assistant bubble itself keeps its sharp tail.
+   */
+  .bubble.assistant.inline-entities :global(.entity-card),
+  .bubble.assistant.inline-entities :global(.account-card),
+  .bubble.assistant.inline-entities :global(.loan-card),
+  .bubble.assistant.inline-entities :global(.transaction-card.inline) {
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
   .assistant-turn {
     align-self: flex-start;
     width: 100%;

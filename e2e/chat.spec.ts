@@ -153,6 +153,52 @@ async function expectFollowupBorders(page: Page): Promise<void> {
   });
 }
 
+/** Every inline card surface inside the assistant bubble. */
+const INLINE_CARD_SELECTOR =
+  '.bubble.assistant :is(.entity-card, .account-card, .loan-card, .transaction-card.inline)';
+
+/**
+ * Inline cards are standalone surfaces inside the prose bubble, so they round
+ * all four corners instead of inheriting the assistant bubble's sharp
+ * bottom-left tail.
+ */
+async function expectInlineCardCorners(page: Page): Promise<void> {
+  const cards = page.locator(INLINE_CARD_SELECTOR);
+  const radii = await cards.evaluateAll((elements) =>
+    elements.map((element) => {
+      const style = getComputedStyle(element);
+      const bubble = element.closest('.bubble.assistant');
+      return {
+        label: element.getAttribute('class') ?? element.tagName,
+        topLeft: style.borderTopLeftRadius,
+        bottomLeft: style.borderBottomLeftRadius,
+        bubbleTopLeft: bubble ? getComputedStyle(bubble).borderTopLeftRadius : null,
+        paddingTop: style.paddingTop,
+        paddingLeft: style.paddingLeft
+      };
+    })
+  );
+  expect(radii.length, 'inline cards are present').toBeGreaterThan(0);
+  radii.forEach((radius) => {
+    expect(
+      parseFloat(radius.bottomLeft),
+      `${radius.label}: inline card bottom-left corner stays rounded`
+    ).toBeGreaterThan(0);
+    expect(
+      Math.abs(parseFloat(radius.bottomLeft) - parseFloat(radius.topLeft)),
+      `${radius.label}: inline card bottom-left radius matches the top-left radius`
+    ).toBeLessThanOrEqual(1);
+    expect(
+      parseFloat(radius.bottomLeft),
+      `${radius.label}: inline card radius is tighter than the assistant bubble radius`
+    ).toBeLessThan(parseFloat(radius.bubbleTopLeft ?? '0'));
+    expect(
+      { top: radius.paddingTop, left: radius.paddingLeft },
+      `${radius.label}: inline card uses the roomier 12px/14px inner padding`
+    ).toEqual({ top: '12px', left: '14px' });
+  });
+}
+
 test.describe('chat prompts', () => {
   test('"Show me my loans" renders exactly one primitive loan card', async ({ page }) => {
     const errors = collectErrors(page);
@@ -183,6 +229,7 @@ test.describe('chat prompts', () => {
     ).toBe(true);
 
     await expectCardStyle(page);
+    await expectInlineCardCorners(page);
     expectNoErrors(errors);
   });
 
@@ -1521,6 +1568,7 @@ test.describe('chat prompts', () => {
 
     await waitForChatSettled(page);
     await expect(turn.locator('.transaction-card')).toHaveCount(1);
+    await expectInlineCardCorners(page);
     expectNoErrors(errors);
   });
 
@@ -3293,6 +3341,7 @@ test.describe('primitive bill and account cards', () => {
       await bill.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
       'the bill card renders inline inside the prose bubble'
     ).toBe(true);
+    await expectInlineCardCorners(page);
 
     // It deep-links to the owning account when the ids are present.
     const link = bill.locator('a.bill-link');
@@ -3435,6 +3484,7 @@ test.describe('primitive bill and account cards', () => {
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
       'the account card renders inline inside the prose bubble'
     ).toBe(true);
+    await expectInlineCardCorners(page);
 
     const link = card.locator('a.account-link');
     await expect(link).toHaveCount(1);
@@ -3497,6 +3547,7 @@ test.describe('primitive bill and account cards', () => {
     await expect(page.locator('.chat-card')).toHaveCount(0);
 
     await expectCardStyle(page);
+    await expectInlineCardCorners(page);
     expectNoErrors(errors);
   });
 
