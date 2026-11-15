@@ -5,6 +5,7 @@
 	import logoDark from '$lib/assets/climatewise-logo-dark.png';
 	import { CATEGORIES, CATEGORY_BY_ID, type ClimateReport } from './emissions';
 	import { classifyClimateSize } from './layout';
+	import { fetchWithSession } from '$lib/sessionRecovery';
 
 	type Theme = 'light' | 'dark' | 'system';
 
@@ -86,7 +87,7 @@
 				if (!selected.ok) throw new Error('Could not select the customer.');
 			}
 		}
-		const response = await fetch(`/api/climate?days=${DAYS}`, { signal });
+		const response = await fetchWithSession(`/api/climate?days=${DAYS}`, { signal }, customerId ?? undefined);
 		if (!response.ok) throw new Error('Could not load the report.');
 		return response.json() as Promise<{ report: ClimateReport }>;
 	}

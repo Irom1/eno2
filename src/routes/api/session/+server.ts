@@ -44,7 +44,7 @@ function respondWithSession(cookies: Cookies, request: Request, session: Session
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
-    maxAge: 1800,
+    maxAge: 60 * 60 * 12,
     secure: new URL(request.url).protocol === 'https:'
   });
   return json(publicSession(session));

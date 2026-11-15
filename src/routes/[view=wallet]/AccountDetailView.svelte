@@ -20,6 +20,7 @@
     writeWalletCache
   } from '$lib/walletCache';
   import DetailSheet from './DetailSheet.svelte';
+  import { fetchWithSession } from '$lib/sessionRecovery';
 
   type Tab = 'activity' | 'details' | 'bills';
   type ActivityFilter = 'all' | 'deposits' | 'withdrawals';
@@ -29,6 +30,7 @@
     tab: Tab;
     heading: Snippet;
     onTabChange: (tab: Tab) => void;
+    customerId?: string;
     focusTransactionId?: string;
     onAccountDeleted: (accountId: string) => void;
   }
@@ -40,7 +42,7 @@
     bills?: WalletBill[];
   }
 
-  let { accountId, tab, heading, onTabChange, focusTransactionId, onAccountDeleted }: Props = $props();
+  let { accountId, tab, heading, onTabChange, customerId = '', focusTransactionId, onAccountDeleted }: Props = $props();
 
   let query = $state('');
   let filter = $state<ActivityFilter>('all');
@@ -119,7 +121,7 @@
     deleting = true;
     deleteError = '';
     try {
-      const response = await fetch(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const response = await fetchWithSession(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }, customerId);
       if (response.status !== 204) throw new Error('Deletion was not confirmed');
       onAccountDeleted(id);
     } catch {
@@ -157,7 +159,7 @@
     loading = !showingCache;
 
     try {
-      const response = await fetch(`/api/accounts/${encodeURIComponent(id)}`);
+      const response = await fetchWithSession(`/api/accounts/${encodeURIComponent(id)}`, undefined, customerId);
       if (!response.ok) throw new Error('Account request failed');
       const payload = (await response.json()) as DetailPayload;
       if (seq !== requestSeq) return;

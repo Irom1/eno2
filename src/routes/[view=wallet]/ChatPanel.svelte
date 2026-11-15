@@ -30,6 +30,7 @@
   import { followUpsFor } from '$lib/chat/followUps.js';
   import { STARTER_PROMPTS } from '$lib/chat/starters.js';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
+  import { fetchWithSession } from '$lib/sessionRecovery';
   import {
     prefetchAccountDetail,
     prefetchSnapshot,
@@ -258,10 +259,9 @@
     message.text = anomalyExplanation(cards);
   }
 
-  function markError(id: number): void {
+  function markError(id: number, notice = 'Something went wrong. Please try again.'): void {
     const message = findMessage(id);
     if (!message) return;
-    const notice = 'Something went wrong. Please try again.';
     message.text = message.text ? `${message.text}\n\n${notice}` : notice;
     message.pending = false;
   }
@@ -281,13 +281,18 @@
     scrollLog();
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetchWithSession('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ message: value })
-      });
+      }, customerId);
       if (!response.ok || !response.body) {
-        markError(assistantId);
+        // A stale cookie surfaces as 401 "No active session"; the wrapper already
+        // tried to recover. Keep the customer-facing copy generic either way.
+        markError(
+          assistantId,
+          response.status === 401 ? 'Reconnecting failed — try again.' : undefined
+        );
         return false;
       }
 

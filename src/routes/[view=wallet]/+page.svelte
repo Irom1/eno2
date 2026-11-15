@@ -2,6 +2,7 @@
   import { accountProduct } from '$lib/products';
   import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
   import { customerHref, orderCustomers, savedCustomerId, rememberCustomerId } from '$lib/customerSelection';
+  import { fetchWithSession } from '$lib/sessionRecovery';
   import { demoCreditScore, creditScoreRating } from '$lib/creditWise';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -326,7 +327,7 @@
       if (seq !== snapshotSeq) return;
       if (!sessionResponse.ok) throw new Error('Could not start a session.');
 
-      const accountsResponse = await fetch('/api/accounts');
+      const accountsResponse = await fetchWithSession('/api/accounts', {}, customerId);
       if (seq !== snapshotSeq) return;
       if (!accountsResponse.ok) throw new Error('Could not load accounts.');
 
@@ -372,11 +373,11 @@
     closingProfile = true;
     closeProfileError = '';
     try {
-      const response = await fetch('/api/profile', {
+      const response = await fetchWithSession('/api/profile', {
         method: 'DELETE',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ customerId: closingCustomer.id })
-      });
+      }, closingCustomer.id);
       if (response.status === 204) {
         window.location.replace('/');
         return;
@@ -777,7 +778,7 @@
 
             {#if liveAccounts.length > 0}
             <div class="score-cards">
-              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} />
+              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={routeCustomerId} />
               <ScoreCard
                 title="CreditWise"
                 logoLight={creditWiseLogoLight}
@@ -864,6 +865,7 @@
           {accountId}
           {tab}
           {heading}
+          customerId={routeCustomerId}
           onTabChange={(nextTab) => openAccountView(accountId, nextTab)}
           {focusTransactionId}
           onAccountDeleted={handleAccountDeleted}
