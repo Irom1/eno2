@@ -209,6 +209,13 @@ describe('fetchWithSession', () => {
     expect(calls).toEqual(['/api/session']);
   });
 
+  it('never replays an uncertain account or card creation request after a network error', async () => {
+    const transport = vi.fn().mockRejectedValue(new TypeError('offline'));
+    vi.stubGlobal('fetch', transport);
+    await expect(recovery.fetchWithSession('/api/accounts/open', { method: 'POST', body: '{}' }, 'cust-1')).rejects.toThrow('offline');
+    expect(transport).toHaveBeenCalledOnce();
+  });
+
   it('clones a Request body so it survives the retry', async () => {
     if (typeof Request === 'undefined') return;
     const calls: Array<RequestInfo | URL> = [];

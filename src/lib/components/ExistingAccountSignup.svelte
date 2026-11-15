@@ -1,6 +1,8 @@
 <script lang="ts">
   import '$lib/assets/message-composer.css';
   import { createConversationPacer } from '$lib/conversationPacing';
+  import { finishAccountSetup } from '$lib/accountSetup';
+  import { fetchWithSession } from '$lib/sessionRecovery';
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
   import CapitalOneLogo from '../../routes/[view=wallet]/CapitalOneLogo.svelte';
@@ -55,7 +57,7 @@
     try { localStorage.setItem('dashboard-theme', theme); } catch { /* Theme still works in this tab. */ }
   }
   async function loadChoices() {
-    const response = await fetch(`/api/accounts/open${profileId ? `?customer=${encodeURIComponent(profileId)}` : ''}`);
+    const response = await fetchWithSession(`/api/accounts/open${profileId ? `?customer=${encodeURIComponent(profileId)}` : ''}`, undefined, profileId);
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'I couldn’t check your accounts right now.');
     profileId = result.customer.id;
@@ -108,11 +110,11 @@
     await addEno(`On it — I’m setting up ${labels.join(' and ')} with sample activity. I’ll take you straight back to your dashboard when it’s ready.`);
     if (disposed) return;
     try {
-      const response = await fetch('/api/accounts/open', {
+      const response = await fetchWithSession('/api/accounts/open', {
         method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': attemptKey },
         body: JSON.stringify({ customerId: profileId, products: selected })
-      });
-      const result = await response.json();
+      }, profileId);
+      let result = await response.json();
       if (disposed) return;
       if (!response.ok) {
         if (response.status === 409) {
@@ -125,6 +127,7 @@
         return;
       }
       locked = true;
+      result = await finishAccountSetup(result);
       if (result.accountError) { await addEno(result.accountError); return; }
       rememberCustomerId(profileId);
       await goto(dashboard);

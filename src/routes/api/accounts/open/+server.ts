@@ -37,6 +37,6 @@ export async function POST({ request, cookies, url, platform }: RequestEvent) {
   try {
     const result = await openExistingAccounts(session.customer.id, parsed.data.products, key, resolveEnv(platform));
     if (result.accounts) session.accounts = result.accounts;
-    return json(result, { status: result.accountError ? 202 : 201 });
+    return json(result, { status: result.accountError || result.setupToken ? 202 : 201 });
   } catch (error) { return failure(error); }
 }

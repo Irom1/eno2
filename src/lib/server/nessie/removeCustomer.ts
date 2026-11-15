@@ -23,8 +23,10 @@ export async function setCustomerRemoved(customerId: string, removed: boolean, r
   const url = new URL(path, runtime.NESSIE_BASE_URL);
   url.searchParams.set('key', runtime.NESSIE_API_KEY);
   try {
-    const response = await fetchImpl(url, { method: 'PUT', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ first_name: targetName }), signal: AbortSignal.timeout(15_000), redirect: 'error' });
-    if (!response.ok) throw new Error('Update failed');
+    const response = await fetchImpl(url, { method: 'PUT', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ first_name: targetName }), signal: AbortSignal.timeout(15_000), redirect: 'manual' });
+    const ok = response.ok;
+    await response.body?.cancel();
+    if (!ok) throw new Error('Update failed');
     const saved = await reader.get<Record<string, unknown>>(path);
     if (customerFirstName(saved) !== targetName) throw new Error('Update not confirmed');
   } catch { throw new CustomerRemovalError('Couldn’t confirm the change. Refresh the account list before trying again.', 502); }

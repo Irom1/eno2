@@ -37,12 +37,13 @@ export async function createNessieCustomer(
   try {
     response = await fetchImpl(url, {
       method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(input), redirect: 'error', signal: AbortSignal.timeout(15_000)
+      body: JSON.stringify(input), redirect: 'manual', signal: AbortSignal.timeout(15_000)
     });
   } catch {
     throw new CustomerCreationError('I couldn’t confirm whether your profile was created. Head back to Sign in and check for your name before starting again.', 502, true);
   }
   if (!response.ok) {
+    await response.body?.cancel();
     throw new CustomerCreationError(
       response.status === 400 ? 'Something in the address didn’t go through. Give it a quick check and try again.' : 'Sign-up hit a little bump. Your answers are still here — please try again.',
       response.status === 400 ? 400 : 502,

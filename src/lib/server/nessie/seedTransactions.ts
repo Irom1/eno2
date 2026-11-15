@@ -140,9 +140,11 @@ export async function seedNessieTransactions(
         try {
           const response = await fetchImpl(url, {
             method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' },
-            body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(15_000)
+            body: JSON.stringify(body), redirect: 'manual', signal: AbortSignal.timeout(15_000)
           });
-          if (!response.ok) { failed = true; return; }
+          const ok = response.ok;
+          await response.body?.cancel();
+          if (!ok) { failed = true; return; }
           created += 1;
         } catch { failed = true; return; }
       }

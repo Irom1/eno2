@@ -89,3 +89,14 @@ it('a late response for an older account list cannot replace the newer cached re
   await old;
   expect(cache.peek('ada', 90, ['a', 'new'])?.score).toBe(700);
 });
+
+it('recovers a forgotten Worker session before retrying the ClimateWise report', async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(new Response('', { status: 401 }))
+    .mockResolvedValueOnce(Response.json({ customer: { id: 'ada' } }))
+    .mockResolvedValueOnce(Response.json({ customer: { id: 'ada' }, report }));
+  vi.stubGlobal('fetch', fetch);
+  const cache = createClimateReportCache(() => undefined);
+  await expect(cache.load('ada', ['a'])).resolves.toEqual(report);
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/climate?days=90&customer=ada', '/api/session', '/api/climate?days=90&customer=ada']);
+  expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ customerId: 'ada' });
+});

@@ -6,6 +6,7 @@ import type { RuntimeEnv } from '../env';
 import { NessieClient, type FetchLike } from './client';
 import { isClosedProfile } from './closeProfile';
 import { createNessieAccounts } from './createAccounts';
+import { combineAccountSetups } from './accountSetup';
 
 type Runtime = Pick<RuntimeEnv, 'NESSIE_API_KEY' | 'NESSIE_BASE_URL'>;
 export class AccountOpeningError extends Error {
@@ -27,7 +28,7 @@ export async function readAccountOpeningState(customerId: string, runtime: Runti
 }
 
 type State = Awaited<ReturnType<typeof readAccountOpeningState>>;
-type Outcome = { customerId: string; accounts?: State['accounts']; accountError?: string };
+type Outcome = { customerId: string; accounts?: State['accounts']; accountError?: string; setupToken?: string };
 const attempts = new Map<string, { fingerprint: string; createdAt: number; result: Promise<Outcome> }>();
 const activeCustomers = new Set<string>();
 
@@ -55,6 +56,7 @@ export async function openExistingAccounts(customerId: string, ids: AccountProdu
         throw new AccountOpeningError('You already have one of those accounts. I’ve refreshed the remaining choices.');
       }
       let accountError: string | undefined;
+      const setupTokens: string[] = [];
       for (const id of ids) {
         const product = openingProducts.find((option) => option.id === id)!;
         const card = id === 'checking' || id === 'savings' ? null : demoCard(id, product.description);
@@ -62,13 +64,14 @@ export async function openExistingAccounts(customerId: string, ids: AccountProdu
         let outcome;
         try { outcome = await createNessieAccounts(customerId, [product.type], runtime, fetchImpl, { card, categories }); }
         catch { accountError = 'I couldn’t confirm the account request. Check your dashboard before opening another account.'; break; }
+        if (outcome.setupToken) setupTokens.push(outcome.setupToken);
         if (outcome.accountError) { accountError = outcome.accountError; break; }
       }
       try {
         const after = await readAccountOpeningState(customerId, runtime, fetchImpl);
-        return { customerId, accounts: after.accounts, ...(accountError ? { accountError } : {}) };
+        return { customerId, accounts: after.accounts, setupToken: await combineAccountSetups(setupTokens, runtime), ...(accountError ? { accountError } : {}) };
       } catch {
-        return { customerId, accountError: accountError ?? 'Your account request was sent, but I couldn’t refresh the list. Check your dashboard before opening another account.' };
+        return { customerId, setupToken: await combineAccountSetups(setupTokens, runtime), accountError: accountError ?? 'Your account request was sent, but I couldn’t refresh the list. Check your dashboard before opening another account.' };
       }
     } finally { activeCustomers.delete(customerId); }
   })();

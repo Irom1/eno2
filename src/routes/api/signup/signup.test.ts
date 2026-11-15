@@ -55,3 +55,21 @@ it('creates from the matched address and keeps repeat submissions idempotent', a
   expect(createNessieCustomer).toHaveBeenCalledExactlyOnceWith({ first_name: 'Demo', last_name: 'Tester', address: standardized }, {});
   expect(createNessieAccounts).toHaveBeenCalledExactlyOnceWith('created-demo', ['Checking', 'Savings'], {}, undefined, { card: null, categories: [] });
 });
+
+it('returns the confirmed profile and continuation before sample activity is seeded', async () => {
+  vi.mocked(verifyAddress).mockResolvedValue({ status: 'matched', message: 'Matched', address });
+  vi.mocked(createNessieCustomer).mockResolvedValue({ customerId: 'created-demo' });
+  vi.mocked(createNessieAccounts).mockResolvedValue({ setupToken: 'signed-setup' });
+  const response = await POST(event());
+  expect(response.status).toBe(201);
+  expect(await response.json()).toEqual({ customerId: 'created-demo', created: true, setupToken: 'signed-setup' });
+});
+
+it('retains the confirmed profile if subsequent account setup throws', async () => {
+  vi.mocked(verifyAddress).mockResolvedValue({ status: 'matched', message: 'Matched', address });
+  vi.mocked(createNessieCustomer).mockResolvedValue({ customerId: 'created-demo' });
+  vi.mocked(createNessieAccounts).mockRejectedValue(new Error('Setup failed'));
+  const response = await POST(event());
+  expect(response.status).toBe(201);
+  expect(await response.json()).toMatchObject({ customerId: 'created-demo', created: true, accountError: expect.any(String) });
+});

@@ -44,7 +44,9 @@ const report = {
 test.describe('ClimateWise adaptive card', () => {
 	test('switches layout, ring size, and rows as the stage resizes', async ({ page }) => {
 		const errors = collectErrors(page);
-		await page.route('**/api/climate**', (route) => route.fulfill({ json: { report } }));
+		const customer = { id: 'climate-demo', firstName: 'Climate', lastName: 'Demo' };
+		await page.route('**/api/session', (route) => route.fulfill({ json: { customer, accounts: [{ id: 'checking' }] } }));
+		await page.route('**/api/climate**', (route) => route.fulfill({ json: { customer, report } }));
 
 		await page.goto('/climatewise');
 
@@ -64,10 +66,10 @@ test.describe('ClimateWise adaptive card', () => {
 
 		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 		await page.mouse.down();
-		await page.mouse.move(box.x + box.width / 2 + 460, box.y + box.height / 2 - 240, { steps: 12 });
+		await page.mouse.move(box.x + box.width / 2 + 460, box.y + box.height / 2 - 260, { steps: 12 });
 		await page.mouse.up();
 
-		await expect(page.locator('.dims')).toHaveText('900 × 520');
+		await expect(page.locator('.dims')).toHaveText('900 × 500');
 		await expect(card).toHaveAttribute('data-mode', 'wide');
 		await expect(card).toHaveAttribute('data-layout', 'wide');
 		await expect(card).toHaveAttribute('data-density', 'short');

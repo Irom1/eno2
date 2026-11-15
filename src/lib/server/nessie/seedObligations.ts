@@ -34,8 +34,10 @@ export async function seedNessieObligations(accountId: string, type: DemoAccount
     const url = new URL(`/accounts/${encodeURIComponent(accountId)}/${item.path}`, runtime.NESSIE_BASE_URL);
     url.searchParams.set('key', runtime.NESSIE_API_KEY);
     try {
-      const response = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(item.body), signal: AbortSignal.timeout(15_000), redirect: 'error' });
-      if (!response.ok) return { bills, loans, complete: false };
+      const response = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(item.body), signal: AbortSignal.timeout(15_000), redirect: 'manual' });
+      const ok = response.ok;
+      await response.body?.cancel();
+      if (!ok) return { bills, loans, complete: false };
       if (item.path === 'bills') bills++; else loans++;
     } catch { return { bills, loans, complete: false }; }
   }

@@ -172,6 +172,11 @@ for (const selection of [
     const card = { id: 'savor', name: 'Savor', nickname: 'Savor · Eno demo', reason: 'Dining comes first for you.', url: 'https://www.capitalone.com/credit-cards/savor/' };
     const turns: Record<string, unknown>[] = [];
     let created: Record<string, unknown> | undefined;
+    const setupTokens: string[] = [];
+    await page.route('**/api/accounts/setup', (route) => {
+      setupTokens.push(route.request().postDataJSON().token);
+      return route.fulfill({ status: setupTokens.length === 1 ? 202 : 200, json: { customerId: customer.id, ...(setupTokens.length === 1 ? { setupToken: 'second-batch' } : {}) } });
+    });
     await page.route('**/api/signup/chat', (route) => {
       const body = route.request().postDataJSON(); turns.push(body);
       const base = { answers, confirmed: false, addressCheck: { status: 'matched', message: 'Street address matched.' } };
@@ -182,7 +187,7 @@ for (const selection of [
       if (body.selectedSpending) return route.fulfill({ json: { ...base, message: 'Savor is your match. Keep the accounts you want.', accountChoice: 'undecided', includeCreditCard: null, spending: preferences, stage: 'accounts', card, recommendedCard: card, ready: false } });
       return route.fulfill({ json: { ...base, message: 'What spending matters most to you?', accountChoice: 'undecided', includeCreditCard: null, spending: { status: 'undecided', categories: [] }, stage: 'spending', card: null, recommendedCard: null, ready: false } });
     });
-    await page.route('**/api/signup', (route) => { created = route.request().postDataJSON(); return route.fulfill({ status: 201, json: { customerId: customer.id, created: true } }); });
+    await page.route('**/api/signup', (route) => { created = route.request().postDataJSON(); return route.fulfill({ status: 201, json: { customerId: customer.id, created: true, ...(selection.checking ? { setupToken: 'first-batch' } : {}) } }); });
     await page.route('**/api/customers*', (route) => route.fulfill({ json: { customers: [customer] } }));
     await page.route('**/api/session', (route) => route.fulfill({ json: { customer, accounts: [] } }));
     await page.route('**/api/accounts', (route) => route.fulfill({ json: { customer, accounts: [], bills: [], loans: [], recentActivity: [] } }));
@@ -210,6 +215,7 @@ for (const selection of [
     expect(created).toBeUndefined();
     await say(page, selection.approval);
     await expect(page).toHaveURL(/dashboard\?customer=new-ada$/);
+    expect(setupTokens).toEqual(selection.checking ? ['first-batch', 'second-batch'] : []);
     expect(turns).toHaveLength(3);
     expect(created).toMatchObject({ includeCreditCard: selection.creditCard, accountChoice: selection.checking ? selection.savings ? 'both' : 'checking' : 'none' });
     expect(turns[2].selectedAccounts).toEqual({ checking: selection.checking, savings: selection.savings, creditCard: selection.creditCard });

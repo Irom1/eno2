@@ -1,4 +1,5 @@
 import type { ClimateReport } from './emissions';
+import { fetchWithSession } from '../sessionRecovery';
 
 interface Entry { accountIds: string[]; report: ClimateReport }
 type SessionStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -46,7 +47,7 @@ export function createClimateReportCache(readStorage: () => SessionStorage | und
     const token = Symbol();
     latest.set(key, token);
     const result = (async () => {
-      const response = await fetch(`/api/climate?days=${days}&customer=${encodeURIComponent(customerId)}`, { signal: AbortSignal.timeout(60_000) });
+      const response = await fetchWithSession(`/api/climate?days=${days}&customer=${encodeURIComponent(customerId)}`, { signal: AbortSignal.timeout(60_000) }, customerId);
       if (!response.ok) throw new Error('Could not load the report.');
       const data = await response.json();
       const entry: Entry = { accountIds: [...accountIds], report: data.report };

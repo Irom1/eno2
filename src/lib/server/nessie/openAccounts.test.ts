@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { openExistingAccounts, readAccountOpeningState } from './openAccounts';
+import { continueAccountSetup } from './accountSetup';
 
 const runtime = { NESSIE_API_KEY: 'test-key', NESSIE_BASE_URL: 'https://nessie.test' };
 function nessie(initial: Record<string, unknown>[] = []) {
@@ -34,7 +35,10 @@ it('adds multiple remaining products to the existing customer with 100 persisted
   const before = await readAccountOpeningState(fake.customerId, runtime, fake.transport);
   expect(before.available.some((option) => option.id === 'checking')).toBe(false);
   const result = await openExistingAccounts(fake.customerId, ['savings', 'savor', 'venture'], crypto.randomUUID(), runtime, fake.transport);
-  expect(result.accountError).toBeUndefined();
+  let setup = result;
+  for (let step = 0; setup.setupToken && step < 60; step++) setup = await continueAccountSetup(setup.setupToken, runtime, fake.transport);
+  expect(setup.accountError).toBeUndefined();
+  expect(setup.setupToken).toBeUndefined();
   expect(result.accounts).toHaveLength(4);
   expect(fake.accounts[0].balance).toBe(900);
   for (const account of fake.accounts.slice(1)) {

@@ -45,6 +45,7 @@ export class NessieClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
   private readonly cache = new Map<string, CacheEntry>();
+  private readonly pending = new Map<string, Promise<unknown>>();
 
   constructor(options: NessieClientOptions = {}) {
     // The runtime key is always supplied by the caller (platform env / dev env).
@@ -61,6 +62,16 @@ export class NessieClient {
     path: string,
     params?: Record<string, string | number | undefined>,
   ): Promise<T> {
+    const key = JSON.stringify([path, Object.entries(params ?? {}).sort(([a], [b]) => a.localeCompare(b))]);
+    const existing = this.pending.get(key);
+    if (existing) return existing as Promise<T>;
+    const result = this.read<T>(path, params);
+    this.pending.set(key, result);
+    try { return await result; }
+    finally { this.pending.delete(key); }
+  }
+
+  private async read<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
     const key = this.apiKey;
     if (!key || !key.trim()) {
       throw new NessieError(
@@ -100,15 +111,18 @@ export class NessieClient {
         const response = await fetchImpl(url, {
           signal: AbortSignal.timeout(TIMEOUT_MS),
           headers: { accept: "application/json" },
+          redirect: 'manual',
         });
 
         if (response.status >= 500 && attempt === 0) {
+          await response.body?.cancel();
           attempt += 1;
           continue;
         }
 
         const customerBills = normalizedPath.match(/^\/customers\/([^/]+)\/bills$/);
         if (response.status === 400 && customerBills) {
+          await response.body?.cancel();
           // Nessie's aggregate bill endpoint can fail while deserializing an
           // unrelated/orphaned bill. Read only the customer's owned accounts;
           // every returned bill still comes from Nessie, never sample UI data.
@@ -125,6 +139,7 @@ export class NessieClient {
           return data as T;
         }
         if (!response.ok) {
+          await response.body?.cancel();
           throw new NessieError(
             `Nessie request failed with status ${response.status}`,
             normalizedPath,
