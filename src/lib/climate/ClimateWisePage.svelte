@@ -316,6 +316,13 @@
 		display: block;
 		padding: 0;
 		background: transparent;
+		/* Fixed list contract (normal density):
+		   24px padding + 20px title + 8px gap + 52px head (44 + 8) + 198px body. */
+		--cw-list-pad: 24px;
+		--cw-list-title: 20px;
+		--cw-list-title-gap: 8px;
+		--cw-list-head: 52px;
+		--cw-list-body: 198px;
 	}
 	.cw.embedded .page-controls { display: none; }
 	.cw.embedded .card {
@@ -323,28 +330,30 @@
 		max-width: 100%;
 		height: auto;
 	}
-	/* With no fixed card height, let the grid and list size to their content
-	   instead of collapsing a `flex: 1` child to zero. The list body keeps a
-	   fixed minimum so picking a category does not resize the card. */
+	/* With no fixed card height, let the grid size to its content and pin the
+	   list to one exact height, so hover/select/clear can never resize the card. */
 	.cw.embedded .card > .grid { flex: none; }
+	.cw.embedded .list {
+		flex: none;
+		min-width: 0;
+		height: calc(
+			var(--cw-list-pad) + var(--cw-list-title) + var(--cw-list-title-gap) + var(--cw-list-head) +
+				var(--cw-list-body)
+		);
+	}
+	/* The list body fills whatever the fixed height leaves; never grow the list. */
+	.cw.embedded .pick,
 	.cw.embedded .items {
-		flex: none;
-		min-height: 198px;
+		flex: 1;
+		min-height: 0;
 	}
-	/* The empty pick panel reserves the same height as the populated panel:
-	   44px list head + 8px margin + 198px items = 250px. */
-	.cw.embedded .pick {
-		flex: none;
-		min-height: 250px;
-	}
-	.cw.embedded .card[data-density='short'] .items {
-		flex: none;
-		min-height: 124px;
-	}
-	/* Short density: 30px list head + 3px margin + 124px items = 157px. */
-	.cw.embedded .card[data-density='short'] .pick {
-		flex: none;
-		min-height: 157px;
+	/* Short density: 14px padding + 16px title + 5px gap + 33px head (30 + 3) + 124px body. */
+	.cw.embedded .card[data-density='short'] {
+		--cw-list-pad: 14px;
+		--cw-list-title: 16px;
+		--cw-list-title-gap: 5px;
+		--cw-list-head: 33px;
+		--cw-list-body: 124px;
 	}
 	.cw[data-theme='dark'] { --dark: initial; --light: ; }
 	@media (prefers-color-scheme: dark) { .cw[data-theme='system'] { --dark: initial; --light: ; } }
@@ -474,8 +483,18 @@
 	}
 
 	.list { grid-area: list; align-self: stretch; display: flex; flex-direction: column; min-height: 0; padding: 14px 14px 10px; }
-	/* Title lives here in both the pick and selected states, outside the pick/items height math. */
-	.list-title { flex: none; margin-bottom: 8px; overflow-wrap: anywhere; }
+	/* Title lives here in both the pick and selected states, outside the pick/items height math.
+	   A fixed line box + ellipsis means wrapping can never change the list (and card) height. */
+	.list-title {
+		flex: none;
+		min-width: 0;
+		height: 20px;
+		line-height: 20px;
+		margin-bottom: 8px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 	/*
 	 * The list head and CTA stay put; only the rows themselves scroll, so hovering
 	 * between categories never changes the card's size or shifts the ring.
@@ -546,7 +565,7 @@
 	.card[data-density='short'] .foot-value small { font-size: 11px; }
 	.card[data-density='short'] .foot-sub { font-size: 10px; }
 	.card[data-density='short'] .list { padding: 8px 10px 6px; }
-	.card[data-density='short'] .list-title { margin-bottom: 5px; }
+	.card[data-density='short'] .list-title { height: 16px; line-height: 16px; margin-bottom: 5px; }
 	.card[data-density='short'] .list-head { height: auto; min-height: 30px; margin-bottom: 3px; }
 	.card[data-density='short'] .list-head h2 { font-size: 14px; }
 	.card[data-density='short'] .list-head p { margin-top: 1px; font-size: 11.5px; }

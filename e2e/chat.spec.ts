@@ -599,27 +599,47 @@ test.describe('chat prompts', () => {
     ).toBe(false);
     await expect(page.locator('.bubble.assistant .climatewise-chat-card')).toHaveCount(0);
 
-    // The card keeps the same height in the empty pick state, on hover, and after
-    // selecting/deselecting a category. Only the list body's contents may change.
-    const emptyHeight = (await card.boundingBox())?.height ?? 0;
-    expect(emptyHeight, 'the card has a measurable height').toBeGreaterThan(0);
+    // The card keeps the same bounding box in the empty pick state, on hover, after
+    // selecting, and after clearing. Only the list body's contents may change.
+    const measureCard = async () => {
+      const outer = await card.boundingBox();
+      const inner = await card.locator('article.card').boundingBox();
+      return {
+        outerWidth: outer?.width ?? 0,
+        outerHeight: outer?.height ?? 0,
+        innerWidth: inner?.width ?? 0,
+        innerHeight: inner?.height ?? 0
+      };
+    };
+    const expectSameBox = async (
+      expected: Awaited<ReturnType<typeof measureCard>>,
+      label: string
+    ) => {
+      const actual = await measureCard();
+      expect(Math.abs(actual.outerWidth - expected.outerWidth), `${label}: outer width`).toBeLessThanOrEqual(1);
+      expect(Math.abs(actual.outerHeight - expected.outerHeight), `${label}: outer height`).toBeLessThanOrEqual(1);
+      expect(Math.abs(actual.innerWidth - expected.innerWidth), `${label}: inner width`).toBeLessThanOrEqual(1);
+      expect(Math.abs(actual.innerHeight - expected.innerHeight), `${label}: inner height`).toBeLessThanOrEqual(1);
+    };
+
+    const emptyBox = await measureCard();
+    expect(emptyBox.outerHeight, 'the card has a measurable height').toBeGreaterThan(0);
+    expect(emptyBox.outerWidth, 'the card has a measurable width').toBeGreaterThan(0);
 
     await card.locator('.ring .seg[aria-label^="Travel & transport:"]').hover();
     await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
-    const hoverHeight = (await card.boundingBox())?.height ?? 0;
-    expect(
-      Math.abs(hoverHeight - emptyHeight),
-      'hovering a ring slice does not resize the card'
-    ).toBeLessThanOrEqual(1);
+    await expectSameBox(emptyBox, 'hovering a ring slice');
 
     // Clicking another category also leaves the card the same size.
     await card.getByRole('button', { name: /Food & dining:/ }).click();
     await expect(card.locator('.list-head h2')).toHaveText('Food & dining');
-    const selectedHeight = (await card.boundingBox())?.height ?? 0;
-    expect(
-      Math.abs(selectedHeight - emptyHeight),
-      'selecting a category does not resize the card'
-    ).toBeLessThanOrEqual(1);
+    await expectSameBox(emptyBox, 'selecting a category');
+
+    // Clearing the category returns to the pick state without resizing the card.
+    await page.mouse.move(0, 0);
+    await card.locator('.list-head .clear').click();
+    await expect(card.locator('.pick')).toBeVisible();
+    await expectSameBox(emptyBox, 'clearing the selected category');
 
     // Selecting a ring slice reveals that category's purchases.
     await card.getByRole('button', { name: /Travel & transport:/ }).click();
