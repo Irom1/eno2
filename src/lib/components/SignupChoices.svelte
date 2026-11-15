@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionIcon from '$lib/components/ActionIcon.svelte';
   import { products } from '$lib/products';
   import { brandedCardName, categoryLabels, type DemoCard, type SpendingCategory } from '$lib/spending';
   import type { AccountSelection } from '$lib/signup';
@@ -46,9 +47,9 @@
         <span>{brandedCardName(card)} credit card<small>{card?.reason ?? 'An all-around match for everyday spending.'}</small></span>
       </label>
     </fieldset>
-    {#if card}<a class="product-link" href={card.url} target="_blank" rel="noreferrer">About {brandedCardName(card)} ↗</a>{/if}
+    {#if card}<a class="product-link" href={card.url} target="_blank" rel="noreferrer">About {brandedCardName(card)} <ActionIcon name="external" size={14} /></a>{/if}
   {/if}
-  <button class="setup-action" type="button" aria-label={step === 'spending' ? 'Confirm spending categories' : 'Confirm selected accounts'} disabled={disabled || (step === 'spending' && !categories.length)} onclick={oncontinue}>Continue <span aria-hidden="true">→</span></button>
+  <button class="setup-action" type="button" aria-label={step === 'spending' ? 'Confirm spending categories' : 'Confirm selected accounts'} disabled={disabled || (step === 'spending' && !categories.length)} onclick={oncontinue}>Continue <ActionIcon /></button>
 </div>
 
 <style>

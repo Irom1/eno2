@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createSentMessageMotion } from '$lib/sentMessageMotion';
+  const sentMotion = createSentMessageMotion();
   import { onDestroy, onMount, tick } from 'svelte';
   import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import { ENO_INTRO } from '$lib/chat/intro';
@@ -322,6 +324,7 @@
   async function send(text: string): Promise<boolean> {
     const value = text.trim();
     if (!value || !ready || streaming) return false;
+    sentMotion.capture();
 
     stopSpeech();
     const requestId = ++requestSeq;
@@ -875,7 +878,7 @@
     {#each messages as message (message.id)}
       {#if message.role === 'user'}
         <div class="from-you">
-          <div class="bubble user">{message.text}</div>
+          <div class="bubble user" use:sentMotion.bubble={true}>{message.text}</div>
           <span class="sender">You</span>
         </div>
       {:else}

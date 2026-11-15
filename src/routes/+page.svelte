@@ -1,7 +1,8 @@
 <script lang="ts">
+  import ActionIcon from '$lib/components/ActionIcon.svelte';
   import '$lib/assets/message-composer.css';
   import { goto } from '$app/navigation';
-  import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
+  import AccountWheel from '$lib/components/AccountWheel.svelte';
   import { firstAccountPrompt } from '$lib/firstAccountPrompt';
   import { onMount, tick } from 'svelte';
   import Eno from '$lib/components/Eno.svelte';
@@ -18,7 +19,6 @@
   const features = [
     {
       id: 'eno',
-      icon: '✦',
       title: 'AI-first banking',
       description: 'Ask Eno about your money in your own words. Powered by Gemini.'
     },
@@ -54,9 +54,7 @@
   let customers = $state<Customer[]>([]);
   let customersLoading = $state(true);
   let customersError = $state(false);
-  let signInArea: HTMLDivElement;
   let signInButton: HTMLButtonElement;
-  let accountList = $state<HTMLDivElement>();
   let sendingAccountPrompt = $state(false);
 
   async function sendAccountPrompt(event: MouseEvent & { currentTarget: HTMLAnchorElement }) {
@@ -66,20 +64,11 @@
 
     const link = event.currentTarget;
     sendingAccountPrompt = true;
-    let animation: Animation | undefined;
     try {
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        animation = link.animate([
-          { transform: 'scale(0.97)', offset: 0.2 },
-          { transform: 'translateY(-24px) scale(0.95)', opacity: 0 }
-        ], { duration: 280, easing: 'ease-out', fill: 'forwards' });
-        await animation.finished.catch(() => undefined);
-      }
       if (link.isConnected) await goto(link.href);
     } catch {
       if (link.isConnected) location.assign(link.href);
     } finally {
-      animation?.cancel();
       sendingAccountPrompt = false;
     }
   }
@@ -106,13 +95,12 @@
     if (accountsOpen && products) products.open = false;
     if (accountsOpen) {
       await tick();
-      accountList?.querySelector<HTMLElement>('a, button')?.focus();
-    }
-  }
-
-  function handleWindowClick(event: MouseEvent): void {
-    if (accountsOpen && !event.composedPath().includes(signInArea)) {
-      accountsOpen = false;
+      const hero = document.querySelector<HTMLElement>('.hero');
+      if (hero && hero.getBoundingClientRect().top < 0) hero.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+      (document.querySelector<HTMLElement>('#account-list .wheel') ?? document.querySelector<HTMLElement>('#account-list .retry') ?? document.querySelector<HTMLElement>('#account-list .back'))?.focus({ preventScroll: true });
+    } else {
+      await tick();
+      signInButton?.focus({ preventScroll: true });
     }
   }
 
@@ -120,8 +108,7 @@
     closeProducts(event);
     if (accountsOpen && event.key === 'Escape') {
       event.preventDefault();
-      accountsOpen = false;
-      signInButton?.focus();
+      void setAccountsOpen(false);
     }
   }
 
@@ -162,12 +149,11 @@
 <svelte:head>
   <title>Eno 2.0 | A new day in banking</title>
   <meta name="description" content="Explore conversational banking and get to know your wallet with the Eno 2.0 demo." />
-  <link rel="preload" href="/rolling-hills.svg" as="image" media="(width > 690px)" />
-  <link rel="preload" href="/rolling-hills-mobile.svg" as="image" media="(max-width: 690px)" />
+  <link rel="preload" href="/sign-in-hills.svg" as="image" />
 </svelte:head>
 
 
-<svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div class="site landing" class:dark={isDark} data-theme={theme}>
   <header>
@@ -221,13 +207,14 @@
   </header>
 
   <main>
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="intro">
+    <section class="hero" class:choosing={accountsOpen} aria-label={accountsOpen ? 'Sign in' : undefined} aria-labelledby={accountsOpen ? undefined : 'hero-title'}>
+      <div class="hills" aria-hidden="true"></div>
+      <div class="intro" inert={accountsOpen}>
         <h1 id="hero-title">A new day in banking</h1>
         <p>Find out what’s <em>really</em> in your wallet.</p>
       </div>
 
-      <div class="features">
+      <div class="features" inert={accountsOpen}>
         {#each features as feature (feature.id)}
           <article id={feature.id} tabindex="-1">
             <span class="feature-icon {feature.id}" aria-hidden="true">
@@ -242,7 +229,7 @@
                   <path d="M4 20c2-4 6-7 10-10" />
                 </svg>
               {:else}
-                {feature.icon}
+                <Eno variant="light" size={26} alt="" />
               {/if}
             </span>
             <h2>{feature.title}</h2>
@@ -251,27 +238,30 @@
         {/each}
       </div>
 
-      <div class="foreground">
-        <div class="hills" aria-hidden="true"></div>
+      <div class="foreground" inert={accountsOpen}>
+        <div class="landing-hills" aria-hidden="true"></div>
         <a class="account-link message-composer" href="/setup?start=signup" onclick={sendAccountPrompt} aria-disabled={sendingAccountPrompt}>
-          {firstAccountPrompt} <span class="message-send" aria-hidden="true">↑</span>
+          {firstAccountPrompt} <span class="message-send" aria-hidden="true"><ActionIcon name="up" size={22} /></span>
         </a>
         <span class="send-status" role="status">{sendingAccountPrompt ? 'Sending message…' : ''}</span>
-        <div class="sign-in-area" bind:this={signInArea}>
+        <div class="sign-in-area">
           <button type="button" class="existing-account-link" disabled={!ready} bind:this={signInButton}
             aria-expanded={accountsOpen} aria-controls="account-list" onclick={() => setAccountsOpen(!accountsOpen)}>
-            Already have an account? <strong>Sign in</strong>
+            Already have an account? <strong>Sign in to demo</strong>
           </button>
-          <CustomerDropdown id="account-list" {customers} dark={isDark} open={accountsOpen}
-            loading={customersLoading} error={customersError} bind:element={accountList} onretry={loadCustomers} />
+
         </div>
       </div>
+      {#if accountsOpen}
+        <AccountWheel {customers} loading={customersLoading} error={customersError} onretry={loadCustomers}
+          onclose={() => setAccountsOpen(false)} />
+      {/if}
     </section>
   </main>
 
   <footer>
     <p>Independent demo, unaffiliated with Capital One. HackUMass 2026 project.</p>
-    <a href="https://github.com/Irom1/eno2">View on GitHub <span aria-hidden="true">↗</span></a>
+    <a href="https://github.com/Irom1/eno2">View on GitHub <ActionIcon name="external" /></a>
   </footer>
 </div>
 
@@ -392,10 +382,11 @@
   .theme-toggle:hover { background: var(--control-hover); }
 
   .hero {
+    position: relative;
     box-sizing: border-box;
     min-height: clamp(650px, calc(100svh - 145px), 820px);
     border-radius: clamp(22px, 3.1vw, 44px);
-    overflow: hidden;
+    overflow: clip;
     isolation: isolate;
     display: grid;
     grid-template-rows: 1fr auto 1fr;
@@ -419,7 +410,7 @@
   }
   .dark .intro p, .dark article p { color: var(--muted); }
   .dark article { background: #242424; border-color: #454545; }
-  .dark .hills { filter: brightness(0.64) saturate(0.86); }
+  .dark .hills, .dark .landing-hills { filter: brightness(0.64) saturate(0.86); }
 
   .intro {
     align-self: center;
@@ -440,16 +431,29 @@
     padding: 24px 12px clamp(60px, 10vh, 104px);
   }
 
-  .hills {
+  .landing-hills {
     --hills-image: url('/rolling-hills.svg');
+    position: absolute; z-index: -1; bottom: 0; left: 0; width: 100%; height: 85%; pointer-events: none;
+    background: var(--hills-image) 0 0 / 100% 100% no-repeat;
+  }
+  .landing-hills::after {
+    content: ''; position: absolute; inset: 0;
+    background: url('/images/hero-grain.png') 0 0 / 128px 128px repeat;
+    mask: var(--hills-image) 0 0 / 100% 100% no-repeat;
+  }
+
+  .hills {
+    --hills-image: url('/sign-in-hills.svg');
     position: absolute;
-    z-index: -1;
-    bottom: 0;
+    z-index: 2;
+    top: 0;
     left: 0;
     width: 100%;
-    height: 85%;
+    height: calc(100% + 340px);
+    transform: translateY(100%);
+    transition: transform 1100ms cubic-bezier(.22, .75, .18, 1);
     pointer-events: none;
-    background: var(--hills-image) 0 0 / 100% 100% no-repeat;
+    background: var(--hills-image) 0 0 / 100% 2000px no-repeat;
   }
 
   .hills::after {
@@ -457,7 +461,7 @@
     position: absolute;
     inset: 0;
     background: url('/images/hero-grain.png') 0 0 / 128px 128px repeat;
-    mask: var(--hills-image) 0 0 / 100% 100% no-repeat;
+    mask: var(--hills-image) 0 0 / 100% 2000px no-repeat;
   }
 
   h1 {
@@ -527,12 +531,6 @@
   }
 
   .sign-in-area { position: relative; }
-  .sign-in-area :global(.customer-dropdown) {
-    top: auto;
-    bottom: calc(100% + 8px);
-    right: 50%;
-    translate: 50% 0;
-  }
   .existing-account-link {
     padding: 0;
     border: 0;
@@ -584,16 +582,22 @@
       isolation: auto;
       z-index: auto;
     }
-    .hills {
-      --hills-image: url('/rolling-hills-mobile.svg');
-      height: 135%;
-    }
+    .landing-hills { --hills-image: url('/rolling-hills-mobile.svg'); height: 135%; }
+    .hero.choosing { min-height: 600px; height: calc(100svh - 100px); }
   }
 
   @media (max-width: 440px) {
     .brand { font-size: 1rem; gap: 4px; }
     .brand :global(svg) { width: 84px; }
     .brand :global(img) { width: 28px; height: 28px; }
+  }
+
+  .intro, .features { position: relative; z-index: 1; }
+  .intro, .features, .account-link, .sign-in-area { transition: opacity 130ms ease; }
+  .choosing .intro, .choosing .features, .choosing .account-link, .choosing .sign-in-area { opacity: 0; pointer-events: none; }
+  .choosing .hills { transform: translateY(-100px); }
+  @media (prefers-reduced-motion: reduce) {
+    .hills, .intro, .features, .account-link, .sign-in-area { transition: none; }
   }
 
   button:disabled { opacity: .5; cursor: default; }

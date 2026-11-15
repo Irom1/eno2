@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { signupInputHints } from '$lib/signupInput';
+  import { keyboardComposer } from '$lib/mobileViewport';
+  import ActionIcon from '$lib/components/ActionIcon.svelte';
+  import { createSentMessageMotion } from '$lib/sentMessageMotion';
   import '$lib/assets/message-composer.css';
   import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import ReadAloudButton from '$lib/components/ReadAloudButton.svelte';
@@ -26,6 +30,7 @@
   interface ConversationReply { message: string; answers: SignupAnswers; accountChoice: AccountChoice; spending: SpendingPreferences; includeCreditCard: boolean | null; recommendedCard: DemoCard | null; stage: SignupStage; card: DemoCard | null; ready: boolean; confirmed: boolean; addressCheck?: AddressCheck }
   const draftKey = 'eno-signup-conversation-v2';
   const pacing = createConversationPacer();
+  const sentMotion = createSentMessageMotion();
   let answers = $state(emptyAnswers());
   let accountChoice = $state<AccountChoice>('undecided');
   let spending = $state<SpendingPreferences>(emptySpending());
@@ -56,6 +61,10 @@
   let isDark = $derived(theme === 'dark' || (theme === 'system' && systemDark));
   let busy = $derived(waiting || submitting);
   let input = $state<HTMLInputElement>();
+  const inputHints = $derived(signupInputHints(
+    ready && !busy && !recovery && !createdCustomerId && currentStage === 'details' && messages.at(-1)?.role === 'eno'
+      ? messages.at(-1)!.text : ''
+  ));
   let disposed = false;
   let turnController: AbortController | undefined;
   let speechSupported = $state(false);
@@ -115,7 +124,7 @@
       const url = new URL(page.url);
       url.searchParams.delete('start');
       replaceState(url, page.state);
-      void sendText(firstAccountPrompt);
+      void sendText(firstAccountPrompt, undefined, {}, false);
     } else if (messages.length === 0) {
       messages.push({ id: ++nextId, role: 'eno', text: 'Hey, I’m Eno. Really glad you’re here.\n\nLet’s get you set up. What should I call you?' });
       pacing.enoShown();
@@ -144,8 +153,9 @@
 
   async function send(event: SubmitEvent) { event.preventDefault(); const text = reply.trim(); if (!text || busy || !ready || recovery) return; reply = ''; await sendText(text); }
 
-  async function sendText(text: string, selectedAddress?: MailingAddress, choices: ChoiceInput = {}) {
+  async function sendText(text: string, selectedAddress?: MailingAddress, choices: ChoiceInput = {}, animate = true) {
     if (busy || recovery || createdCustomerId) return;
+    if (animate) sentMotion.capture();
     stopSpeech();
     pacing.userSent();
     const activeChoice = messages.find((message) => message.id === latestChoiceId && message.choices);
@@ -241,6 +251,7 @@
 
   async function confirm() {
     if (busy || recovery || !readyToCreate) return;
+    sentMotion.capture();
     pacing.userSent();
     stopSpeech();
     messages.push({ id: ++nextId, role: 'you', text: 'Looks good. Let’s go.' });
@@ -300,7 +311,7 @@
         {#each messages as message (message.id)}
           <div class="message" class:from-you={message.role === 'you'}>
             {#if message.role === 'eno'}<span class="message-avatar"><Eno variant={isDark ? 'dark' : 'light'} size={40} alt="Eno" /></span>{/if}
-            <div class="bubble"><p>{message.text}</p>
+            <div class="bubble" use:sentMotion.bubble={message.role === 'you'} class:first-account-message={message.id === 1 && message.role === 'you' && message.text === firstAccountPrompt}><p>{message.text}</p>
               {#if message.addressCheck?.status === 'correction'}
                 <div class="address-choices">{#each message.addressCheck.candidates ?? [] as candidate}<button disabled={busy || recovery || !!createdCustomerId} onclick={() => selectAddress(candidate)}>{candidate.label}</button>{/each}</div>
               {/if}
@@ -308,7 +319,7 @@
                 <SignupChoices step={message.choices} bind:categories={message.selectedCategories} bind:selection={message.selection} card={message.recommendedCard} disabled={busy || message.id !== latestChoiceId || recovery || !!createdCustomerId} oncontinue={() => continueChoices(message)} />
               {/if}
               {#if message.review && currentStage === 'review' && message.id === latestReviewId}
-                {#if message.addressCheck?.status === 'matched'}<p class="address-matched">✓ Street address matched</p>{/if}
+                {#if message.addressCheck?.status === 'matched'}<p class="address-matched"><ActionIcon name="check" size={14} /> Street address matched</p>{/if}
                 <div class="profile-preview" aria-label="Your profile">
                   {#each [{ label: 'First name', value: message.review.first_name }, { label: 'Last name', value: message.review.last_name }, { label: 'Street address', value: `${message.review.street_number} ${message.review.street_name}` }, { label: 'City', value: message.review.city }, { label: 'State', value: message.review.state }, { label: 'ZIP', value: message.review.zip }] as row}
                     <div><span>{row.label}</span><strong>{row.value}</strong>{#if message.id === latestReviewId && readyToCreate && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit(row.label)} aria-label={`Edit ${row.label.toLowerCase()}`}>Edit</button>{/if}</div>
@@ -317,11 +328,11 @@
                   <div><span>Spending</span><strong>{message.spending?.status === 'skip' ? 'No category preference' : message.spending?.categories.map((category) => categoryLabels[category]).join(' · ')}</strong>{#if message.id === latestReviewId && !createdCustomerId && !recovery}<button disabled={busy} onclick={() => edit('spending priorities and demo credit card')} aria-label="Edit spending priorities">Edit</button>{/if}</div>
                 </div>
                 {#if message.card}<div class="card-match" style:--product-gradient={products[message.card.id].gradient} style:--product-ink={products[message.card.id].ink}><span class="card-demo-label">YOUR MATCH · DEMO CREDIT CARD</span><strong>{brandedCardName(message.card)}</strong><p>{message.card.reason}</p><small>100 fictional transactions · balance owed = purchases − payments · 1 demo point per $1 spent</small></div>{/if}
-                {#if message.id === latestReviewId && readyToCreate && !recovery}<button class="setup-action" disabled={busy} onclick={confirm}>Looks good. Let’s go <span aria-hidden="true">→</span></button>{/if}
+                {#if message.id === latestReviewId && readyToCreate && !recovery}<button class="setup-action" disabled={busy} onclick={confirm}>Looks good. Let’s go <ActionIcon /></button>{/if}
               {/if}
-              {#if message.retry && !recovery}<button class="setup-action" disabled={busy} onclick={() => message.retry === 'turn' ? retryTurn(message.retryText || '', message.selectedAddress, message.retryChoices) : confirm()}>Try again <span aria-hidden="true">→</span></button>{/if}
-              {#if message.recovery}<a class="setup-action" href="/">Go to Sign in <span aria-hidden="true">→</span></a>{/if}
-              {#if message.dashboard}<a class="setup-action" href={message.dashboard}>Open my dashboard <span aria-hidden="true">→</span></a>{/if}
+              {#if message.retry && !recovery}<button class="setup-action" disabled={busy} onclick={() => message.retry === 'turn' ? retryTurn(message.retryText || '', message.selectedAddress, message.retryChoices) : confirm()}>Try again <ActionIcon /></button>{/if}
+              {#if message.recovery}<a class="setup-action" href="/">Go to Sign in <ActionIcon /></a>{/if}
+              {#if message.dashboard}<a class="setup-action" href={message.dashboard}>Open my dashboard <ActionIcon /></a>{/if}
             </div>
             <span class="sender">{message.role === 'eno' ? 'Eno' : 'You'}{#if message.role === 'eno' && speechSupported}<ReadAloudButton onclick={() => speak(message.text)} />{/if}</span>
           </div>
@@ -329,11 +340,11 @@
         {#if busy}<div class="message typing" role="status" aria-label={submitting ? 'Eno is creating your profile' : 'Eno is typing'}><span class="message-avatar"><EnoThinking active={busy} variant={isDark ? 'dark' : 'light'} size={40} /></span><span class="typing-dots"><i></i><i></i><i></i></span><span class="sender">Eno</span></div>{/if}
       </div>
     </div>
-    <div class="composer-area">
+    <div class="composer-area" use:keyboardComposer>
       <form class="composer message-composer" onsubmit={send}>
         <AddressAutocomplete bind:this={autocomplete} query={reply} context={{ city: answers.city, state: answers.state, zip: answers.zip }} disabled={!ready || busy || recovery || !!createdCustomerId} bind:open={suggestionsOpen} bind:activeId={activeAddressId} onselect={selectAddress} />
-        <input bind:this={input} bind:value={reply} aria-label="Message Eno" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen} aria-controls={suggestionsOpen ? 'address-suggestions' : undefined} aria-activedescendant={activeAddressId} onkeydown={(event) => autocomplete?.handleKeydown(event)} placeholder={recovery ? 'Find your profile through Sign in' : 'Message Eno…'} disabled={!ready || submitting || recovery || !!createdCustomerId} maxlength="2000" autocomplete="off" />
-        <button class="message-send" type="submit" aria-label="Send message" disabled={!ready || busy || !reply.trim() || recovery}>↑</button>
+        <input bind:this={input} bind:value={reply} aria-label="Message Eno" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen} aria-controls={suggestionsOpen ? 'address-suggestions' : undefined} aria-activedescendant={activeAddressId} onkeydown={(event) => autocomplete?.handleKeydown(event)} placeholder={recovery ? 'Find your profile through Sign in' : 'Message Eno…'} disabled={!ready || submitting || recovery || !!createdCustomerId} maxlength="2000" {...inputHints} />
+        <button class="message-send" type="submit" aria-label="Send message" disabled={!ready || busy || !reply.trim() || recovery}><ActionIcon name="up" size={22} /></button>
       </form>
     </div>
   </main>

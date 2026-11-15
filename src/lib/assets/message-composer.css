@@ -204,7 +204,7 @@ form.message-composer {
 .setup-composer-background .setup-action {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 8px;
   width: fit-content;
   max-width: 100%;
   min-height: 40px;
@@ -225,11 +225,6 @@ form.message-composer {
   background: var(--message-accent-hover);
 }
 
-.setup-composer-background .setup-action > span {
-  font-size: 18px;
-  line-height: 1;
-}
-
 .setup-composer-background .setup-action:disabled {
   opacity: .5;
   cursor: default;
@@ -248,4 +243,16 @@ form.message-composer {
   .setup-composer-background .composer-area {
     padding-inline: 14px;
   }
+}
+
+/* Use one viewport adjustment only: Safari can pan the layout viewport as well
+   as shrink the visible area when focusing an input. Avoid a sticky bottom
+   inset, which can compound that movement and leave a gap above the keyboard. */
+.setup-composer-background .composer-area.keyboard-composer {
+  position: fixed;
+  top: var(--keyboard-viewport-bottom);
+  bottom: auto;
+  inset-inline: 0;
+  transform: translateY(-100%);
+  padding-bottom: 12px;
 }

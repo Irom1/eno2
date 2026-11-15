@@ -18,16 +18,18 @@ test('landing links sign up and opens the chosen customer’s dashboard with the
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(navigation.getByText('Explore products')).toBeVisible();
   await expect(navigation.getByRole('button', { name: /sign in/i })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: "I'd like to open my first account", exact: true })).toHaveAttribute('href', '/setup');
+  await expect(page.getByRole('link', { name: "I'd like to open my first account", exact: true })).toHaveAttribute('href', '/setup?start=signup');
   await page.getByRole('button', { name: 'Switch to dark mode' }).click();
   await expect(page.locator('.landing')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('.landing')).toHaveAttribute('data-theme', 'dark');
 
-  const signIn = page.getByRole('button', { name: 'Already have an account? Sign in', exact: true });
+  const signIn = page.locator('button.existing-account-link');
   await signIn.click();
   await expect(signIn).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByRole('navigation', { name: 'Current accounts' }).getByRole('link')).toHaveCount(2);
+  await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(2);
+  await page.getByRole('option', { name: 'Jordan Lee' }).click();
+  await expect(page.getByRole('option', { name: 'Jordan Lee' })).toHaveAttribute('aria-selected', 'true');
   const sessionRequest = page.waitForRequest((request) =>
     request.url().endsWith('/api/session') && request.method() === 'POST'
   );
@@ -39,20 +41,22 @@ test('landing links sign up and opens the chosen customer’s dashboard with the
   await expect(page.locator('.dashboard')).toHaveAttribute('data-theme', 'dark');
 });
 
-test('account disclosure works with a keyboard and dismisses outside', async ({ page }) => {
+test('account wheel works with a keyboard and returns focus when dismissed', async ({ page }) => {
   const customersLoaded = page.waitForResponse('**/api/customers');
   await page.goto('/');
   await customersLoaded;
-  const signIn = page.getByRole('button', { name: 'Already have an account? Sign in', exact: true });
+  const signIn = page.locator('button.existing-account-link');
   await expect(signIn).toBeEnabled();
   await signIn.focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('link', { name: /Maya Chen/ })).toBeFocused();
+  await expect(page.getByRole('listbox')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('option', { name: 'Jordan Lee' })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Escape');
   await expect(signIn).toHaveAttribute('aria-expanded', 'false');
   await expect(signIn).toBeFocused();
   await signIn.click();
-  await page.getByRole('heading', { level: 1 }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(signIn).toHaveAttribute('aria-expanded', 'false');
 });
 
@@ -65,10 +69,10 @@ test('failed account loading can be retried', async ({ page }) => {
       : { json: { customers } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Already have an account? Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Already have an account? Sign in to demo', exact: true }).click();
   await expect(page.getByText('We couldn’t load your accounts.')).toBeVisible();
   await page.getByRole('button', { name: 'Try again' }).click();
-  await expect(page.getByRole('link', { name: /Jordan Lee/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Jordan Lee' })).toBeVisible();
 });
 
 test('mobile layout fits and keeps the account list accessible', async ({ page }) => {
@@ -77,7 +81,7 @@ test('mobile layout fits and keeps the account list accessible', async ({ page }
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(navigation.getByText('Explore products')).toBeHidden();
   await expect(navigation.getByRole('button', { name: /sign in/i })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Already have an account? Sign in', exact: true }).click();
-  await expect(page.getByRole('link', { name: /Jordan Lee/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Already have an account? Sign in to demo', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Jordan Lee' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
