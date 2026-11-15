@@ -14,7 +14,7 @@ test('fast Eno replies and the following profile preview appear with breathing r
     spending: skipSpending, includeCreditCard: false, stage: 'review', ready: true, confirmed: false,
     addressCheck: { status: 'matched', message: 'Street address matched.' }
   } }));
-  await page.goto('/signup');
+  await page.goto('/setup');
   await expect(page.getByRole('combobox', { name: 'Message Eno' })).toBeFocused();
   await page.evaluate(() => {
     const timeline: { text: string; time: number }[] = [];
@@ -51,7 +51,7 @@ test('starts immediately as a freeform chat, keeps details through questions, th
   await page.route('**/api/session', (route) => route.fulfill({ json: route.request().method() === 'GET' ? { customer } : { customer, accounts: [] } }));
   await page.route('**/api/accounts', (route) => route.fulfill({ json: { customer, accounts: [], bills: [], loans: [], recentActivity: [] } }));
   await page.route('**/api/overview', (route) => route.fulfill({ json: { overview: { totalRewards: 0 } } }));
-  await page.goto('/signup');
+  await page.goto('/setup');
   await expect(page.getByRole('combobox', { name: 'Message Eno' })).toBeFocused();
   await expect(page.getByText('What should I call you?', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Let’s do this' })).toHaveCount(0);
@@ -82,7 +82,7 @@ test('a failed model reply can be retried without losing the conversation', asyn
     calls += 1;
     return route.fulfill(calls === 1 ? { status: 502, json: { error: 'I lost my train of thought.' } } : { json: { message: 'Nice to meet you, Ada. What’s your last name?', answers: { ...answers, last_name: '', street_number: '', street_name: '', city: '', state: '', zip: '' }, spending: skipSpending, includeCreditCard: false, accountChoice: 'undecided', ready: false, confirmed: false } });
   });
-  await page.goto('/signup');
+  await page.goto('/setup');
   await say(page, 'Ada');
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page.getByText('Nice to meet you, Ada.', { exact: false })).toBeVisible();
@@ -92,17 +92,28 @@ test('a failed model reply can be retried without losing the conversation', asyn
 test('Eno appears beside each of his messages, can speak, and fits on mobile', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
-      getVoices: () => [], cancel: () => {},
+      getVoices: () => [], cancel: () => { document.documentElement.removeAttribute('data-spoken-text'); },
       speak: (utterance: SpeechSynthesisUtterance) => { document.documentElement.setAttribute('data-spoken-text', utterance.text); utterance.dispatchEvent(new Event('start')); }
     } });
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/signup');
+  await page.goto('/setup');
   await expect(page.getByRole('complementary')).toHaveCount(0);
   await expect(page.locator('.message-avatar img[alt="Eno"]')).toBeVisible();
-  await page.getByRole('button', { name: 'Enable Eno voice', exact: true }).click();
+  const voice = page.locator('.voice-toggle');
+  await expect(voice).toHaveAttribute('aria-pressed', 'false');
+  await expect(voice.locator('.speaker-slash')).toBeVisible();
+  const mutedColor = await voice.evaluate((button) => getComputedStyle(button).color);
+  await voice.click();
   await expect(page.locator('html')).toHaveAttribute('data-spoken-text', /What should I call you/);
-  await expect(page.getByRole('button', { name: 'Mute Eno voice', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(voice).toHaveAttribute('aria-pressed', 'true');
+  await expect(voice.locator('.speaker-slash')).toHaveCount(0);
+  expect(await voice.evaluate((button) => getComputedStyle(button).color)).not.toBe(mutedColor);
+  await voice.click();
+  await expect(voice).toHaveAttribute('aria-pressed', 'false');
+  await expect(voice.locator('.speaker-slash')).toBeVisible();
+  await expect(page.locator('html')).not.toHaveAttribute('data-spoken-text');
+  await expect(voice).toHaveCSS('color', mutedColor);
   await expect(page.getByRole('combobox', { name: 'Message Eno' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
@@ -116,7 +127,7 @@ test('address suggestions support keyboard selection and become part of the Eno 
     sent = route.request().postDataJSON();
     return route.fulfill({ json: { message: 'Got it. Would you like checking, savings, both, or neither?', answers: { ...answers, ...address }, spending: skipSpending, includeCreditCard: false, accountChoice: 'undecided', ready: false, confirmed: false, addressCheck: { status: 'matched', message: 'Street address matched.', address } } });
   });
-  await page.goto('/signup');
+  await page.goto('/setup');
   const composer = page.getByRole('combobox', { name: 'Message Eno' });
   await composer.fill('4600 Silver Hill');
   await expect(page.getByRole('option', { name: candidate.label })).toBeVisible();
@@ -133,7 +144,7 @@ test('a rejected address shows corrections and cannot create a profile', async (
   const candidate = { id: 'correction', label: '123 Main St, Cambridge, MA 02139', address: { ...answers, city: 'Cambridge' } };
   await page.route('**/api/signup/chat', (route) => route.fulfill({ json: { message: 'I found a close match. Is this your address?', answers, spending: skipSpending, includeCreditCard: false, accountChoice: 'both', ready: false, confirmed: false, addressCheck: { status: 'correction', message: 'Check your address', candidates: [candidate] } } }));
   await page.route('**/api/signup', (route) => { created = true; return route.fulfill({ status: 500 }); });
-  await page.goto('/signup');
+  await page.goto('/setup');
   await say(page, 'My address is 123 Main St, Boston MA 02139. Both accounts please.');
   await expect(page.getByRole('button', { name: candidate.label })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Looks good. Let’s go' })).toHaveCount(0);
@@ -165,7 +176,7 @@ for (const selection of [
     await page.route('**/api/session', (route) => route.fulfill({ json: { customer, accounts: [] } }));
     await page.route('**/api/accounts', (route) => route.fulfill({ json: { customer, accounts: [], bills: [], loans: [], recentActivity: [] } }));
     await page.route('**/api/overview', (route) => route.fulfill({ json: { overview: { totalRewards: 0 } } }));
-    await page.goto('/signup');
+    await page.goto('/setup');
     await say(page, 'I’m Ada Lovelace at 123 Main St, Boston MA 02139.');
     const categories = page.getByRole('group', { name: 'Top spending categories' });
     await expect(categories).toBeVisible();
@@ -203,7 +214,7 @@ test('yes accepts the displayed mailing-address correction and moves to spending
     expect(body.message).toBe('yes'); expect(body.pendingAddress).toEqual(corrected);
     return route.fulfill({ json: { message: 'Got it — I’ll use that address. What spending matters most?', answers: { ...answers, ...corrected }, accountChoice: 'undecided', includeCreditCard: null, spending: { status: 'undecided', categories: [] }, stage: 'spending', ready: false, confirmed: false, addressCheck: { status: 'matched', message: 'Street address matched.', address: corrected } } });
   });
-  await page.goto('/signup');
+  await page.goto('/setup');
   await say(page, 'Ada Lovelace, at 123 Main St, Boston MA 02139');
   await expect(page.getByText('Is this the right mailing address?', { exact: false })).toBeVisible();
   await say(page, 'yes');
@@ -225,7 +236,7 @@ test('address corrections hide stale checklists and block later steps until the 
     if (turn === 4) return route.fulfill({ json: { ...base, spending: preferences, message: 'Which accounts would you like?', stage: 'accounts', addressCheck: { status: 'matched', message: 'Matched.' } } });
     return route.fulfill({ json: { ...base, spending: preferences, message: 'Let’s fix the mailing address first.', stage: 'accounts', addressCheck: { status: 'correction', message: 'Please check the street.' } } });
   });
-  await page.goto('/signup');
+  await page.goto('/setup');
   await say(page, 'My address is incomplete');
   await expect(page.getByText('Please correct your mailing address.')).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);

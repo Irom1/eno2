@@ -81,8 +81,6 @@
   let liveAccounts = $state<WalletAccount[]>([]);
   let liveBills = $state<WalletBill[]>([]);
   let recentActivity = $state<WalletTransaction[]>([]);
-  // Bumped after each successful load, so widgets that fetch their own data (ClimateWise) refetch for the new session.
-  let snapshotVersion = $state(0);
   let snapshotLoading = $state(true);
   let snapshotError = $state('');
   let accountNotice = $state('');
@@ -308,7 +306,6 @@
       liveBills = Array.isArray(snapshot.bills) ? snapshot.bills : [];
       recentActivity = Array.isArray(snapshot.recentActivity) ? snapshot.recentActivity : [];
       snapshotCustomerId = customerId;
-      snapshotVersion++;
     } catch {
       if (seq !== snapshotSeq) return;
       snapshotError = "We couldn't load your accounts.";
@@ -383,7 +380,7 @@
   let guestChat = $derived(inChat && page.url.searchParams.get('topic') === 'open-account');
   let routeCustomerId = $derived(guestChat ? '' : page.url.searchParams.get('customer') || activeCustomerId);
   let dashboardHref = $derived(customerHref('/dashboard', routeCustomerId));
-  let openAccountsHref = $derived(`${customerHref('/signup', routeCustomerId)}${routeCustomerId ? '&' : '?'}mode=accounts`);
+  let openAccountsHref = $derived(`${customerHref('/setup', routeCustomerId)}${routeCustomerId ? '&' : '?'}mode=accounts`);
   let query = $state('');
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
   let promptSeq = 0;
@@ -749,7 +746,7 @@
 
             {#if liveAccounts.length > 0}
             <div class="score-cards">
-              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} />
+              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} customerId={snapshotCustomerId} accountIds={liveAccounts.map((account) => account.id)} />
               <ScoreCard
                 title="CreditWise"
                 logoLight={creditWiseLogoLight}

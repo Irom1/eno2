@@ -3,20 +3,21 @@
 	import logoDark from '$lib/assets/climatewise-card-logo-dark.png';
 	import ScoreCard from '$lib/components/ScoreCard.svelte';
 	import { SCORE_MAX, scoreFraction, type ClimateReport } from './emissions';
+	import { climateReportCache } from './reportCache';
 
-	let { href = '/climatewise', refresh = 0 }: { href?: string; /** Change to refetch, e.g. after switching customers. */ refresh?: number } = $props();
+	let { href = '/climatewise', customerId, accountIds }: { href?: string; customerId: string; accountIds: string[] } = $props();
 	let report = $state<ClimateReport | null>(null);
 	let loading = $state(true);
 
-	$effect(() => {
-		refresh;
+	$effect.pre(() => {
 		let cancelled = false;
-		report = null;
-		loading = true;
+		const cached = climateReportCache.peek(customerId, 90, accountIds);
+		report = cached;
+		loading = !cached && !!customerId;
+		if (!customerId || cached) return;
 		// same 90-day window as the ClimateWise card, so both show the same score
-		fetch('/api/climate?days=90')
-			.then((r) => (r.ok ? r.json() : null))
-			.then((d) => !cancelled && (report = d?.report ?? null))
+		climateReportCache.load(customerId, accountIds)
+			.then((loaded) => { if (!cancelled) report = loaded; })
 			.catch(() => {})
 			.finally(() => { if (!cancelled) loading = false; });
 		// a slower response for the previous customer must not overwrite the new one

@@ -230,7 +230,7 @@
 
       <div class="foreground">
         <div class="hills" aria-hidden="true"></div>
-        <a class="account-link" href="/signup">
+        <a class="account-link" href="/setup">
           I'd like to open my first account <span aria-hidden="true">↑</span>
         </a>
         <a class="existing-account-link" href="#sign-in" onclick={openAccountsFromHero}>
