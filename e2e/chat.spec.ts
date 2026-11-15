@@ -833,6 +833,93 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('a top-emitting-purchases follow-up renders a transaction list, not the full card', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const topPurchases = [
+      { id: 'tx-1', kind: 'withdrawal', amount: 62, description: 'SHELL', date: '2026-10-01', kg: 120.2, accountId: 'acct-card' },
+      { id: 'tx-2', kind: 'withdrawal', amount: 40, description: 'DELTA AIR LINES', date: '2026-10-02', kg: 98.4, accountId: 'acct-card' },
+      { id: 'tx-3', kind: 'withdrawal', amount: 120, description: 'WHOLE FOODS MKT', date: '2026-10-03', kg: 66.0, accountId: 'acct-checking' },
+      { id: 'tx-4', kind: 'withdrawal', amount: 300, description: 'EVERSOURCE', date: '2026-10-04', kg: 55.5, accountId: 'acct-checking' },
+      { id: 'tx-5', kind: 'withdrawal', amount: 80, description: 'UBER', date: '2026-10-05', kg: 36.0, accountId: 'acct-card' },
+      { id: 'tx-6', kind: 'withdrawal', amount: 45, description: 'AMAZON MKTPLACE', date: '2026-10-06', kg: 11.3, accountId: 'acct-card' },
+      { id: 'tx-7', kind: 'withdrawal', amount: 25, description: 'STARBUCKS', date: '2026-10-07', kg: 7.5, accountId: 'acct-checking' },
+      { id: 'tx-8', kind: 'withdrawal', amount: 22, description: 'CHIPOTLE', date: '2026-10-08', kg: 6.6, accountId: 'acct-checking' },
+      { id: 'tx-9', kind: 'withdrawal', amount: 18, description: 'NETFLIX', date: '2026-10-09', kg: 1.4, accountId: 'acct-card' }
+    ];
+    const report = {
+      asOf: '2026-11-14',
+      days: 90,
+      totalKg: 412.4,
+      totalSpend: 3000,
+      purchaseCount: 42,
+      kgPerDollar: 0.14,
+      annualizedTonnes: 1.67,
+      benchmarkTonnes: 16,
+      targetTonnes: 2.5,
+      score: 712,
+      tier: 'Good',
+      categories: [
+        { id: 'transport', label: 'Travel & transport', color: '#c4562e', kg: 180.2, spend: 62, count: 3, share: 0.43, weight: 0.27 }
+      ],
+      nudges: [],
+      topPurchases,
+      greenness: { ratings: [], greenShare: 0.42, flexibleSpend: 3200, fixedSpend: 1620 },
+      equivalents: { milesDriven: 3120, treeSeedlings: 41 }
+    };
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta:
+          'Your footprint is concentrated in a few big buys. Travel and home energy dominate the top of the list, so those are the highest-leverage places to cut.'
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: report
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show my top emitting purchases');
+
+    // No full report card is rebuilt for the follow-up.
+    await expect(page.locator('.climatewise-chat-card')).toHaveCount(0);
+
+    const list = page.locator('.transaction-list-card');
+    await expect(list).toHaveCount(1, { timeout: 20_000 });
+    await expect(list.locator('.transaction-row')).toHaveCount(8);
+    const text = await list.innerText();
+    expect(text).toContain('SHELL');
+    expect(text).toContain('DELTA AIR LINES');
+    expect(text).toContain('120.2 kg CO₂e');
+    expect(text).toContain('98.4 kg CO₂e');
+    // Only the capped rows render; the ninth row is behind the footer.
+    expect(text).not.toContain('NETFLIX');
+    await expect(list.locator('.truncation-footer, footer')).toHaveCount(1);
+
+    // The list is standalone, never folded into the assistant bubble.
+    expect(
+      await list.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the transaction list renders outside the prose bubble'
+    ).toBe(false);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
   test('an earlier ClimateWise card rounds again after a later message', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);

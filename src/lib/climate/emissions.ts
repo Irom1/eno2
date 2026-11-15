@@ -124,6 +124,9 @@ export interface AppTransaction {
 	amount: number;
 	description: string;
 	date: string; // YYYY-MM-DD
+	/** Owning account / customer, when the caller knows them (used for deep links). */
+	accountId?: string;
+	customerId?: string;
 }
 
 /** Adapter for a raw Nessie purchase (GET /accounts/{id}/purchases). */

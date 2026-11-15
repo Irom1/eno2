@@ -34,6 +34,8 @@ export interface TransactionRow {
   status?: string;
   accountId?: string;
   customerId?: string;
+  /** Purchase emissions in kg CO2e (ClimateWise rows only). */
+  kg?: number;
 }
 
 export interface TransactionListPayload {
@@ -544,9 +546,18 @@ function transactionRowOf(
       ? String(explicitId).trim()
       : `${description}|${date}|${amount === null ? 'null' : String(amount)}`;
 
-  const row: TransactionRow = { id, description, amount, date, ...contextIds };
+  // Prefer ids carried on the row itself (ClimateWise spans accounts), then
+  // fall back to the shared caller context.
+  const accountId = optionalTrimmed(item.accountId) ?? contextIds.accountId;
+  const customerId = optionalTrimmed(item.customerId) ?? contextIds.customerId;
+  const row: TransactionRow = { id, description, amount, date };
+  if (accountId) row.accountId = accountId;
+  if (customerId) row.customerId = customerId;
   if (typeof item.status === 'string' && item.status.trim().length > 0) {
     row.status = item.status.trim();
+  }
+  if (typeof item.kg === 'number' && Number.isFinite(item.kg)) {
+    row.kg = item.kg;
   }
   return row;
 }

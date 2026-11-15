@@ -41,7 +41,7 @@
     prefetchSnapshot,
     prefetchTransactionContext
   } from '$lib/walletCache';
-  import { classifyIntents } from '$lib/chat/intents.js';
+  import { classifyIntents, wantsTopEmittingPurchases } from '$lib/chat/intents.js';
   import { shouldInferTransactionList } from '$lib/chat/transactionListIntent.js';
   import { isConversationFollowUp, requestsExplanationOnly } from '$lib/chat/requestScope.js';
   import type { EnoVariant } from '$lib/eno.js';
@@ -559,12 +559,54 @@
               if (incoming) replaceInlineCard(message, incoming);
             }
             if (data.kind === 'insight_climatewise') {
-              // One full ClimateWise card per turn; a later report replaces it.
-              // The grouping layer renders it standalone, outside the prose bubble.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
-              const incoming = climateWiseCard(payload, anchor, cardSeq + 1, { customerId });
-              if (incoming) replaceInlineCard(message, incoming);
+              if (wantsTopEmittingPurchases(message.prompt ?? '')) {
+                // A ranked-purchases follow-up is a transaction list, not the
+                // full report card again. The rows carry their own account ids.
+                const source =
+                  payload && typeof payload === 'object' && !Array.isArray(payload)
+                    ? (payload as Record<string, unknown>)
+                    : {};
+                const report =
+                  source.report && typeof source.report === 'object'
+                    ? (source.report as Record<string, unknown>)
+                    : source;
+                const topPurchases = Array.isArray(report.topPurchases)
+                  ? report.topPurchases
+                  : [];
+                if (topPurchases.length > 0) {
+                  const incoming = transactionListCard(
+                    { items: topPurchases, count: topPurchases.length },
+                    anchor,
+                    cardSeq + 1,
+                    { customerId, cap: 8 }
+                  );
+                  if (incoming) {
+                    // Drop any earlier full report card in this turn: the list
+                    // is the answer, and the two must never stack.
+                    const current = (message.inlineCards ?? []).filter(
+                      (card) => card.kind !== 'climatewise'
+                    );
+                    const existing = current.find(
+                      (card): card is TransactionListEntityCard =>
+                        card.kind === 'transaction-list'
+                    );
+                    const merged = mergeTransactionListCards(existing, incoming);
+                    message.inlineCards = existing
+                      ? current.map((card) =>
+                          card.kind === 'transaction-list' ? merged : card
+                        )
+                      : [...current, merged];
+                    cardSeq = Math.max(cardSeq, merged.id);
+                  }
+                }
+              } else {
+                // One full ClimateWise card per turn; a later report replaces it.
+                // The grouping layer renders it standalone, outside the prose bubble.
+                const incoming = climateWiseCard(payload, anchor, cardSeq + 1, { customerId });
+                if (incoming) replaceInlineCard(message, incoming);
+              }
             }
             if (
               data.kind === 'insight_financial_overview' &&

@@ -183,6 +183,12 @@ describe("buildSystemInstruction", () => {
       "For a LORAX® Score or purchase emissions question, call insight_climatewise and show the single full report card; it renders standalone with the score, ring, categories, and purchase rows. Explain what the score means or add a nudge, but do not restate the card's score, tier, kilograms, days, categories, or purchase rows."
     );
     expect(instruction).toContain(
+      "Once a ClimateWise report card is already in the conversation, follow-up questions about it must not render the full report card again."
+    );
+    expect(instruction).toContain(
+      'For "top emitting purchases", call insight_climatewise only if you need the exact rows, then explain the ranking and let the UI render a transaction list; do not restate every row or re-show the full card.'
+    );
+    expect(instruction).toContain(
       "For a spending pie, do not restate the period, total, category amounts, shares, or transaction count. Explain what the mix means (fixed vs discretionary) and give one next step."
     );
     expect(instruction).toContain(

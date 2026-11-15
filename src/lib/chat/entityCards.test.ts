@@ -579,6 +579,62 @@ describe('transactionListCard', () => {
     expect(card?.payload.rows[0]).not.toHaveProperty('type');
   });
 
+  it('preserves kg and per-item account/customer ids for ClimateWise rows', () => {
+    const card = transactionListCard(
+      {
+        items: [
+          {
+            _id: 'tx-1',
+            description: 'SHELL',
+            amount: 62,
+            date: '2026-10-01',
+            kg: 120.2,
+            accountId: 'acct-card',
+            customerId: 'cust-1'
+          },
+          { _id: 'tx-2', description: 'WHOLE FOODS MKT', amount: 40, date: '2026-10-03', kg: 60.5 }
+        ],
+        count: 2
+      },
+      0,
+      1,
+      { accountId: 'acct-checking', customerId: 'cust-1' }
+    );
+
+    expect(card?.payload.rows[0]).toEqual({
+      id: 'tx-1',
+      description: 'SHELL',
+      amount: 62,
+      date: '2026-10-01',
+      accountId: 'acct-card',
+      customerId: 'cust-1',
+      kg: 120.2
+    });
+    // A row without its own account falls back to the shared context.
+    expect(card?.payload.rows[1]).toEqual({
+      id: 'tx-2',
+      description: 'WHOLE FOODS MKT',
+      amount: 40,
+      date: '2026-10-03',
+      accountId: 'acct-checking',
+      customerId: 'cust-1',
+      kg: 60.5
+    });
+    // Deep links still work from the per-row ids.
+    expect(transactionHref(card?.payload.rows[0].customerId, card?.payload.rows[0].accountId, 'tx-1')).toContain(
+      'account=acct-card'
+    );
+  });
+
+  it('ignores a non-finite kg on regular transaction rows', () => {
+    const card = transactionListCard(
+      { items: [{ _id: 't-1', description: 'Coffee', kg: Number.NaN }] },
+      0,
+      1
+    );
+    expect(card?.payload.rows[0]).not.toHaveProperty('kg');
+  });
+
   it('uses the declared count for the more count', () => {
     const items = Array.from({ length: 20 }, (_, index) => ({ _id: `t-${index}` }));
     const card = transactionListCard({ count: 25, items }, 0, 1);

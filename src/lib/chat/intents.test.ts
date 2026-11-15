@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyIntents } from './intents';
+import { classifyIntents, wantsTopEmittingPurchases } from './intents';
 
 describe('classifyIntents', () => {
   it('classifies a specific loans question only', () => {
@@ -47,5 +47,35 @@ describe('classifyIntents', () => {
     expect(classifyIntents('').size).toBe(0);
     expect(classifyIntents('   ').size).toBe(0);
     expect(classifyIntents(undefined as unknown as string).size).toBe(0);
+  });
+});
+
+describe('wantsTopEmittingPurchases', () => {
+  it('matches the ClimateWise follow-up and similar rankings', () => {
+    for (const prompt of [
+      'Show my top emitting purchases',
+      'What are my biggest carbon purchases?',
+      'Show my highest emissions transactions',
+      'Which are my most CO2 purchases?',
+      'Show my top carbon footprint spend',
+      'what are my most emitting transactions'
+    ]) {
+      expect(wantsTopEmittingPurchases(prompt), prompt).toBe(true);
+    }
+  });
+
+  it('rejects unrelated prompts', () => {
+    for (const prompt of [
+      'Show my recent transactions',
+      'Where did my emissions come from?',
+      'Show my top merchants',
+      'Show my top purchases',
+      'What is my carbon footprint?',
+      '',
+      '   '
+    ]) {
+      expect(wantsTopEmittingPurchases(prompt), prompt).toBe(false);
+    }
+    expect(wantsTopEmittingPurchases(undefined as unknown as string)).toBe(false);
   });
 });

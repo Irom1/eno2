@@ -45,13 +45,16 @@
 
 {#snippet content(row: TransactionRow, linked: boolean)}
   {@const hasDate = Boolean(row.date)}
+  {@const hasKg = typeof row.kg === 'number' && Number.isFinite(row.kg)}
   <div class="details">
     <span class="description">{row.description}</span>
-    {#if hasDate || row.status}
+    {#if hasDate || row.status || hasKg}
       <span class="meta">
         {#if hasDate}<DateText value={row.date} />{/if}
-        {#if hasDate && row.status} · {/if}
+        {#if hasDate && (row.status || hasKg)} · {/if}
         {#if row.status}{titleCase(row.status)}{/if}
+        {#if row.status && hasKg} · {/if}
+        {#if hasKg}{row.kg} kg CO₂e{/if}
       </span>
     {/if}
   </div>
