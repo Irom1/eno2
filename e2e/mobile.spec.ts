@@ -429,9 +429,18 @@ test.describe('320x568 narrow phone viewport', () => {
     }));
     console.log('[320x568 composer]', JSON.stringify({ mirror, bounds, ...overflow }));
 
+    const logo = await page.locator('.brand svg').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right };
+    });
+    console.log('[320x568 logo]', JSON.stringify(logo));
+    expect(logo.left, 'the logo keeps the standard page gutter').toBeGreaterThanOrEqual(12);
+    expect(logo.left).toBeLessThanOrEqual(18);
+    expect(bounds.left, 'the chat is wider than the header gutter').toBeLessThan(logo.left - 6);
+
     expect(bounds.bottom).toBeLessThanOrEqual(320);
-    // The chat container is width: calc(100% - 8px) with an 8px right padding, so
-    // the composer keeps a minimal left inset and backs off the right edge.
+    // The header keeps the standard gutter while the composer breaks out to a
+    // minimal left inset and backs off the right edge.
     expect(bounds.left).toBeLessThanOrEqual(8);
     const rightInset = bounds.innerWidth - bounds.right;
     expect(rightInset, 'the chat backs off the right edge while keeping the left minimal').toBeGreaterThanOrEqual(10);

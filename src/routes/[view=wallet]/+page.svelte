@@ -1266,11 +1266,13 @@
   }
   @container (max-width: 570px) {
     .container { width: calc(100% - 28px); }
-    /* Chat keeps a minimal 4px left inset and backs off 12px from the right edge. */
-    .chat .container {
-      width: calc(100% - 8px);
-      /* Left stays minimal; the right gets a little more room from the screen edge. */
-      padding-right: 8px;
+    /* The header keeps the standard page gutter; the chat log and composer use the narrow width. */
+    .chat .chat-results,
+    .chat .composer-area {
+      width: calc(100% + 12px);
+      margin-left: -10px;
+      margin-right: -2px;
+      justify-self: start;
     }
     .wallet-band { --composer-bottom-padding: 20px; }
     .header-inner { padding-block: 20px; }
