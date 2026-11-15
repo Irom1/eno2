@@ -45,7 +45,8 @@ test.describe('iPhone 13 viewport', () => {
     // Account switcher opens on mobile.
     await page.locator('.profile').click();
     await expect(page.locator('.account-dropdown')).toBeVisible();
-    await expect(page.locator('.account-dropdown')).toContainText('Jordan Lee');
+    await expect(page.locator('.account-dropdown')).toContainText('Demo Tester');
+    await expect(page.locator('.account-dropdown')).toContainText('Maya Chen');
     await page.keyboard.press('Escape');
     await expect(page.locator('.account-dropdown')).toBeHidden();
 
