@@ -32,6 +32,7 @@
     onTabChange: (tab: Tab) => void;
     customerId?: string;
     focusTransactionId?: string;
+    focusBillId?: string;
     onAccountDeleted: (accountId: string) => void;
   }
 
@@ -42,7 +43,7 @@
     bills?: WalletBill[];
   }
 
-  let { accountId, tab, heading, onTabChange, customerId = '', focusTransactionId, onAccountDeleted }: Props = $props();
+  let { accountId, tab, heading, onTabChange, customerId = '', focusTransactionId, focusBillId, onAccountDeleted }: Props = $props();
 
   let query = $state('');
   let filter = $state<ActivityFilter>('all');
@@ -56,6 +57,7 @@
   let selectedTransaction = $state<WalletTransaction | null>(null);
   let selectedBill = $state<WalletBill | null>(null);
   let highlightId = $state('');
+  let highlightBillId = $state('');
   let deleteDialog: HTMLDialogElement;
   let cancelDeleteButton: HTMLButtonElement;
   let deleting = $state(false);
@@ -179,6 +181,7 @@
     selectedTransaction = null;
     selectedBill = null;
     highlightId = '';
+    highlightBillId = '';
     void load(id);
   });
 
@@ -187,6 +190,14 @@
     if (focusTransactionId) {
       query = '';
       filter = 'all';
+    }
+  });
+
+  $effect(() => {
+    highlightBillId = '';
+    const focus = focusBillId ?? '';
+    if (focus && tab === 'bills') {
+      // Focus is applied by the scroll effect once bills have loaded.
     }
   });
 
@@ -208,6 +219,31 @@
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
       highlightId = focus;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  $effect(() => {
+    const focus = focusBillId ?? '';
+    const currentTab = tab;
+    const isLoading = loading;
+    const rows = bills;
+    if (!focus || currentTab !== 'bills' || isLoading) return;
+    if (!rows.some((bill) => bill.id === focus)) return;
+
+    let cancelled = false;
+    void tick().then(() => {
+      if (cancelled) return;
+      const row = document.querySelector<HTMLElement>(
+        `[data-bill-id="${CSS.escape(focus)}"]`
+      );
+      if (!row) return;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+      highlightBillId = focus;
     });
 
     return () => {
@@ -340,7 +376,12 @@
 {/if}
 
 {#snippet billRow(bill: WalletBill)}
-  <button class="list-row" onclick={() => (selectedBill = bill)}>
+  <button
+    class="list-row"
+    class:highlight={highlightBillId === bill.id}
+    data-bill-id={bill.id}
+    onclick={() => (selectedBill = bill)}
+  >
     <span class="list-main">
       <strong>{bill.payee || bill.nickname || 'Bill'}</strong>
       <small>{label(bill.nickname)} · Due {dateLabel(bill.upcomingDate)}</small>
@@ -561,7 +602,9 @@
   }
   .tx-row:hover, .list-row:hover { background: var(--page); }
   .tx-row.highlight,
-  .tx-row.highlight:hover {
+  .tx-row.highlight:hover,
+  .list-row.highlight,
+  .list-row.highlight:hover {
     background: var(--dark, var(--banner)) var(--light, color-mix(in srgb, var(--link) 22%, transparent));
   }
   .tx-main, .list-main, .tx-amount, .list-side { display: grid; gap: 2px; min-width: 0; }

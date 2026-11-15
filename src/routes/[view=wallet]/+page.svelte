@@ -124,6 +124,7 @@
     return { accountId, tab };
   });
   let focusTransactionId = $derived(page.url.searchParams.get('txn') ?? '');
+  let focusBillId = $derived(page.url.searchParams.get('bill') ?? '');
   // True when the account view was opened from the mounted chat, so the
   // header's return control goes back to chat instead of the dashboard.
   let openedFromChat = $state(false);
@@ -212,6 +213,7 @@
       url.searchParams.delete('account');
       url.searchParams.delete('tab');
       url.searchParams.delete('txn');
+      url.searchParams.delete('bill');
     }
     return url;
   }
@@ -376,14 +378,17 @@
     }
   }
 
-  function openAccountView(accountId: string, tab: WalletTab, transactionId?: string): void {
+  function openAccountView(accountId: string, tab: WalletTab, transactionId?: string, billId?: string): void {
     if (!accountId || !activeCustomerId || routeCustomerId !== activeCustomerId) return;
     accountNotice = '';
     accountOpen = false;
     const url = new URL(dashboardHref, page.url);
     url.searchParams.set('account', accountId);
     url.searchParams.set('tab', tab);
+    url.searchParams.delete('txn');
+    url.searchParams.delete('bill');
     if (transactionId) url.searchParams.set('txn', transactionId);
+    if (billId) url.searchParams.set('bill', billId);
     if (url.href === page.url.href) return;
     void goto(url, { replaceState: walletView !== null, noScroll: true, keepFocus: true });
   }
@@ -423,10 +428,14 @@
     }
   }
 
-  function closeAccountView(): Promise<void> {
-    const destination = openedFromChat ? customerHref('/chat', routeCustomerId) : dashboardHref;
+  function backToDashboard(): Promise<void> {
     openedFromChat = false;
-    return goto(destination, { replaceState: true, noScroll: true });
+    return goto(dashboardHref, { replaceState: true, noScroll: true });
+  }
+
+  function returnToChat(): Promise<void> {
+    openedFromChat = false;
+    return goto(customerHref('/chat', routeCustomerId), { replaceState: true, noScroll: true });
   }
 
   async function handleAccountDeleted(accountId: string): Promise<void> {
@@ -434,7 +443,7 @@
     recentActivity = recentActivity.filter((transaction) => transaction.accountId !== accountId);
     liveAccounts = liveAccounts.filter((account) => account.id !== accountId);
     liveBills = liveBills.filter((bill) => bill.accountId !== accountId);
-    await closeAccountView();
+    await backToDashboard();
     accountNotice = 'Account deleted.';
     void loadSnapshot(activeCustomerId, true);
     await tick();
@@ -679,7 +688,7 @@
 </script>
 
 <svelte:head>
-  <title>{inChat ? 'Wallet chat' : 'Account overview'} | Capital One</title>
+  <title>{inChat ? 'Eno 2.0' : 'Account overview'} | Capital One</title>
   <meta name="description" content="Your Capital One accounts, rewards, and credit tools." />
 </svelte:head>
 
@@ -937,8 +946,9 @@
     <ViewShell
       title="Account details"
       subtitle={activeName}
-      backLabel={openedFromChat ? 'Return to chat' : 'Back to dashboard'}
-      onBack={closeAccountView}
+      onBack={backToDashboard}
+      returnLabel={openedFromChat ? 'Return to chat' : undefined}
+      onReturn={openedFromChat ? returnToChat : undefined}
     >
       {#snippet children(heading)}
         <AccountDetailView
@@ -948,6 +958,7 @@
           customerId={routeCustomerId}
           onTabChange={(nextTab) => openAccountView(accountId, nextTab)}
           {focusTransactionId}
+          {focusBillId}
           onAccountDeleted={handleAccountDeleted}
         />
       {/snippet}

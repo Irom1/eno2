@@ -4,7 +4,7 @@
   import { prefetchTransactionContext } from '$lib/walletCache';
   import { prefetchOnApproach } from '$lib/prefetchOnApproach';
   import {
-    accountHref,
+    billHref,
     type BillEntityCard
   } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
@@ -23,7 +23,7 @@
   const amountText = $derived(
     payload.amount === null ? '' : money(payload.amount, { decimals: 2 })
   );
-  const href = $derived(accountHref(payload.customerId, payload.accountId));
+  const href = $derived(billHref(payload.customerId, payload.accountId, payload.billId));
   const label = $derived(`Bill for ${payload.payee}${amountText ? `, ${amountText}` : ''}`);
 
   function warmContext(): void {

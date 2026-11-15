@@ -294,6 +294,23 @@ export function transactionHref(
 }
 
 /**
+ * Deep link into the dashboard account bills view for one bill. Returns
+ * undefined unless every id is present so cards render without a link rather
+ * than pointing at a broken target.
+ */
+export function billHref(
+  customerId: string | undefined,
+  accountId: string | undefined,
+  billId: string | undefined
+): string | undefined {
+  const customer = typeof customerId === 'string' ? customerId.trim() : '';
+  const account = typeof accountId === 'string' ? accountId.trim() : '';
+  const bill = typeof billId === 'string' ? billId.trim() : '';
+  if (!customer || !account || !bill) return undefined;
+  return `/dashboard?customer=${encodeURIComponent(customer)}&account=${encodeURIComponent(account)}&tab=bills&bill=${encodeURIComponent(bill)}`;
+}
+
+/**
  * Deep link into the dashboard account view. Returns undefined unless both ids
  * are present so the card renders without a broken link.
  */

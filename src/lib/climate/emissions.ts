@@ -14,6 +14,11 @@
  *  - Home energy: EPA's supply-chain set excludes electricity, so this uses a New England
  *    grid estimate (~0.25 kg CO2/kWh ÷ ~$0.30/kWh).
  *  - Benchmark: ~16 t CO2e per American per year (all sources, not just purchases).
+ *
+ * Score: a FICO-style weighted category score. Each category's share of the score is its
+ * `typicalShare` (also its ring slice size), multiplied by that category's greenness (0..1,
+ * spend-weighted rating). Missing categories contribute zero rather than being renormalized,
+ * so the weights stay meaningful. The weighted performance maps linearly onto 300..850.
  */
 
 export type CategoryId = 'transport' | 'shopping' | 'energy' | 'food' | 'housing';
@@ -168,6 +173,8 @@ export interface CategoryTotal {
 	share: number; // 0..1 of kg
 	/** 0..1 — how green the choices in this category are (spend-weighted rating). */
 	greenness: number;
+	/** FICO-style score weight (0..1, all categories sum to 1) — also the ring slice size. */
+	weight: number;
 }
 
 export interface Nudge {
@@ -204,8 +211,8 @@ export const TARGET_TONNES = 2.5; // ~per-capita level for a 1.5°C pathway by 2
 /** Same range as a FICO credit score. */
 export const SCORE_MIN = 300;
 export const SCORE_MAX = 850;
-/** Score for being on pace with the US average — the bottom of FICO's "Good" band. */
-export const SCORE_US_AVG = 670;
+/** Neutral score when there are no purchase rows in the window (the bottom of FICO's "Good" band). */
+export const SCORE_NEUTRAL = 670;
 
 /** 0..1 position of a score within SCORE_MIN..SCORE_MAX (for gauges). */
 export const scoreFraction = (score: number) =>
@@ -221,12 +228,12 @@ export function tierFor(score: number): string {
 }
 
 /**
- * Score: 850 = zero purchase emissions, 670 = on pace with the US average.
- * Linear, clamped to 300..850.
+ * FICO-style score for weighted category performance (0..1, where 1 = every category fully green).
+ * Linear, clamped to 300..850: 0 → 300, 1 → 850.
  */
-export function scoreFor(annualTonnes: number): number {
-	const raw = SCORE_MAX - (annualTonnes / US_AVG_TONNES) * (SCORE_MAX - SCORE_US_AVG);
-	return Math.round(Math.max(SCORE_MIN, Math.min(SCORE_MAX, raw)));
+export function scoreForPerformance(performance: number): number {
+	const clamped = Math.max(0, Math.min(1, performance));
+	return Math.round(SCORE_MIN + clamped * (SCORE_MAX - SCORE_MIN));
 }
 
 const round = (n: number, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
@@ -267,7 +274,8 @@ export function buildReport(
 			greenness: (() => {
 				const spend = rows.reduce((s, p) => s + p.amount, 0);
 				return spend ? rows.reduce((s, p) => s + p.amount * RATING_WEIGHT[p.rating], 0) / spend : 0;
-			})()
+			})(),
+			weight: c.typicalShare
 		};
 	});
 
@@ -289,7 +297,8 @@ export function buildReport(
 	});
 
 	const annualizedTonnes = (totalKg / days) * 365 / 1000;
-	const score = scoreFor(annualizedTonnes);
+	const weightedPerformance = categories.reduce((sum, c) => sum + c.weight * c.greenness, 0);
+	const score = purchases.length === 0 ? SCORE_NEUTRAL : scoreForPerformance(weightedPerformance);
 	const monthly = (kg: number) => (kg / days) * 30;
 
 	const nudges: Nudge[] = categories

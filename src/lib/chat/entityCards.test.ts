@@ -8,6 +8,7 @@ import {
   completeAnomalyContext,
   anomalyTransactionCards,
   billCard,
+  billHref,
   cashflowCard,
   climateWiseCard,
   goalCard,
@@ -1250,6 +1251,23 @@ describe('accountHref', () => {
     expect(accountHref('cust-1', undefined)).toBeUndefined();
     expect(accountHref('', 'acct-2')).toBeUndefined();
     expect(accountHref('cust-1', '  ')).toBeUndefined();
+  });
+});
+
+describe('billHref', () => {
+  it('builds the dashboard bills deep link with encoded ids', () => {
+    expect(billHref('cust-1', 'acct-2', 'bill 3')).toBe(
+      '/dashboard?customer=cust-1&account=acct-2&tab=bills&bill=bill%203'
+    );
+  });
+
+  it('returns undefined when any id is missing or blank', () => {
+    expect(billHref(undefined, 'acct-2', 'bill-3')).toBeUndefined();
+    expect(billHref('cust-1', undefined, 'bill-3')).toBeUndefined();
+    expect(billHref('cust-1', 'acct-2', undefined)).toBeUndefined();
+    expect(billHref('', 'acct-2', 'bill-3')).toBeUndefined();
+    expect(billHref('cust-1', '  ', 'bill-3')).toBeUndefined();
+    expect(billHref('cust-1', 'acct-2', '  ')).toBeUndefined();
   });
 });
 
