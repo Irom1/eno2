@@ -520,7 +520,7 @@
     width: min(100%, 360px);
     padding: 7px 7px 7px 20px;
     border-radius: 99px;
-    background: linear-gradient(180deg, #0c1b19 0%, #17322b 100%);
+    background: linear-gradient(to bottom, #000 30%, #294528 100%);
     color: white;
     font-weight: 650;
     box-shadow:
