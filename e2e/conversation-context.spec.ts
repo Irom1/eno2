@@ -110,3 +110,54 @@ test('bill cards wait for their complete context and follow their own paragraphs
   expect(order[0].text).toBe(first);
   expect(order[2].text).toBe(second);
 });
+
+test('a single-charge question and why correction do not expand into a suspicious-activity list', async ({ page }) => {
+  await mockProfile(page);
+  const findings = Array.from({ length: 12 }, (_, index) => ({ _id: `flag-${index}`, type: 'outlier', description: `OTHER MERCHANT ${index}`, amount: 200 + index, date: '2026-11-01', accountId: 'checking' }));
+  let turns = 0;
+  await page.route('**/api/chat', (route) => {
+    turns++;
+    const events = turns === 1 ? [
+      { type: 'text', delta: 'Here are the matching LOCAL COFFEE purchases.' },
+      { type: 'insight', kind: 'insight_top_transactions', accountId: 'checking', payload: { count: 2, items: [{ _id: 'coffee-159', description: 'LOCAL COFFEE', amount: 159, transactionDate: '2026-11-01' }, { _id: 'coffee-10', description: 'LOCAL COFFEE', amount: 10, transactionDate: '2026-10-31' }] } }
+    ] : turns === 2 ? [
+      // Even an unscoped tool response must not cause the UI to dump a list
+      // while the assistant answers a question about one referenced charge.
+      { type: 'insight', kind: 'insight_anomalies', payload: { count: findings.length, findings } },
+      { type: 'text', delta: 'That LOCAL COFFEE purchase is unusually large compared with your typical visits. That does not prove fraud.' }
+    ] : [
+      { type: 'insight', kind: 'insight_anomalies', payload: { count: findings.length, findings } },
+      { type: 'text', delta: 'You asked why it was omitted. The earlier answer was incomplete; I cannot establish the exact reason from the saved results.' }
+    ];
+    return route.fulfill({ contentType: 'text/event-stream', body: [...events, { type: 'done', sessionId: 'demo' }].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('') });
+  });
+  await page.goto('/chat?customer=maya');
+  await ask(page, 'Show my transactions at LOCAL COFFEE');
+  await expect(page.locator('.assistant-turn').last().locator('.transaction-list-card')).toHaveCount(1);
+  await ask(page, 'is that first one suspicious');
+  let turn = page.locator('.assistant-turn').last();
+  await expect(turn).toContainText('That LOCAL COFFEE purchase');
+  await expect(turn.locator('.transaction-card, .transaction-list-card')).toHaveCount(0);
+  await expect(turn).not.toContainText('OTHER MERCHANT');
+  await ask(page, 'why didnt you include it when i asked for suspicious transactions');
+  turn = page.locator('.assistant-turn').last();
+  await expect(turn).toContainText('You asked why');
+  await expect(turn.locator('.transaction-card, .transaction-list-card')).toHaveCount(0);
+  await ask(page, 'i asked why not show me');
+  turn = page.locator('.assistant-turn').last();
+  await expect(turn).toContainText('You asked why');
+  await expect(turn).not.toContainText('financial snapshot');
+  await expect(turn.locator('.transaction-card, .transaction-list-card')).toHaveCount(0);
+});
+
+test('an explicit suspicious-activity list includes findings beyond the eighth result', async ({ page }) => {
+  await mockProfile(page);
+  const findings = Array.from({ length: 12 }, (_, index) => ({ _id: `flag-${index}`, type: 'outlier', description: index === 11 ? 'LOCAL COFFEE' : `MERCHANT ${index}`, amount: 159 + index, date: '2026-11-01', accountId: 'checking' }));
+  const events = [{ type: 'text', delta: 'These purchases were unusually large compared with recent activity.' }, { type: 'insight', kind: 'insight_anomalies', payload: { count: findings.length, findings } }, { type: 'done', sessionId: 'demo' }];
+  await page.route('**/api/chat', (route) => route.fulfill({ contentType: 'text/event-stream', body: events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('') }));
+  await page.goto('/chat?customer=maya');
+  await ask(page, 'Show me suspicious transactions');
+  const turn = page.locator('.assistant-turn').last();
+  await expect(turn.locator('.transaction-card')).toHaveCount(12);
+  await expect(turn.locator('.transaction-card').last()).toContainText('LOCAL COFFEE');
+});

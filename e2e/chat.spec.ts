@@ -2218,6 +2218,7 @@ test.describe('chat prompts', () => {
     page
   }) => {
     const errors = collectErrors(page);
+    await page.route('**/api/accounts/acct-*', (route) => route.fulfill({ json: { account: {}, transactions: [], bills: [], loans: [] } }));
     await loadChat(page);
 
     const insight = {
@@ -2392,6 +2393,7 @@ test.describe('chat prompts', () => {
     page
   }) => {
     const errors = collectErrors(page);
+    await page.route('**/api/accounts/acct-*', (route) => route.fulfill({ json: { account: {}, transactions: [], bills: [], loans: [] } }));
     await loadChat(page);
 
     const names = [
@@ -2534,8 +2536,8 @@ test.describe('chat prompts', () => {
     expect(prose).not.toContain('Insight:');
 
     // Each card deep-links to the account that owns its finding.
-    const cardHrefs = await cards
-      .locator('a.transaction-link')
+    const cardHrefs = await page
+      .locator('a.transaction-card.transaction-link')
       .evaluateAll((elements) => elements.map((element) => element.getAttribute('href') ?? ''));
     expect(cardHrefs).toEqual([
       expect.stringMatching(/account=acct-venture&txn=txn-netflix$/),

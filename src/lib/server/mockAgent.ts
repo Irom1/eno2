@@ -9,6 +9,8 @@ import { trimContents, type Session } from "./session";
 import { summarizeToolResult, toolLabel } from "./toolBridge";
 import { summarizeAnomalyPatterns } from "./nessie/tools/insights";
 import { extractLocation } from "./locationQuery";
+import { isConversationFollowUp, requestsAnomalyList } from '../chat/requestScope';
+import { resolveTransactionReference, transactionEvidence } from './transactionContext';
 
 export { extractLocation } from "./locationQuery";
 
@@ -116,7 +118,9 @@ function checkingAccountId(session: Session): string {
 function anomalyAccountId(text: string, session: Session): string {
   const named = session.accounts.find((account) => {
     const nickname = account.nickname.trim().toLowerCase();
-    return nickname.length > 0 && text.includes(nickname);
+    const productName = nickname.split('·')[0].trim();
+    const cardName = account.type.toLowerCase().includes('credit') ? productName.split(' ')[0] : '';
+    return nickname.length > 0 && (text.includes(nickname) || (productName.length > 0 && text.includes(productName)) || (cardName.length >= 4 && new RegExp(`\\b${cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text)));
   });
   if (named) return named.id;
 
@@ -165,6 +169,13 @@ export function routeIntent(message: string): {
 } {
   const text = message.toLowerCase();
 
+  if (requestsAnomalyList(message)) {
+    return { tool: 'insight_anomalies', args: (session) => {
+      const accountId = anomalyAccountId(text, session);
+      return { customerId: session.customer.id, ...(accountId ? { accountId } : {}) };
+    } };
+  }
+
   if (/\bbill|due|paycheck|cover|rent\b/.test(text)) {
     return {
       tool: "insight_upcoming_bills",
@@ -190,6 +201,8 @@ export function routeIntent(message: string): {
     };
   }
   const ranked = /\b(?:biggest|largest|top|highest|most expensive)\b/.test(text);
+  const merchant = /\b(?:transactions?|purchases?|charges?)\s+(?:at|from)\s+(.+?)[?.!]*$/i.exec(message)?.[1]?.trim();
+  if (merchant) return { tool: 'insight_top_transactions', args: (session) => ({ accountId: checkingAccountId(session), merchant, months: 3, limit: 50 }) };
   const category = detectSpendingCategory(text);
   if (ranked && (category || /\b(?:purchases?|expenses?|transactions?|charges?)\b/.test(text))) {
     return {
@@ -202,10 +215,12 @@ export function routeIntent(message: string): {
       })
     };
   }
-  if (/\b(?:weird|anomal\w*|duplicate|suspicious|charg\w*|unusual|strange|odd|double)\b/.test(text)) {
+  if (/\b(?:weird|anomal\w*|duplicate|suspicious|unusual|strange|odd|double)\b/.test(text)) {
     return {
       tool: "insight_anomalies",
       args: (session) => {
+        const reference = resolveTransactionReference(message, session);
+        if (reference) return { customerId: session.customer.id, accountId: reference.accountId, transactionId: reference.id };
         const accountId = anomalyAccountId(text, session);
         return accountId
           ? { customerId: session.customer.id, accountId }
@@ -213,7 +228,7 @@ export function routeIntent(message: string): {
       }
     };
   }
-  if (/\btransaction|\bactivity\b|\bpurchases?\b|\bdeposits?\b|\bwithdrawals?\b|\bhistory\b/.test(text)) {
+  if (/\btransaction|\bactivity\b|\bpurchases?\b|\bcharges?\b|\bdeposits?\b|\bwithdrawals?\b|\bhistory\b/.test(text)) {
     return {
       tool: "nessie_list_account_withdrawals",
       args: (session) => ({ accountId: checkingAccountId(session) })
@@ -342,10 +357,19 @@ function findingLabel(finding: AnyRecord): string {
 function anomaliesAnswer(data: unknown): string {
   const payload = rec(data);
   const findings = Array.isArray(payload.findings) ? payload.findings.map(rec) : [];
-  if (findings.length === 0) {
-    return "Nothing unusual stood out across your accounts.";
+  if (payload.assessment) {
+    const assessment = rec(payload.assessment);
+    if (!assessment.found) return String(assessment.message || 'I could not assess that transaction.');
+    const name = String(rec(assessment.transaction).description || 'That charge');
+    if (!findings.length) return `${name} was not flagged by the checks I could run. That does not guarantee it is legitimate; you can check the receipt and report it if you don’t recognize it.`;
+    return findings.map((finding) => finding.type === 'duplicate'
+      ? `${name} is a possible duplicate because the same merchant charged the same amount again within three days.`
+      : `${name} stands out because it is much larger than ${/merchant/i.test(String(finding.reason)) ? 'your usual purchases at that merchant' : 'recent purchases on that account'}.`).join(' ') + ' That is a reason to review it, not proof of fraud.';
   }
-  const visible = findings.slice(0, 8);
+  if (findings.length === 0) {
+    return payload.complete === false ? 'I could not check every account, so I cannot give you a complete suspicious-activity result.' : "Nothing unusual stood out across your accounts.";
+  }
+  const visible = findings;
   const duplicates = visible.filter((finding) => finding.type === "duplicate");
   const outliers = visible.filter((finding) => finding.type === "outlier");
   const others = visible.filter(
@@ -394,6 +418,7 @@ function anomaliesAnswer(data: unknown): string {
     );
   }
 
+  if (payload.complete === false) parts.push('Some accounts could not be checked, so this list is incomplete.');
   return parts.join(" ");
 }
 
@@ -726,7 +751,30 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
     return;
   }
   const { callTool, now } = deps;
-  const intent = routeIntent(message);
+  const contextual = isConversationFollowUp(message);
+  const reference = resolveTransactionReference(message, session);
+  const omission = /^(?:why\b|how come\b|i (?:asked|meant|said)\b)/i.test(message) && /\b(?:include|omit\w*|miss\w*|left out|not|didn.?t|asked)\b/i.test(message);
+  if (contextual && (!reference || omission)) {
+    const assessment = transactionEvidence(session).find((item) => rec(rec(item.data.assessment).transaction)._id === reference?.id);
+    const prior = transactionEvidence(session).find((item) => item.name === 'insight_anomalies' && !item.data.assessment);
+    const findings = Array.isArray(prior?.data.findings) ? prior.data.findings.map(rec) : [];
+    let text = 'Which transaction do you mean? You can name its merchant and amount, or point to an item in the last list.';
+    if (reference && assessment) {
+      const included = findings.some((finding) => finding._id === reference.id);
+      text = prior ? `${reference.description} ${included ? 'was included in the earlier scan’s findings and should have appeared in the results shown' : 'was not included in the earlier scan’s findings'}. ` : '';
+      text += `${anomaliesAnswer(assessment.data)} I can’t establish why a previous answer omitted it from the saved results alone.`;
+    } else if (/^(?:why\b|how come\b|i (?:asked|meant|said)\b)/i.test(message)) {
+      text = 'You’re asking about my previous answer, rather than requesting another list. I don’t have enough detail to explain that omission reliably. Which specific charge should I check?';
+    }
+    emit({ type: 'text', delta: text });
+    session.contents = trimContents([...session.contents, { role: 'user', parts: [{ text: message }] }, { role: 'model', parts: [{ text }] }]);
+    session.updatedAt = Date.now();
+    emit({ type: 'done', sessionId: session.id });
+    return;
+  }
+  const intent = contextual && reference
+    ? { tool: 'insight_anomalies', args: () => ({ customerId: session.customer.id, accountId: reference.accountId, transactionId: reference.id }) }
+    : routeIntent(message);
   const args = intent.args(session);
 
   emit({ type: "tool_start", name: intent.tool, label: toolLabel(intent.tool) });
@@ -734,6 +782,7 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
 
   let text: string;
   let intro = "";
+  let evidence: import('./session').Content[] = [];
   try {
     const result = await callTool(intent.tool, args);
     const ms = Date.now() - startedAt;
@@ -747,7 +796,11 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
     if (!result.ok) {
       text = "I couldn't read that data right now. Please try again in a moment.";
     } else {
-      intro = composeIntro(intent.tool);
+      evidence = [
+        { role: 'model', parts: [{ functionCall: { name: intent.tool, args } }] },
+        { role: 'user', parts: [{ functionResponse: { name: intent.tool, response: { result: result.data } } }] }
+      ];
+      intro = contextual ? '' : composeIntro(intent.tool);
       emit({ type: "text", delta: intro });
       const accountId =
         typeof args.accountId === "string" && args.accountId.trim().length > 0
@@ -779,6 +832,7 @@ export async function mockAgent({ session, message, emit, deps }: MockAgentInput
   session.contents = trimContents([
     ...session.contents,
     { role: "user", parts: [{ text: message }] },
+    ...evidence,
     { role: "model", parts: [{ text: sessionText }] }
   ]);
   session.updatedAt = Date.now();

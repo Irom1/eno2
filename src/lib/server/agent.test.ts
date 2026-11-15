@@ -200,6 +200,49 @@ describe("agent loop", () => {
     expect(text).toContain("Nothing unusual stood out across your accounts.");
   });
 
+  it('keeps a referenced transaction scoped and lets the model answer the follow-up', async () => {
+    const { session, events, emit } = capture();
+    session.contents = [
+      { role: 'model', parts: [{ functionCall: { name: 'insight_top_transactions', args: { accountId: 'acct-1' } } }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'insight_top_transactions', response: { result: { items: [
+        { _id: 'coffee-159', description: 'LOCAL COFFEE', amount: 159 }, { _id: 'coffee-10', description: 'LOCAL COFFEE', amount: 10 }
+      ] } } } }] }
+    ];
+    let rounds = 0;
+    const callTool = vi.fn(async () => ({ ok: true, text: '{}', data: { count: 1, findings: [{ _id: 'coffee-159' }], assessment: { found: true } } }));
+    await runGeminiAgent({ session, message: 'is that first one suspicious', emit, runtime, mcp, deps: baseDeps({
+      callTool,
+      stream: async (params) => {
+        if (rounds++ === 0) return { text: '', parts: [{ functionCall: { name: 'insight_anomalies', args: { customerId: 'cust-1' } } }], functionCalls: [{ name: 'insight_anomalies', args: { customerId: 'cust-1' } }] };
+        const text = 'That LOCAL COFFEE charge is unusually large compared with your normal visits. That does not establish fraud.';
+        params.onText(text);
+        return { text, parts: [{ text }], functionCalls: [] };
+      }
+    }) });
+    expect(rounds).toBe(2);
+    expect(callTool).toHaveBeenCalledWith('insight_anomalies', { customerId: 'cust-1', accountId: 'acct-1', transactionId: 'coffee-159' });
+    const text = events.filter((event) => event.type === 'text').map((event) => event.delta).join('');
+    expect(text).toContain('That LOCAL COFFEE charge');
+    expect(text).not.toContain('Here is what stood out');
+  });
+
+  it.each(['why didnt you include it when i asked for suspicious transactions', 'i asked why not show me'])('does not replace an explanation with a canned scan or snapshot: %s', async (message) => {
+    const { session, events, emit } = capture();
+    let rounds = 0;
+    await runGeminiAgent({ session, message, emit, runtime, mcp, deps: baseDeps({
+      stream: async (params) => {
+        if (rounds++ === 0) return { text: '', parts: [{ functionCall: { name: 'insight_anomalies', args: { accountId: 'acct-1' } } }], functionCalls: [{ name: 'insight_anomalies', args: { accountId: 'acct-1' } }] };
+        const text = 'You asked why it was omitted. I cannot establish the reason from the saved results alone.';
+        params.onText(text);
+        return { text, parts: [{ text }], functionCalls: [] };
+      }, callTool: async () => ({ ok: true, data: { findings: [] }, text: '{}' })
+    }) });
+    expect(rounds).toBe(2);
+    const text = events.filter((event) => event.type === 'text').map((event) => event.delta).join('');
+    expect(text).toContain('You asked why');
+    expect(text).not.toContain('financial snapshot');
+  });
+
   it("emits an insight event for a raw nessie tool payload", async () => {
     let streamCalls = 0;
     const { session, events, emit } = capture();

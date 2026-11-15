@@ -114,6 +114,35 @@ const climatePayload = {
 };
 
 describe("mockAgent", () => {
+  it('keeps the merchant-list -> one charge -> why follow-up grounded in the same transaction', async () => {
+    const session = createSession(customer, accounts);
+    const events: AgentEvent[] = [];
+    const calls: { name: string; args: Record<string, unknown> }[] = [];
+    const deps: MockAgentDeps = { now: () => new Date('2026-11-15'), callTool: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'insight_top_transactions') return ok({ count: 2, items: [{ _id: 'coffee-159', description: 'LOCAL COFFEE', amount: 159 }, { _id: 'coffee-10', description: 'LOCAL COFFEE', amount: 10 }] });
+      return ok({ count: 1, findings: [{ _id: 'coffee-159', type: 'outlier', description: 'LOCAL COFFEE', reason: "much larger than this merchant's usual purchases" }], assessment: { found: true, transaction: { _id: 'coffee-159', description: 'LOCAL COFFEE', amount: 159, accountId: accounts[0].id } } });
+    } };
+    const turn = async (message: string) => { events.length = 0; await mockAgent({ session, message, emit: (event) => events.push(event), deps }); return events.filter((event) => event.type === 'text').map((event) => event.delta).join(''); };
+    await turn('Show my transactions at LOCAL COFFEE');
+    const answer = await turn('is that first one suspicious');
+    expect(calls[1]).toEqual({ name: 'insight_anomalies', args: { customerId: customer.id, accountId: accounts[0].id, transactionId: 'coffee-159' } });
+    expect(answer).toContain('LOCAL COFFEE');
+    expect(answer).toContain('usual purchases at that merchant');
+    expect(answer).not.toContain('Here is what stood out');
+    const why = await turn('why didnt you include it when i asked for suspicious transactions');
+    expect(calls).toHaveLength(2);
+    expect(why).not.toContain('financial snapshot');
+    expect(events.some((event) => event.type === 'insight')).toBe(false);
+    await turn('i asked why not show me');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('clarifies an ambiguous singular follow-up instead of scanning all accounts', async () => {
+    const { text, events } = await run('Is that suspicious?', async () => { throw new Error('Must not fetch an unrelated list'); });
+    expect(text).toContain('Which transaction');
+    expect(events.some((event) => event.type === 'insight')).toBe(false);
+  });
   it("routes bills questions and emits ordered events with exact figures", async () => {
     const { events, text } = await run("What's due before my next paycheck and can I cover it?", async (name) => {
       expect(name).toBe("insight_upcoming_bills");

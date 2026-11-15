@@ -42,6 +42,7 @@
   } from '$lib/walletCache';
   import { classifyIntents } from '$lib/chat/intents.js';
   import { shouldInferTransactionList } from '$lib/chat/transactionListIntent.js';
+  import { isConversationFollowUp, requestsExplanationOnly } from '$lib/chat/requestScope.js';
   import type { EnoVariant } from '$lib/eno.js';
   import EnoThinking from '$lib/components/EnoThinking.svelte';
   import { groupInlineCards } from '$lib/chat/cardGroups.js';
@@ -375,7 +376,7 @@
                 void prefetchSnapshot(customerId);
               }
             }
-            if (data.kind === 'insight_anomalies') {
+            if (data.kind === 'insight_anomalies' && !requestsExplanationOnly(message.prompt ?? '') && (!isConversationFollowUp(message.prompt ?? '') || (payload && typeof payload === 'object' && 'assessment' in payload))) {
               // If the tool result arrives before any prose, anchor the cards at
               // the end of the text so the answer reads first and the cited
               // charges follow it. If an intro already exists, anchor inline.

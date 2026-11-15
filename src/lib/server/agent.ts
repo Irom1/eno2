@@ -21,6 +21,8 @@ import { trimContents, type Content, type ContentPart, type Session } from './se
 import { summarizeToolResult, toFunctionDeclarations, toolLabel } from './toolBridge';
 import type { Emit, ProviderFailureReason } from './events';
 import { collectCardCandidates, resolvePresentCard, type CardCandidate } from './presentCard';
+import { isConversationFollowUp, requestsAnomalyList } from '../chat/requestScope';
+import { resolveTransactionReference } from './transactionContext';
 
 const BREAKER_MS = 5 * 60_000;
 
@@ -249,11 +251,16 @@ export async function runGeminiAgent({
   const isGuest = session.customer.id === GUEST_CUSTOMER_ID;
   const contents: Content[] = [...session.contents, { role: 'user', parts: [{ text: message }] }];
   const allowlist = buildAllowlist(session.customer.id, session.accounts);
-  const systemInstruction = buildSystemInstruction(
+  let systemInstruction = buildSystemInstruction(
     session.customer,
     session.accounts,
     new Date(startedAt).toISOString().slice(0, 10)
   );
+  const contextual = isConversationFollowUp(message);
+  const referencedTransaction = resolveTransactionReference(message, session);
+  if (referencedTransaction && contextual) {
+    systemInstruction += `\n\nThis follow-up refers to the transaction already shown: ${JSON.stringify(referencedTransaction)}. Answer about that transaction only. If checking unusual activity, pass its accountId and transactionId=${referencedTransaction.id} to insight_anomalies. Do not replace this follow-up with an all-account scan or list.`;
+  }
 
   let rounds = 0;
   let lastUsage: RoundResult['usage'];
@@ -372,12 +379,13 @@ export async function runGeminiAgent({
 
         emit({ type: 'tool_start', name: call.name, label: toolLabel(call.name) });
 
-        // The model sometimes narrows a broad suspicious-activity question to
-        // checking. Force the routed scope so broad questions scan every
-        // account and named account/card questions scan that account.
+        // Correct an explicit scan or a grounded single-charge reference;
+        // never turn a conversational follow-up into a keyword-based scan.
         if (call.name === 'insight_anomalies') {
           const intent = routeIntent(message);
-          if (intent.tool === 'insight_anomalies') {
+          if (contextual && referencedTransaction) {
+            call.args = { customerId: session.customer.id, accountId: referencedTransaction.accountId, transactionId: referencedTransaction.id };
+          } else if (requestsAnomalyList(message) && intent.tool === 'insight_anomalies' && !/\bcards\b/i.test(message)) {
             call.args = intent.args(session);
           }
         }
@@ -485,6 +493,9 @@ export async function runGeminiAgent({
       // multi-tool questions keep the normal loop.
       if (
         fastTool &&
+        !contextual &&
+        (fastTool.name !== 'insight_anomalies' || requestsAnomalyList(message)) &&
+        (fastTool.name !== 'insight_financial_overview' || /\b(?:overview|snapshot|summary|finances|cash ?flow)\b|how am i doing/i.test(message)) &&
         rounds === 1 &&
         round.text.trim().length === 0 &&
         fastTool.name === routeIntent(message).tool

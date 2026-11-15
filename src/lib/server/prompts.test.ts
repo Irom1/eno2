@@ -21,9 +21,9 @@ describe("buildSystemInstruction", () => {
     expect(instruction).toContain(
       "For \"last month\" spending, use insight_spending_breakdown and quote the monthlyBreakdown entry for that month (categories + total)."
     );
-    expect(instruction).toContain(
-      "For suspicious-activity questions, scan all customer accounts by passing customerId (checking, savings, and credit cards) unless the customer names a specific account or card; for spending, loans, and recurring-charge questions, default to the checking account unless the customer names a specific card or account. Do not analyze every account for non-anomaly questions. For loans, call nessie_list_account_loans once on the checking account; do not repeat it for other accounts."
-    );
+    expect(instruction).toContain('For an explicit request to list suspicious activity, scan all customer accounts');
+    expect(instruction).toContain('Never expand "is that first one suspicious?" into a new all-account list.');
+    expect(instruction).toContain('Questions about why an earlier answer omitted something ask for an explanation, not another list.');
     expect(instruction).toContain(
       "Recurring obligations are not anomalies. Do not present rent, utilities, or subscriptions as unusual just because they are large."
     );
@@ -115,7 +115,7 @@ describe("buildSystemInstruction", () => {
       'Good: "There are several unusually large purchases and a possible duplicate. On your Venture card, NETFLIX is a possible duplicate; on checking, APPLE STORE, OVERSEAS ELECTRONICS, and EXPRESS AIR FREIGHT are unusually large purchases."'
     );
     expect(instruction).toContain(
-      'For suspicious-activity questions, scan all customer accounts by passing customerId (checking, savings, and credit cards) unless the customer names a specific account or card'
+      'For an explicit request to list suspicious activity, scan all customer accounts by passing customerId (checking, savings, and credit cards) unless the customer names a specific account or card'
     );
     expect(instruction).toContain(
       'pass customerId to scan all accounts (checking, savings, credit cards) for broad suspicious-activity questions, or accountId for one account.'

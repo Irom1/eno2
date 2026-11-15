@@ -1195,15 +1195,17 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
     "insight_anomalies",
     {
       description:
-        "Detect duplicate charges (same description+amount within 3 days) and amount outliers (above median + 3x MAD over the trailing 90 days). Pass customerId to scan all accounts (checking, savings, credit cards); pass accountId to scan one. Findings carry account ids/labels for card deep links.",
+        "Check unusual activity over the trailing 90 days. For a list, pass customerId to scan all accounts or accountId for one. For a question about ONE transaction, pass its transactionId AND accountId; the assessment and findings then describe only that transaction. Possible signals are not proof of fraud. Findings carry account ids/labels for deep links.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: {
         customerId: idParam.optional().describe("Customer id; scans every customer account when accountId is omitted"),
         accountId: idParam.optional().describe("Single account id to scan"),
+        transactionId: idParam.optional().describe("Specific transaction already returned by a tool; requires accountId. Assess only this item instead of listing other charges."),
       },
     },
-    async ({ customerId, accountId }) => {
+    async ({ customerId, accountId, transactionId }) => {
       const asOf = todayUTC();
+      if (transactionId && !accountId) return { isError: true, content: [{ type: 'text' as const, text: 'A specific transaction requires its owning accountId.' }] };
 
       if (!customerId && !accountId) {
         return ok({
@@ -1262,14 +1264,25 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
               ...(target.label ? { accountLabel: target.label } : {}),
               ...(target.type ? { accountType: target.type } : {}),
             });
-            return [...duplicates.map(tag), ...outliers.map(tag)];
+            const findings = [...duplicates.map(tag), ...outliers.map(tag)];
+            const transaction = transactionId ? transactions.find((item) => item.id === transactionId) : undefined;
+            return {
+              findings: transactionId ? findings.filter((finding) => finding._id === transactionId) : findings,
+              ...(transactionId ? { assessment: {
+                found: !!transaction,
+                transaction: transaction ? { _id: transaction.id, description: transaction.description, amount: transaction.amount, date: toISODate(transaction.date), accountId: target.id } : null,
+                flagged: findings.some((finding) => finding._id === transactionId),
+                message: transaction ? 'This assessment covers only the selected transaction. A signal does not prove fraud, and an unflagged charge is not guaranteed safe.' : 'That transaction was not found in the available posted history; I cannot assess it.'
+              } } : {}),
+              complete: true
+            };
           } catch {
-            return [];
+            return { findings: [], complete: false };
           }
         }),
       );
 
-      const findings = perAccount.flat();
+      const findings = perAccount.flatMap((result) => result.findings);
       const duplicateCount = findings.filter((finding) => finding.type === "duplicate").length;
       const outlierCount = findings.filter((finding) => finding.type === "outlier").length;
       return ok({
@@ -1278,6 +1291,9 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
         outlierCount,
         summary: summarizeAnomalyPatterns(duplicateCount, outlierCount),
         findings,
+        complete: perAccount.every((result) => result.complete),
+        failedAccountCount: perAccount.filter((result) => !result.complete).length,
+        ...(transactionId ? { assessment: perAccount.find((result) => 'assessment' in result)?.assessment ?? { found: false, message: 'I could not read the selected account, so I cannot assess this charge.' } } : {}),
       });
     },
   );
