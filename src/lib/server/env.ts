@@ -25,12 +25,8 @@ export interface RuntimeEnv {
   MAPBOX_REFERER?: string;
   /** Cards v2 pipeline: `off` keeps today's client-only inference. Defaults to `v2`. */
   CARDS_MODE?: CardsMode;
-  /** Server-only ElevenLabs key for the `/api/tts` read-aloud proxy. */
+  /** Server-only ElevenLabs key for the `/api/tts` read-aloud proxy. The voice and model are hardcoded there. */
   ELEVENLABS_API_KEY?: string;
-  /** ElevenLabs voice ID; defaults to Adam when unset. */
-  ELEVENLABS_VOICE_ID?: string;
-  /** ElevenLabs model ID; defaults to `eleven_turbo_v2_5` when unset. */
-  ELEVENLABS_MODEL?: string;
 }
 
 const DEFAULT_BASE_URL = 'https://prod-api.nessieisreal.com';
@@ -57,8 +53,6 @@ export function resolveEnv(platform?: App.Platform): RuntimeEnv {
   const MAPBOX_API_KEY = read(sources, 'MAPBOX_API_KEY');
   const MAPBOX_REFERER = read(sources, 'MAPBOX_REFERER');
   const ELEVENLABS_API_KEY = read(sources, 'ELEVENLABS_API_KEY');
-  const ELEVENLABS_VOICE_ID = read(sources, 'ELEVENLABS_VOICE_ID');
-  const ELEVENLABS_MODEL = read(sources, 'ELEVENLABS_MODEL');
 
   const requested = read(sources, 'LLM').toLowerCase();
   const LLM: RuntimeEnv['LLM'] =
@@ -76,8 +70,6 @@ export function resolveEnv(platform?: App.Platform): RuntimeEnv {
     MAPBOX_API_KEY,
     MAPBOX_REFERER,
     CARDS_MODE,
-    ELEVENLABS_API_KEY,
-    ELEVENLABS_VOICE_ID,
-    ELEVENLABS_MODEL
+    ELEVENLABS_API_KEY
   };
 }

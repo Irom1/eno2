@@ -10,9 +10,9 @@
   },
   // Server-only secrets are set with `wrangler secret put` (never commit values):
   // NESSIE_API_KEY, GEMINI_API_KEY, ELEVENLABS_API_KEY and MAPBOX_API_KEY. The
-  // read-aloud proxy reads ELEVENLABS_API_KEY server-side; ELEVENLABS_VOICE_ID
-  // and ELEVENLABS_MODEL are non-sensitive and may be `vars` or left to their
-  // in-code defaults (Adam / eleven_turbo_v2_5). MAPBOX_API_KEY holds the
+  // read-aloud proxy reads only ELEVENLABS_API_KEY from the environment; the
+  // voice (Adam) and model (eleven_turbo_v2_5) are hardcoded in `/api/tts`.
+  // MAPBOX_API_KEY holds the
   // Mapbox public token used only by the `/api/mapbox/static` proxy, so it is a
   // private secret and never a `vars` value. Location search geocodes through
   // OpenStreetMap Nominatim.

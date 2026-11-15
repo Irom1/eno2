@@ -4,8 +4,8 @@ import { resolveEnv } from '$lib/server/env';
 export const prerender = false;
 
 const MAX_TEXT_LENGTH = 2500;
-const DEFAULT_VOICE_ID = 'pNInz6obpgDQGcFmaJgB';
-const DEFAULT_MODEL = 'eleven_turbo_v2_5';
+const VOICE_ID = 'pNInz6obpgDQGcFmaJgB'; // Adam, deep American male
+const MODEL_ID = 'eleven_turbo_v2_5';
 
 function jsonError(error: string, status: number): Response {
   return new Response(JSON.stringify({ error }), {
@@ -38,9 +38,7 @@ export async function POST({ request, platform }: RequestEvent): Promise<Respons
     return jsonError('Voice is not configured', 503);
   }
 
-  const voiceId = runtime.ELEVENLABS_VOICE_ID || DEFAULT_VOICE_ID;
-  const model = runtime.ELEVENLABS_MODEL || DEFAULT_MODEL;
-  const target = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`;
+  const target = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(VOICE_ID)}?output_format=mp3_44100_128`;
 
   let upstream: Response;
   try {
@@ -51,7 +49,7 @@ export async function POST({ request, platform }: RequestEvent): Promise<Respons
         'content-type': 'application/json',
         accept: 'audio/mpeg'
       },
-      body: JSON.stringify({ text, model_id: model }),
+      body: JSON.stringify({ text, model_id: MODEL_ID }),
       signal: request.signal
     });
   } catch (error) {

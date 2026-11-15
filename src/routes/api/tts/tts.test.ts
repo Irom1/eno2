@@ -17,8 +17,6 @@ function runtime(overrides: Record<string, string> = {}) {
     GEMINI_MODEL: '',
     LLM: 'mock',
     ELEVENLABS_API_KEY: KEY,
-    ELEVENLABS_VOICE_ID: VOICE,
-    ELEVENLABS_MODEL: MODEL,
     ...overrides
   };
 }
