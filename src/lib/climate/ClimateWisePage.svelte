@@ -4,6 +4,7 @@
 	import logoLight from '$lib/assets/climatewise-logo-light.png';
 	import logoDark from '$lib/assets/climatewise-logo-dark.png';
 	import { CATEGORIES, CATEGORY_BY_ID, type ClimateReport } from './emissions';
+	import { climateReportCache } from './reportCache';
 
 	type Theme = 'light' | 'dark' | 'system';
 	type Layout = 'portrait' | 'landscape';
@@ -64,32 +65,33 @@
 	let report = $state<ClimateReport | null>(null);
 	let error = $state('');
 	let selected = $state<string | null>(null);
+	let hovered = $state<string | null>(null);
 	let showInfo = $state(false);
 
 	async function loadReport(id: string | null, signal: AbortSignal) {
-		if (id) {
-			const response = await fetch('/api/session', { signal });
-			const session = response.ok ? await response.json() : null;
-			if (session?.customer?.id !== id) {
-				const selected = await fetch('/api/session', {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ customerId: id }),
-					signal
-				});
-				if (!selected.ok) throw new Error('Could not select the customer.');
-			}
+		const response = await fetch('/api/session', { signal });
+		let session = response.ok ? await response.json() : null;
+		if (id && session?.customer?.id !== id) {
+			const selected = await fetch('/api/session', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ customerId: id }),
+				signal
+			});
+			if (!selected.ok) throw new Error('Could not select the customer.');
+			session = await selected.json();
 		}
-		const response = await fetch(`/api/climate?days=${DAYS}`, { signal });
-		if (!response.ok) throw new Error('Could not load the report.');
-		return response.json() as Promise<{ report: ClimateReport }>;
+		if (signal.aborted) throw new Error('Report cancelled.');
+		const profileId = id ?? session?.customer?.id;
+		if (!profileId || !Array.isArray(session?.accounts)) throw new Error('Could not check this profile’s accounts.');
+		return { report: await climateReportCache.load(profileId, session.accounts.map((account: { id: string }) => account.id), DAYS) };
 	}
 
-	$effect(() => {
+	$effect.pre(() => {
 		attempt;
 		const controller = new AbortController();
 		error = '';
-		report = null;
+		report = customerId ? climateReportCache.peek(customerId, DAYS) : null;
 		hovered = null;
 		selected = null;
 		loadReport(customerId, controller.signal)
@@ -131,7 +133,6 @@
 	});
 
 	// The panel follows the slice under the pointer, falling back to the one tapped; empty until then.
-	let hovered = $state<string | null>(null);
 	let activeId = $derived(hovered ?? selected);
 	let selectedCat = $derived(report && activeId ? report.categories.find((c) => c.id === activeId) ?? null : null);
 	let visiblePurchases = $derived(

@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-  <title>{openingAccounts ? 'Open accounts' : 'Sign up'} with Eno | Capital One</title>
+  <title>{openingAccounts ? 'Open accounts' : 'Set up'} with Eno | Capital One</title>
   <meta name="description" content="Say hello to Eno and set up your accounts through a friendly conversation." />
 </svelte:head>
 

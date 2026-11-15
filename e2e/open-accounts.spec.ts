@@ -40,7 +40,7 @@ test('dashboard opens a personalized account dropdown without repeating signup a
   const state = await fixtures(page);
   await page.goto(`/dashboard?customer=${customer.id}`);
   const link = page.getByRole('link', { name: 'Open a new account', exact: true });
-  await expect(link).toHaveAttribute('href', `/signup?customer=${customer.id}&mode=accounts`);
+  await expect(link).toHaveAttribute('href', `/setup?customer=${customer.id}&mode=accounts`);
   await link.click();
   await expect(page.getByText('Hey, Ada!', { exact: false })).toBeVisible();
   const options = page.getByRole('group', { name: 'Available accounts' });
@@ -77,7 +77,7 @@ test('empty profiles can open accounts and the button submits once', async ({ pa
 test('all products owned gives a dashboard exit with no empty selection to submit', async ({ page }) => {
   const all = openingProducts.map((option) => ({ id: option.id, type: option.type, nickname: option.name, accountNumber: '1234', balance: 500, rewards: 20 }));
   const state = await fixtures(page, all);
-  await page.goto(`/signup?customer=${customer.id}&mode=accounts`);
+  await page.goto(`/setup?customer=${customer.id}&mode=accounts`);
   await expect(page.getByText('You already have every product', { exact: false })).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
   await page.getByRole('link', { name: /Open my dashboard/ }).click();
@@ -87,7 +87,7 @@ test('all products owned gives a dashboard exit with no empty selection to submi
 
 test('stale selections refresh without creating accounts or continuing automatically', async ({ page }) => {
   const state = await fixtures(page, [checking, venture], 'stale');
-  await page.goto(`/signup?customer=${customer.id}&mode=accounts`);
+  await page.goto(`/setup?customer=${customer.id}&mode=accounts`);
   await page.getByRole('checkbox', { name: /360 Performance Savings/ }).check();
   await page.getByRole('button', { name: /Open selected accounts/ }).click();
   await expect(page.getByText('I’ve refreshed the remaining choices.', { exact: false })).toBeVisible();
@@ -100,7 +100,7 @@ test('stale selections refresh without creating accounts or continuing automatic
 test('partial creation and lost acknowledgements offer the dashboard and prevent blind retries', async ({ page }) => {
   for (const mode of ['partial', 'uncertain'] as const) {
     const state = await fixtures(page, [checking, venture], mode);
-    await page.goto(`/signup?customer=${customer.id}&mode=accounts`);
+    await page.goto(`/setup?customer=${customer.id}&mode=accounts`);
     await page.getByRole('checkbox', { name: /360 Performance Savings/ }).check();
     await page.getByRole('button', { name: /Open selected accounts/ }).click();
     await expect(page.getByRole('link', { name: /Open my dashboard/ })).toBeVisible();
@@ -118,12 +118,23 @@ test('account opening keeps a new-user draft intact and supports mobile, theme, 
     } });
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/signup?customer=${customer.id}&mode=accounts`);
+  await page.goto(`/setup?customer=${customer.id}&mode=accounts`);
   await expect(page.getByRole('checkbox')).toHaveCount(4);
   await expect(page.getByRole('button', { name: 'Enable Eno voice', exact: true }).locator('svg')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Read Eno message aloud' }).locator('svg')).toBeVisible();
-  await page.getByRole('button', { name: 'Enable Eno voice', exact: true }).click();
+  const voice = page.locator('.voice');
+  await expect(voice).toHaveAttribute('aria-pressed', 'false');
+  await expect(voice.locator('.speaker-slash')).toBeVisible();
+  const mutedColor = await voice.evaluate((button) => getComputedStyle(button).color);
+  await voice.click();
   await expect(page.locator('html')).toHaveAttribute('data-spoken-text', /Hey, Ada/);
+  await expect(voice).toHaveAttribute('aria-pressed', 'true');
+  await expect(voice.locator('.speaker-slash')).toHaveCount(0);
+  expect(await voice.evaluate((button) => getComputedStyle(button).color)).not.toBe(mutedColor);
+  await voice.click();
+  await expect(voice).toHaveAttribute('aria-pressed', 'false');
+  await expect(voice.locator('.speaker-slash')).toBeVisible();
+  await expect(voice).toHaveCSS('color', mutedColor);
   await page.getByRole('button', { name: 'Switch to dark mode' }).click();
   await expect(page.locator('.existing-signup')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('textbox', { name: 'Message Eno' }).fill('What is Savor?');

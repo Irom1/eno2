@@ -283,20 +283,20 @@
 </script>
 
 {#snippet arrow()}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>{/snippet}
-{#snippet speaker()}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Z" /><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" /></svg>{/snippet}
+{#snippet speaker(muted = false)}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Z" />{#if muted}<path class="speaker-slash" d="m3 3 18 18" />{:else}<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />{/if}</svg>{/snippet}
 
 <div class="signup-chat" data-theme={theme}>
   <header>
     <a class="brand" href="/" aria-label="Capital One home"><CapitalOneLogo label="Capital One" /></a>
     <div class="header-actions">
-      <button class="voice-toggle" disabled={!ready || !speechSupported} aria-label={voiceEnabled ? 'Mute Eno voice' : 'Enable Eno voice'} aria-pressed={voiceEnabled} onclick={toggleVoice}>{@render speaker()}<span>{speechSupported ? voiceEnabled ? 'Voice on' : 'Hear Eno speak' : 'Voice unavailable'}</span></button>
+      <button class="voice-toggle" disabled={!ready || !speechSupported} aria-label={voiceEnabled ? 'Mute Eno voice' : 'Enable Eno voice'} aria-pressed={voiceEnabled} title={voiceEnabled ? 'Chats will be spoken aloud' : 'Chats will not be spoken aloud'} onclick={toggleVoice}>{@render speaker(!voiceEnabled)}<span>{speechSupported ? voiceEnabled ? 'Voice on' : 'Voice off' : 'Voice unavailable'}</span></button>
       <button class="theme-toggle" disabled={!ready} aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={isDark} onclick={toggleTheme}>{#if isDark}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5" /></svg>{:else}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" /></svg>{/if}</button>
     <a class="exit" href="/" aria-label="Back to home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg></a>
     </div>
   </header>
   <div class="experience">
   <main>
-    <h1 class="sr-only">Sign up with Eno</h1>
+    <h1 class="sr-only">Set up with Eno</h1>
     {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
     <div class="transcript" bind:this={scrollArea} role="log" aria-label="Your conversation with Eno" aria-live="polite" aria-relevant="additions">
       <div class="messages">
@@ -372,8 +372,8 @@
   .exit:hover { background: var(--surface); }
   .experience { display: flex; flex: 1; min-height: 0; width: min(800px, 100%); margin: 0 auto; }
   .header-actions { display: flex; align-items: center; gap: 16px; }
-  .voice-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 24px; background: var(--surface); font-size: 11px; }
-  .voice-toggle[aria-pressed='true'] { border-color: var(--link); color: var(--link); }
+  .voice-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 24px; background: var(--surface); color: var(--muted); font-size: 11px; }
+  .voice-toggle[aria-pressed='true'] { border-color: var(--link); color: var(--link); background: color-mix(in srgb, var(--link) 14%, var(--surface)); }
   .voice-toggle svg { width: 16px; height: 16px; }
   .speech-notice { margin: 0 22px 12px; color: var(--muted); font-size: 11px; text-align: center; }
   .read-aloud { display: grid; place-items: center; padding: 1px; border: 0; background: transparent; color: var(--muted); }

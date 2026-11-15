@@ -160,12 +160,12 @@
   }
 </script>
 
-{#snippet speaker()}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Z" /><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" /></svg>{/snippet}
+{#snippet speaker(muted = false)}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Z" />{#if muted}<path class="speaker-slash" d="m3 3 18 18" />{:else}<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />{/if}</svg>{/snippet}
 <div class="existing-signup" data-theme={theme}>
   <header>
     <a class="brand" href="/" aria-label="Capital One home"><CapitalOneLogo label="Capital One" /></a>
     <div class="actions">
-      <button class="voice" disabled={!speechSupported} aria-label={voiceEnabled ? 'Mute Eno voice' : 'Enable Eno voice'} aria-pressed={voiceEnabled} onclick={toggleVoice}>{@render speaker()} <span>{voiceEnabled ? 'Voice on' : 'Hear Eno speak'}</span></button>
+      <button class="voice" disabled={!speechSupported} aria-label={voiceEnabled ? 'Mute Eno voice' : 'Enable Eno voice'} aria-pressed={voiceEnabled} title={voiceEnabled ? 'Chats will be spoken aloud' : 'Chats will not be spoken aloud'} onclick={toggleVoice}>{@render speaker(!voiceEnabled)} <span>{speechSupported ? voiceEnabled ? 'Voice on' : 'Voice off' : 'Voice unavailable'}</span></button>
       <button class="icon" aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} onclick={toggleTheme}>{isDark ? '☀' : '☾'}</button>
       <a class="icon" href={dashboard} aria-label="Back to dashboard">×</a>
     </div>
@@ -228,7 +228,7 @@
   header { width: min(1200px, calc(100% - 72px)); margin: 0 auto; padding: 24px 0; display: flex; align-items: center; justify-content: space-between; }
   .brand { display: flex; color: var(--dark, #fff) var(--light, #013d5b); } .brand :global(svg) { width: 110px; height: 40px; }
   .actions { display: flex; align-items: center; gap: 16px; } .voice, .icon { border: 1px solid var(--border); background: transparent; border-radius: 24px; }
-  .voice { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 13px; font-size: 11px; } .voice svg { width: 16px; height: 16px; } .voice[aria-pressed='true'] { color: var(--link); } .icon { width: 38px; height: 38px; display: grid; place-items: center; font-size: 22px; }
+  .voice { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 13px; color: var(--muted); font-size: 11px; } .voice svg { width: 16px; height: 16px; } .voice[aria-pressed='true'] { border-color: var(--link); color: var(--link); background: color-mix(in srgb, var(--link) 14%, var(--surface)); } .icon { width: 38px; height: 38px; display: grid; place-items: center; font-size: 22px; }
   main { width: min(800px, 100%); margin: 0 auto; display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .transcript { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
