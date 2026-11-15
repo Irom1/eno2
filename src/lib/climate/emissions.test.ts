@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mergeTransactions } from '../server/accounts';
 import { buildDemoTransactions, demoAccountTotals } from '../server/nessie/seedTransactions';
-import { buildReport, CATEGORIES, classify, fromNessiePurchase, scoreFor, tierFor, US_AVG_TONNES } from './emissions';
+import { buildReport, CATEGORIES, classify, fromNessiePurchase, scoreForPerformance, tierFor } from './emissions';
 
 // Raw Nessie deposits/withdrawals, run through the same normalizer /api/accounts/:id uses,
 // so these tests break if that endpoint's transaction shape ever drifts from what ClimateWise reads.
@@ -53,13 +53,14 @@ describe('ClimateWise report', () => {
     expect(report.purchaseCount).toBe(4);
   });
 
-  it('keeps the score between 300 and 850 and pins the US average to 670', () => {
+  it('keeps the score between 300 and 850 and maps weighted performance linearly', () => {
     const report = buildReport(transactions, { days: 30, asOf });
     expect(report.score).toBeGreaterThanOrEqual(300);
     expect(report.score).toBeLessThanOrEqual(850);
-    expect(scoreFor(US_AVG_TONNES)).toBe(670);
-    expect(scoreFor(0)).toBe(850);
-    expect(scoreFor(1000)).toBe(300);
+    expect(scoreForPerformance(0)).toBe(300);
+    expect(scoreForPerformance(0.3)).toBe(465);
+    expect(scoreForPerformance(0.5)).toBe(575);
+    expect(scoreForPerformance(1)).toBe(850);
   });
 
   it('uses FICO-style tiers', () => {
@@ -70,11 +71,24 @@ describe('ClimateWise report', () => {
     expect(tierFor(300)).toBe('Poor');
   });
 
-  it('returns an empty, valid report with no transactions', () => {
+  it('returns an empty, valid report with a neutral score and no purchases', () => {
     const report = buildReport([], { days: 30, asOf });
     expect(report.purchaseCount).toBe(0);
     expect(report.totalKg).toBe(0);
     expect(Number.isFinite(report.score)).toBe(true);
+    expect(report.score).toBe(670);
+  });
+
+  it('scores a perfect high-weight category above the floor on its own', () => {
+    const report = buildReport(
+      [{ id: 'grocery', kind: 'purchase', amount: 64.2, description: 'WHOLE FOODS MKT', date: '2026-11-10' }],
+      { days: 30, asOf }
+    );
+    const food = report.categories.find((c) => c.id === 'food')!;
+    expect(food.greenness).toBe(1);
+    expect(food.weight).toBeCloseTo(0.3, 6);
+    expect(report.score).toBe(465);
+    expect(report.score).not.toBe(300);
   });
 
   it('classifies every merchant the demo seed generates', () => {
@@ -97,8 +111,9 @@ describe('ClimateWise report', () => {
     expect(classify('MARRIOTT HOTEL').sub).toBe('Hotels');
   });
 
-  it('gives the ring slice sizes that add up to the whole ring', () => {
+  it('gives the ring slice sizes (score weights) that add up to the whole ring', () => {
     expect(CATEGORIES.reduce((s, c) => s + c.typicalShare, 0)).toBeCloseTo(1, 6);
+    expect(CATEGORIES.find((c) => c.id === 'food')!.typicalShare).toBeCloseTo(0.3, 6);
   });
 
   it('maps raw Nessie purchases', () => {

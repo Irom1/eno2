@@ -1337,7 +1337,7 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
     "insight_climatewise",
     {
       description:
-        "LORAXⓇ Score, purchase emissions, category breakdown, top emitting purchases, and reduction nudges over the last N days.",
+        "LORAXⓇ Score (a weighted category score), purchase emissions, category breakdown, top emitting purchases, and reduction nudges over the last N days.",
       annotations: READ_ONLY_ANNOTATIONS,
       inputSchema: {
         customerId: idParam,

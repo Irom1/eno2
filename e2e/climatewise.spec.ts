@@ -14,11 +14,11 @@ const report = {
 	score: 712,
 	tier: 'Good',
 	categories: [
-		{ id: 'transport', label: 'Travel & transport', color: '#c4562e', kg: 412, spend: 920, count: 12, share: 0.32, greenness: 0.38 },
-		{ id: 'shopping', label: 'Shopping & services', color: '#7a5cc7', kg: 268, spend: 1100, count: 18, share: 0.21, greenness: 0.42 },
-		{ id: 'energy', label: 'Home energy', color: '#e3a21a', kg: 234, spend: 640, count: 4, share: 0.18, greenness: 0.51 },
-		{ id: 'food', label: 'Food & dining', color: '#2f8f5b', kg: 290, spend: 1860, count: 26, share: 0.23, greenness: 0.46 },
-		{ id: 'housing', label: 'Housing', color: '#2a6fb5', kg: 80, spend: 300, count: 4, share: 0.06, greenness: 0.5 }
+		{ id: 'transport', label: 'Travel & transport', color: '#c4562e', kg: 412, spend: 920, count: 12, share: 0.32, greenness: 0.38, weight: 0.27 },
+		{ id: 'shopping', label: 'Shopping & services', color: '#7a5cc7', kg: 268, spend: 1100, count: 18, share: 0.21, greenness: 0.42, weight: 0.18 },
+		{ id: 'energy', label: 'Home energy', color: '#e3a21a', kg: 234, spend: 640, count: 4, share: 0.18, greenness: 0.51, weight: 0.2 },
+		{ id: 'food', label: 'Food & dining', color: '#2f8f5b', kg: 290, spend: 1860, count: 26, share: 0.23, greenness: 0.46, weight: 0.3 },
+		{ id: 'housing', label: 'Housing', color: '#2a6fb5', kg: 80, spend: 300, count: 4, share: 0.06, greenness: 0.5, weight: 0.05 }
 	],
 	greenness: {
 		ratings: [],

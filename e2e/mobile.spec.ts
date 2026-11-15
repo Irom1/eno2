@@ -191,7 +191,8 @@ test.describe('360x640 keyboard viewport', () => {
           spend: 62,
           count: 3,
           share: 0.43,
-          greenness: 0.3
+          greenness: 0.3,
+          weight: 0.27
         },
         {
           id: 'food',
@@ -201,7 +202,8 @@ test.describe('360x640 keyboard viewport', () => {
           spend: 400,
           count: 20,
           share: 0.29,
-          greenness: 0.45
+          greenness: 0.45,
+          weight: 0.3
         }
       ],
       greenness: { ratings: [], greenShare: 0.42, flexibleSpend: 3200, fixedSpend: 1620 },

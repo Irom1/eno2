@@ -480,8 +480,8 @@ test.describe('chat prompts', () => {
       score: 712,
       tier: 'Good',
       categories: [
-        { id: 'transport', label: 'Travel & transport', color: '#c4562e', kg: 180.2, spend: 62, count: 3, share: 0.43 },
-        { id: 'food', label: 'Food & dining', color: '#2f8f5b', kg: 120.5, spend: 400, count: 20, share: 0.29 }
+        { id: 'transport', label: 'Travel & transport', color: '#c4562e', kg: 180.2, spend: 62, count: 3, share: 0.43, weight: 0.27 },
+        { id: 'food', label: 'Food & dining', color: '#2f8f5b', kg: 120.5, spend: 400, count: 20, share: 0.29, weight: 0.3 }
       ],
       nudges: [
         {

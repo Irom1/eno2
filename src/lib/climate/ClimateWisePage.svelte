@@ -217,7 +217,7 @@
 						<button class="info" aria-expanded={showInfo} aria-controls="score-info" aria-label="How your LORAXⓇ Score is estimated"
 							onclick={() => (showInfo = !showInfo)}>i</button>
 						{#if showInfo}
-							<p class="info-text" id="score-info">Your LORAXⓇ Score is estimated from purchases over the past {report.days} days.</p>
+							<p class="info-text" id="score-info">Your LORAXⓇ Score weights each spending category, based on purchases over the past {report.days} days.</p>
 						{/if}
 					</div>
 
