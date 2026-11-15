@@ -1887,19 +1887,17 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.transaction-list-card .badge')).toHaveCount(0);
     await expect(page.locator('.transaction-list-card .flag, .flag')).toHaveCount(0);
 
-    // Every row links to the owning account, opened in a new tab.
+    // Every row links to the owning account, opened in the current tab.
     const links = lists.locator('.transaction-row a.transaction-link');
     await expect(links).toHaveCount(rowCount);
     const hrefs = await links.evaluateAll((elements) =>
       elements.map((element) => ({
         href: element.getAttribute('href') ?? '',
-        target: element.getAttribute('target'),
-        rel: element.getAttribute('rel') ?? ''
+        target: element.getAttribute('target')
       }))
     );
     for (const link of hrefs) {
-      expect(link.target).toBe('_blank');
-      expect(link.rel).toContain('noopener');
+      expect(link.target, 'transaction rows navigate in the current tab').toBeNull();
       expect(link.href).toMatch(/^\/dashboard\?customer=[^&]+&account=acct-checking&txn=.+/);
     }
     await expect(page.locator('.transaction-row .open-icon').first()).toBeVisible();
@@ -2304,19 +2302,17 @@ test.describe('chat prompts', () => {
     await expect(page.locator('.transaction-card .flag, .flag')).toHaveCount(0);
     await expect(page.locator('.transaction-card[data-flag]')).toHaveCount(0);
 
-    // Each anomaly card links to its transaction with the finding _id.
+    // Each anomaly card links to its transaction with the finding _id, in the current tab.
     const cardLinks = page.locator('a.transaction-card.transaction-link');
     await expect(cardLinks).toHaveCount(count);
     const cardHrefs = await cardLinks.evaluateAll((elements) =>
       elements.map((element) => ({
         href: element.getAttribute('href') ?? '',
-        target: element.getAttribute('target'),
-        rel: element.getAttribute('rel') ?? ''
+        target: element.getAttribute('target')
       }))
     );
     for (const link of cardHrefs) {
-      expect(link.target).toBe('_blank');
-      expect(link.rel).toContain('noopener');
+      expect(link.target, 'transaction cards navigate in the current tab').toBeNull();
       expect(link.href).toMatch(/^\/dashboard\?customer=[^&]+&account=acct-checking&txn=.+/);
     }
     expect(cardHrefs.map((link) => link.href)).toEqual([
