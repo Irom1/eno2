@@ -2911,6 +2911,59 @@ test.describe('chat prompts', () => {
 
     expectNoErrors(errors);
   });
+
+  test('deep link opens the account bills tab and highlights the bill', async ({ page }) => {
+    const errors = collectErrors(page);
+
+    const customersResponse = await page.request.get('/api/customers');
+    const { customers } = (await customersResponse.json()) as {
+      customers: Array<{ id: string; lastName: string }>;
+    };
+    const maya = customers.find((customer) => customer.lastName === 'Chen') ?? customers[0];
+    expect(maya, 'Maya should exist in the fixture customers').toBeTruthy();
+
+    const sessionResponse = await page.request.post('/api/session', {
+      data: { customerId: maya.id }
+    });
+    expect(sessionResponse.ok()).toBe(true);
+
+    const accountsResponse = await page.request.get('/api/accounts');
+    const accountsPayload = (await accountsResponse.json()) as {
+      accounts: Array<{ id: string; type: string }>;
+      bills: Array<{ id: string; accountId?: string }>;
+    };
+    const accountIds = new Set(accountsPayload.accounts.map((account) => account.id));
+    const bill = accountsPayload.bills.find(
+      (candidate) => candidate.id && candidate.accountId && accountIds.has(candidate.accountId)
+    );
+    test.skip(!bill, 'the fixture customer needs an account-scoped bill');
+    if (!bill || !bill.accountId) return;
+
+    await page.goto(
+      `/dashboard?customer=${encodeURIComponent(maya.id)}&account=${encodeURIComponent(
+        bill.accountId
+      )}&tab=bills&bill=${encodeURIComponent(bill.id)}`
+    );
+
+    await expect(page.locator('.view-shell')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.tab[aria-pressed="true"]')).toContainText('Bills');
+
+    const selectorId = bill.id.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const row = page.locator(`[data-bill-id="${selectorId}"]`);
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await expect(row).toHaveClass(/highlight/);
+
+    const highlightStyle = await row.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { boxShadow: style.boxShadow, background: style.backgroundColor };
+    });
+    expect(highlightStyle.boxShadow, 'no inset accent bar').not.toContain('inset');
+    expect(highlightStyle.background, 'a tinted background marks the row').not.toBe(
+      'rgba(0, 0, 0, 0)'
+    );
+
+    expectNoErrors(errors);
+  });
 });
 
 test.describe('Eno mascot', () => {
@@ -3210,7 +3263,10 @@ test.describe('primitive bill and account cards', () => {
     const link = bill.locator('a.bill-link');
     await expect(link).toHaveCount(1);
     await expect(link).not.toHaveAttribute('target', '_blank');
-    await expect(link).toHaveAttribute('href', /^\/dashboard\?customer=[^&]+&account=acct-checking$/);
+    await expect(link).toHaveAttribute(
+      'href',
+      /^\/dashboard\?customer=[^&]+&account=acct-checking&tab=bills&bill=bill-rent$/
+    );
     await expect(bill.locator('.open-icon')).toBeVisible();
 
     expectNoErrors(errors);

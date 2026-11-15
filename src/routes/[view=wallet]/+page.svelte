@@ -121,6 +121,7 @@
     return { accountId, tab };
   });
   let focusTransactionId = $derived(page.url.searchParams.get('txn') ?? '');
+  let focusBillId = $derived(page.url.searchParams.get('bill') ?? '');
   // True when the account view was opened from the mounted chat, so the
   // header's return control goes back to chat instead of the dashboard.
   let openedFromChat = $state(false);
@@ -215,6 +216,7 @@
       url.searchParams.delete('account');
       url.searchParams.delete('tab');
       url.searchParams.delete('txn');
+      url.searchParams.delete('bill');
     }
     return url;
   }
@@ -376,14 +378,17 @@
     }
   }
 
-  function openAccountView(accountId: string, tab: WalletTab, transactionId?: string): void {
+  function openAccountView(accountId: string, tab: WalletTab, transactionId?: string, billId?: string): void {
     if (!accountId || !activeCustomerId || routeCustomerId !== activeCustomerId) return;
     accountNotice = '';
     accountOpen = false;
     const url = new URL(dashboardHref, page.url);
     url.searchParams.set('account', accountId);
     url.searchParams.set('tab', tab);
+    url.searchParams.delete('txn');
+    url.searchParams.delete('bill');
     if (transactionId) url.searchParams.set('txn', transactionId);
+    if (billId) url.searchParams.set('bill', billId);
     if (url.href === page.url.href) return;
     void goto(url, { replaceState: walletView !== null, noScroll: true, keepFocus: true });
   }
@@ -845,7 +850,7 @@
                 </div>
                 <div class="bill-rows">
                   {#each upcoming.slice(0, 3) as bill (bill.id)}
-                    <button class="bill-row" onclick={() => openAccountView(bill.accountId || primaryCheckingId, 'bills')}>
+                    <button class="bill-row" onclick={() => openAccountView(bill.accountId || primaryCheckingId, 'bills', undefined, bill.id)}>
                       <span class="bill-main">
                         <strong>{bill.payee || bill.nickname || 'Bill'}</strong>
                         <small>{dateLabel(bill.upcomingDate)}</small>
@@ -964,6 +969,7 @@
           customerId={routeCustomerId}
           onTabChange={(nextTab) => openAccountView(accountId, nextTab)}
           {focusTransactionId}
+          {focusBillId}
           onAccountDeleted={handleAccountDeleted}
         />
       {/snippet}
