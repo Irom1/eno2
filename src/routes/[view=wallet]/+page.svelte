@@ -666,7 +666,7 @@
 </script>
 
 <svelte:head>
-  <title>{inChat ? 'Wallet chat' : 'Account overview'} | Capital One</title>
+  <title>{inChat ? 'Eno 2.0' : 'Account overview'} | Capital One</title>
   <meta name="description" content="Your Capital One accounts, rewards, and credit tools." />
 </svelte:head>
 
