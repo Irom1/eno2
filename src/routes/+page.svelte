@@ -1,5 +1,8 @@
 <script lang="ts">
+  import '$lib/assets/message-composer.css';
+  import { goto } from '$app/navigation';
   import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
+  import { firstAccountPrompt } from '$lib/firstAccountPrompt';
   import { onMount, tick } from 'svelte';
   import Eno from '$lib/components/Eno.svelte';
   import CapitalOneLogo from './[view=wallet]/CapitalOneLogo.svelte';
@@ -55,6 +58,32 @@
   let signInArea: HTMLDivElement;
   let signInButton: HTMLButtonElement;
   let accountList = $state<HTMLDivElement>();
+  let sendingAccountPrompt = $state(false);
+
+  async function sendAccountPrompt(event: MouseEvent & { currentTarget: HTMLAnchorElement }) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (sendingAccountPrompt) return;
+
+    const link = event.currentTarget;
+    sendingAccountPrompt = true;
+    let animation: Animation | undefined;
+    try {
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        animation = link.animate([
+          { transform: 'scale(0.97)', offset: 0.2 },
+          { transform: 'translateY(-24px) scale(0.95)', opacity: 0 }
+        ], { duration: 280, easing: 'ease-out', fill: 'forwards' });
+        await animation.finished.catch(() => undefined);
+      }
+      if (link.isConnected) await goto(link.href, { state: { sentFirstAccountPrompt: true } });
+    } catch {
+      if (link.isConnected) location.assign(link.href);
+    } finally {
+      animation?.cancel();
+      sendingAccountPrompt = false;
+    }
+  }
 
   async function loadCustomers(): Promise<void> {
     customersLoading = true;
@@ -230,9 +259,10 @@
 
       <div class="foreground">
         <div class="hills" aria-hidden="true"></div>
-        <a class="account-link" href="/setup">
-          I'd like to open my first account <span aria-hidden="true">↑</span>
+        <a class="account-link message-composer" href="/setup" onclick={sendAccountPrompt} aria-disabled={sendingAccountPrompt}>
+          {firstAccountPrompt} <span class="message-send" aria-hidden="true">↑</span>
         </a>
+        <span class="send-status" role="status">{sendingAccountPrompt ? 'Sending message…' : ''}</span>
         <a class="existing-account-link" href="#sign-in" onclick={openAccountsFromHero}>
           Already have an account? <strong>Sign in <span aria-hidden="true">→</span></strong>
         </a>
@@ -512,36 +542,16 @@
   article p { margin: 0; color: #36515a; font-size: 0.95rem; line-height: 1.5; }
 
   .account-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    box-sizing: border-box;
     width: min(100%, 360px);
-    padding: 7px 7px 7px 20px;
-    border-radius: 99px;
-    background: linear-gradient(to bottom, #000 30%, #294528 100%);
     color: white;
-    font-weight: 650;
-    box-shadow:
-      inset 0 3px 7px #0009,
-      inset 0 0 0 1px #0a1a1673,
-      0 1px 0 #ddffb280;
   }
-  .account-link span {
-    display: grid;
-    place-items: center;
-    flex: 0 0 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: linear-gradient(180deg, #d0fa9d 0%, #a4df64 100%);
-    box-shadow:
-      inset 0 1px 0 #f3ffda,
-      0 2px 0 #609436,
-      0 4px 8px #0008;
-    color: #102321;
-    font-size: 1.45rem;
-    line-height: 1;
+  .send-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .existing-account-link {
