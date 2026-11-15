@@ -56,6 +56,8 @@
 	}
 
 	onDestroy(() => {
+		// onDestroy also runs during SSR, where there is no window to clean up.
+		if (typeof window === 'undefined') return;
 		window.removeEventListener('pointermove', onPointerMove);
 		window.removeEventListener('pointerup', onPointerUp);
 		window.removeEventListener('pointercancel', onPointerUp);
