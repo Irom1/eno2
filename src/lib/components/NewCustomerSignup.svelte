@@ -245,7 +245,7 @@
 
   async function submit() {
     submitting = true;
-    await addEno(accountChoice === 'none' && !matchingCard ? `You got it, ${answers.first_name}. I’m getting your space ready.` : `You got it, ${answers.first_name}. I’m setting up your demo accounts with 100 sample transactions each. This may take a moment.`);
+    await addEno(accountChoice === 'none' && !matchingCard ? `You got it, ${answers.first_name}. I’m getting your space ready.` : `You got it, ${answers.first_name}. Gotta make a couple hundred demo purchases real quick ;) Hang tight while I get your accounts ready.`);
     if (disposed) return;
     void settle();
     try {

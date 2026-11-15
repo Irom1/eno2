@@ -106,7 +106,7 @@
     }
     submitting = true;
     const labels = available.filter((option) => selected.includes(option.id)).map((option) => option.label);
-    await addEno(`On it — I’m setting up ${labels.join(' and ')} with sample activity. I’ll take you straight back to your dashboard when it’s ready.`);
+    await addEno(`On it — gotta make a couple hundred demo purchases real quick ;) I’m getting ${labels.join(' and ')} ready, then it’s straight back to your dashboard.`);
     if (disposed) return;
     try {
       const response = await fetchWithSession('/api/accounts/open', {
