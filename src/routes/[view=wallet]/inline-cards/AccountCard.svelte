@@ -2,7 +2,6 @@
   import { accountProduct } from '$lib/products';
   import { money, titleCase } from '$lib/format.js';
   import { accountHref, type AccountEntityCard } from '$lib/chat/entityCards.js';
-  import CardFrame from './CardFrame.svelte';
   import MoneyText from './primitives/MoneyText.svelte';
   import OpenIcon from './OpenIcon.svelte';
 
@@ -53,27 +52,40 @@
   </div>
 {/snippet}
 
-<CardFrame {label}>
-  <div class="account-card" class:product={product} data-kind="account" style:--product-gradient={product?.gradient} style:--product-ink={product?.ink}>
-    {#if href}
-      <a
-        class="account-link"
-        {href}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`Open ${productName} account`}
-      >
-        {@render content(true)}
-      </a>
-    {:else}
-      {@render content(false)}
-    {/if}
-  </div>
-</CardFrame>
+<article
+  class="account-card"
+  class:product={product}
+  data-kind="account"
+  aria-label={label}
+  style:--product-gradient={product?.gradient}
+  style:--product-ink={product?.ink}
+>
+  {#if href}
+    <a
+      class="account-link"
+      {href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open ${productName} account`}
+    >
+      {@render content(true)}
+    </a>
+  {:else}
+    {@render content(false)}
+  {/if}
+</article>
 
 <style>
   .account-card {
+    width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+  }
+  .account-card:not(.product) {
+    border: 1px solid color-mix(in srgb, var(--ink) 16%, var(--border));
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
   }
   .product {
     border-radius: 8px;

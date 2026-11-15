@@ -2,7 +2,6 @@
   import { loanProduct } from '$lib/products';
   import { money, titleCase } from '$lib/format.js';
   import type { LoanEntityCard } from '$lib/chat/entityCards.js';
-  import CardFrame from './CardFrame.svelte';
   import MoneyText from './primitives/MoneyText.svelte';
   import StatusChip from './StatusChip.svelte';
 
@@ -21,30 +20,43 @@
   const label = $derived(`Loan, ${typeText}${balanceText ? `, ${balanceText}` : ''}`);
 </script>
 
-<CardFrame {label}>
-  <div class="loan-card" class:product={product} data-kind="loan" style:--product-gradient={product?.gradient} style:--product-ink={product?.ink}>
-    <div class="loan-head">
-      <span class="type">{typeText}</span>
-      <span class="side">
-        {#if payload.status}
-          <StatusChip status={payload.status} />
-        {/if}
-      </span>
-    </div>
-    <div class="loan-figures">
-      {#if payload.balance !== null}
-        <span class="balance"><MoneyText amount={payload.balance} decimals={2} /></span>
+<article
+  class="loan-card"
+  class:product={product}
+  data-kind="loan"
+  aria-label={label}
+  style:--product-gradient={product?.gradient}
+  style:--product-ink={product?.ink}
+>
+  <div class="loan-head">
+    <span class="type">{typeText}</span>
+    <span class="side">
+      {#if payload.status}
+        <StatusChip status={payload.status} />
       {/if}
-      {#if payload.monthlyPayment !== null}
-        <span class="payment"><MoneyText amount={payload.monthlyPayment} decimals={2} />/mo</span>
-      {/if}
-    </div>
+    </span>
   </div>
-</CardFrame>
+  <div class="loan-figures">
+    {#if payload.balance !== null}
+      <span class="balance"><MoneyText amount={payload.balance} decimals={2} /></span>
+    {/if}
+    {#if payload.monthlyPayment !== null}
+      <span class="payment"><MoneyText amount={payload.monthlyPayment} decimals={2} />/mo</span>
+    {/if}
+  </div>
+</article>
 
 <style>
   .loan-card {
+    width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+  }
+  .loan-card:not(.product) {
+    border: 1px solid color-mix(in srgb, var(--ink) 16%, var(--border));
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
   }
   .product {
     border-radius: 8px;
