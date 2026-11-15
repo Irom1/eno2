@@ -36,6 +36,7 @@
   import ScoreCard from '$lib/components/ScoreCard.svelte';
   import creditWiseLogoLight from '$lib/assets/creditwise-card-logo-light.png';
   import creditWiseLogoDark from '$lib/assets/creditwise-card-logo-dark.png';
+  import { chatViewportMetrics } from '$lib/mobileViewport';
 
   type ChatPanelApi = { ask: (text: string) => Promise<void> };
 
@@ -51,6 +52,8 @@
   }
 
   const helpCenter = 'https://www.capitalone.com/help-center/';
+  const FULL_COMPOSER_PLACEHOLDER = 'Ask about your money, spending, or bills…';
+  const COMPACT_COMPOSER_PLACEHOLDER = 'Ask about your money…';
 
   interface AccountsSnapshot {
     customer?: WalletCustomer;
@@ -415,6 +418,11 @@
   let routeCustomerId = $derived(guestChat ? '' : page.url.searchParams.get('customer') || activeCustomerId);
   let dashboardHref = $derived(customerHref('/dashboard', routeCustomerId));
   let query = $state('');
+  let compactComposer = $state(false);
+  const composerPlaceholder = $derived(
+    compactComposer ? COMPACT_COMPOSER_PLACEHOLDER : FULL_COMPOSER_PLACEHOLDER
+  );
+  let keyboardOpen = $state(false);
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
   let promptSeq = 0;
   let canSend = $state(false);
@@ -565,7 +573,52 @@
     };
     media.addEventListener('change', onMediaChange);
 
-    return () => media.removeEventListener('change', onMediaChange);
+    const composerMedia = window.matchMedia('(max-width: 640px)');
+    compactComposer = composerMedia.matches;
+    const onComposerMediaChange = (event: MediaQueryListEvent) => {
+      compactComposer = event.matches;
+    };
+    composerMedia.addEventListener('change', onComposerMediaChange);
+
+    // Keep the chat band sized to the visual viewport so the composer stays
+    // above the on-screen keyboard. `interactive-widget=resizes-content` in
+    // app.html is the progressive enhancement; visualViewport is the fallback.
+    const root = document.documentElement;
+    const viewport = window.visualViewport;
+    let lastHeight = -1;
+    let lastOffset = -1;
+    let lastKeyboardOpen: boolean | null = null;
+    const applyViewport = () => {
+      const metrics = chatViewportMetrics(
+        window.innerHeight,
+        viewport?.height ?? window.innerHeight,
+        viewport?.offsetTop ?? 0
+      );
+      if (metrics.height !== lastHeight) {
+        lastHeight = metrics.height;
+        root.style.setProperty('--chat-viewport-height', `${metrics.height}px`);
+      }
+      if (metrics.offsetTop !== lastOffset) {
+        lastOffset = metrics.offsetTop;
+        root.style.setProperty('--chat-viewport-offset', `${metrics.offsetTop}px`);
+      }
+      if (metrics.keyboardOpen !== lastKeyboardOpen) {
+        lastKeyboardOpen = metrics.keyboardOpen;
+        keyboardOpen = metrics.keyboardOpen;
+      }
+    };
+    applyViewport();
+    viewport?.addEventListener('resize', applyViewport);
+    viewport?.addEventListener('scroll', applyViewport);
+    window.addEventListener('resize', applyViewport);
+
+    return () => {
+      media.removeEventListener('change', onMediaChange);
+      composerMedia.removeEventListener('change', onComposerMediaChange);
+      viewport?.removeEventListener('resize', applyViewport);
+      viewport?.removeEventListener('scroll', applyViewport);
+      window.removeEventListener('resize', applyViewport);
+    };
   });
 
   function toggleTheme(): void {
@@ -598,7 +651,7 @@
 
 <svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
 
-<div class="dashboard" class:chat={inChat} class:view-open={walletView !== null} data-theme={theme}>
+<div class="dashboard" class:chat={inChat} class:keyboard-open={keyboardOpen} class:view-open={walletView !== null} data-theme={theme}>
   <div class="dashboard-body" inert={walletView !== null}>
     <div class="wallet-band" style:--composer-half-height={`${composerHeight / 2}px`}>
       <div class="wallet-gradient" bind:this={gradient} aria-hidden="true"></div>
@@ -668,8 +721,8 @@
         </main>
         <div class="composer-area">
           <form class="composer" bind:this={composer} bind:offsetHeight={composerHeight} onsubmit={search}>
-            <div class="composer-field" data-value={query}>
-              <textarea bind:value={query} onfocus={openChat} onkeydown={handleComposerKeydown} rows="1" aria-label="Ask Capital One" placeholder="Ask about your money, spending, or bills…"></textarea>
+            <div class="composer-field" data-value={query || composerPlaceholder}>
+              <textarea bind:value={query} onfocus={openChat} onkeydown={handleComposerKeydown} rows="1" aria-label="Ask Capital One" placeholder={composerPlaceholder}></textarea>
             </div>
             <button class="primary send" aria-label="Ask" disabled={!query.trim() || (inChat && !canSend)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
@@ -932,7 +985,7 @@
   }
   .chat .dashboard-body { overflow: clip; }
   .chat .header-inner {
-    height: 100dvh;
+    height: 100%;
     grid-template-rows: auto minmax(0, 1fr) auto;
     padding-bottom: var(--composer-bottom-padding);
   }
@@ -999,7 +1052,12 @@
   .theme-toggle svg { width: 18px; height: 18px; }
   .wallet-band { position: relative; z-index: 1; }
   .wallet-band { --composer-bottom-padding: 28px; }
-  .chat .wallet-band { --composer-bottom-padding: max(24px, env(safe-area-inset-bottom)); }
+  .chat .wallet-band {
+    height: var(--chat-viewport-height, 100dvh);
+    transform: translateY(var(--chat-viewport-offset, 0px));
+    --composer-bottom-padding: max(24px, env(safe-area-inset-bottom));
+  }
+  .chat.keyboard-open .wallet-band { --composer-bottom-padding: 12px; }
   .wallet-gradient {
     --page: var(--dark, #10191f) var(--light, #f4f6f8);
     --border: var(--dark, #31444f) var(--light, #dae3e8);
