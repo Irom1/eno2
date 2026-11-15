@@ -1,8 +1,12 @@
 <script lang="ts">
   import ClimateWisePage from '$lib/climate/ClimateWisePage.svelte';
   import type { ClimateWiseEntityCard } from '$lib/chat/entityCards.js';
+  import type { EnoVariant } from '$lib/eno.js';
 
-  let { card }: { card: ClimateWiseEntityCard } = $props();
+  let {
+    card,
+    variant = 'light'
+  }: { card: ClimateWiseEntityCard; variant?: EnoVariant } = $props();
 
   const report = $derived(card.payload.report);
   const customerId = $derived(card.payload.customerId ?? '');
@@ -13,6 +17,7 @@
     embedded
     reportOverride={report}
     customerId={customerId || null}
+    theme={variant}
   />
 </div>
 

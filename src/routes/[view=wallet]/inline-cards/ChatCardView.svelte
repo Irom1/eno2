@@ -58,5 +58,5 @@
 {:else if card.kind === 'profile'}
   <ProfileCard {card} />
 {:else if card.kind === 'climatewise'}
-  <ClimateWiseChatCard {card} />
+  <ClimateWiseChatCard {card} {variant} />
 {/if}

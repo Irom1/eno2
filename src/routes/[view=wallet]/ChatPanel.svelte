@@ -802,7 +802,7 @@
                         {/if}
                       {:else}
                         {#each block.cards as card (card.id)}
-                          <ChatCardView {card} inline />
+                          <ChatCardView {card} {variant} inline />
                         {/each}
                       {/if}
                     {/each}

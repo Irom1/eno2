@@ -539,6 +539,25 @@ test.describe('chat prompts', () => {
     await expect(card.locator('.ring svg')).toBeVisible();
     await expect(card.locator('.list')).toBeVisible();
 
+    // The embedded card follows the dashboard theme after it has rendered in chat.
+    const cw = card.locator('.cw');
+    const darkToggle = page.getByRole('button', { name: 'Switch to dark mode' });
+    const lightToggle = page.getByRole('button', { name: 'Switch to light mode' });
+    // Normalize: the run may inherit dark mode from a user preference or prior test.
+    if ((await lightToggle.count()) > 0) {
+      await lightToggle.click();
+      await expect(page.locator('.dashboard')).toHaveAttribute('data-theme', 'light');
+    }
+    await expect(cw).toHaveAttribute('data-theme', 'light');
+
+    await darkToggle.click();
+    await expect(page.locator('.dashboard')).toHaveAttribute('data-theme', 'dark');
+    await expect(cw).toHaveAttribute('data-theme', 'dark');
+
+    await lightToggle.click();
+    await expect(page.locator('.dashboard')).toHaveAttribute('data-theme', 'light');
+    await expect(cw).toHaveAttribute('data-theme', 'light');
+
     // The redundant "Carbon emissions by category" title is gone; the panel
     // heading is the active category (or the pick prompt), never the old title.
     await expect(card.locator('#chart-title')).toHaveCount(0);
