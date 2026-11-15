@@ -383,6 +383,7 @@
   let guestChat = $derived(inChat && page.url.searchParams.get('topic') === 'open-account');
   let routeCustomerId = $derived(guestChat ? '' : page.url.searchParams.get('customer') || activeCustomerId);
   let dashboardHref = $derived(customerHref('/dashboard', routeCustomerId));
+  let openAccountsHref = $derived(`${customerHref('/signup', routeCustomerId)}${routeCustomerId ? '&' : '?'}mode=accounts`);
   let query = $state('');
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
   let promptSeq = 0;
@@ -674,6 +675,7 @@
                 <h2>Welcome to your fresh start, {activeFirstName}.</h2>
                 <p class="muted">No accounts or cards yet. When you add them, they’ll feel right at home here.</p>
                 <button class="primary" onclick={openChat}>Say hello to Eno {@render arrowIcon()}</button>
+                <a class="primary" href={openAccountsHref}>Open a new account {@render arrowIcon()}</a>
               </article>
             {:else}
               {#each displayAccounts as account (account.id)}
@@ -767,7 +769,7 @@
             <article class="panel feature products">
               <div class="feature-main">
                 <div><h2>Explore other products</h2><p class="muted">Find an account that’s right for you.</p></div>
-                <a class="link" href="https://www.capitalone.com/">Open a new account {@render chevronIcon()}</a>
+                <a class="link" href={openAccountsHref}>Open a new account {@render chevronIcon()}</a>
               </div>
             </article>
             {:else if !snapshotLoading && !snapshotError}
