@@ -8,6 +8,36 @@ async function say(page: Page, message: string) {
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
 }
 
+test('fast Eno replies and the following profile preview appear with breathing room', async ({ page }) => {
+  await page.route('**/api/signup/chat', (route) => route.fulfill({ json: {
+    message: 'Thanks, Ada. Your details are ready to review.', answers, accountChoice: 'none',
+    spending: skipSpending, includeCreditCard: false, stage: 'review', ready: true, confirmed: false,
+    addressCheck: { status: 'matched', message: 'Street address matched.' }
+  } }));
+  await page.goto('/signup');
+  await expect(page.getByRole('combobox', { name: 'Message Eno' })).toBeFocused();
+  await page.evaluate(() => {
+    const timeline: { text: string; time: number }[] = [];
+    const seen = new Set<string>();
+    new MutationObserver(() => {
+      for (const element of document.querySelectorAll('.message .bubble > p')) {
+        const text = element.textContent ?? '';
+        if (!seen.has(text)) { seen.add(text); timeline.push({ text, time: performance.now() }); }
+      }
+      document.documentElement.dataset.replyTimeline = JSON.stringify(timeline);
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  await say(page, 'My details are ready');
+  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Your profile')).toBeVisible();
+  const timeline = await page.evaluate(() => JSON.parse(document.documentElement.dataset.replyTimeline ?? '[]') as { text: string; time: number }[]);
+  const user = timeline.find((entry) => entry.text === 'My details are ready')!;
+  const answer = timeline.find((entry) => entry.text.startsWith('Thanks, Ada.'))!;
+  const review = timeline.find((entry) => entry.text.startsWith('Your profile, at a glance.'))!;
+  expect(answer.time - user.time).toBeGreaterThanOrEqual(700);
+  expect(review.time - answer.time).toBeGreaterThanOrEqual(1000);
+});
+
 test('starts immediately as a freeform chat, keeps details through questions, then opens an empty dashboard', async ({ page }) => {
   const turns: Record<string, unknown>[] = [];
   let signupBody: unknown;

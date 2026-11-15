@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createConversationPacer } from '$lib/conversationPacing';
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
   import CapitalOneLogo from '../../routes/[view=wallet]/CapitalOneLogo.svelte';
@@ -8,12 +9,14 @@
   import type { AccountProductId, OpeningProduct } from '$lib/accountOpening';
 
   let { customerId = '' }: { customerId?: string } = $props();
+  const pacing = createConversationPacer();
   let profileId = $state('');
   let available = $state<OpeningProduct[]>([]);
   let selected = $state<AccountProductId[]>([]);
   let messages = $state<{ role: 'eno' | 'you'; text: string }[]>([]);
   let loading = $state(true);
   let submitting = $state(false);
+  let replying = $state(false);
   let locked = $state(false);
   let failed = $state(false);
   let reply = $state('');
@@ -27,20 +30,23 @@
   let attemptKey = '';
   let isDark = $derived(theme === 'dark' || (theme === 'system' && systemDark));
   let dashboard = $derived(customerHref('/dashboard', profileId));
-  let busy = $derived(loading || submitting);
+  let busy = $derived(loading || submitting || replying);
 
-  function speak(text: string) {
+  function speak(text: string, interrupt = true) {
     if (!speechSupported) return;
-    speechSynthesis.cancel();
+    if (interrupt) speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.onerror = (event) => { if (!['canceled', 'interrupted'].includes(event.error)) notice = 'Voice couldn’t start. You can keep chatting here.'; };
     try { speechSynthesis.speak(utterance); } catch { notice = 'Voice isn’t available right now.'; }
   }
-  function addEno(text: string) {
-    messages.push({ role: 'eno', text });
-    if (voiceEnabled) speak(text);
-    void tick().then(() => transcript?.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' }));
+  async function addEno(text: string) {
+    return await pacing.reply(() => {
+      messages.push({ role: 'eno', text });
+      if (voiceEnabled) speak(text, false);
+      void tick().then(() => transcript?.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' }));
+      return true;
+    }) ?? false;
   }
   function toggleTheme() {
     theme = isDark ? 'light' : 'dark';
@@ -78,14 +84,14 @@
         const name = await loadChoices();
         if (disposed) return;
         rememberCustomerId(profileId);
-        addEno(available.length
+        await addEno(available.length
           ? `Hey, ${name}! What accounts would you like to open?\n\nNo need for another introduction — I’ve got you. Here are the products you don’t have yet. Pick one or a few, and I’ll take care of the setup.`
           : `Hey, ${name}! You already have every product available here — your wallet is fully stocked. You can head back to your dashboard whenever you’re ready.`);
       } catch (error) {
-        if (!disposed) { failed = true; addEno(error instanceof Error ? error.message : 'I couldn’t load your profile. Please try Sign in.'); }
+        if (!disposed) { failed = true; await addEno(error instanceof Error ? error.message : 'I couldn’t load your profile. Please try Sign in.'); }
       } finally { if (!disposed) loading = false; }
     })();
-    return () => { disposed = true; media.removeEventListener('change', change); if (speechSupported) speechSynthesis.cancel(); };
+    return () => { disposed = true; pacing.dispose(); media.removeEventListener('change', change); if (speechSupported) speechSynthesis.cancel(); };
   });
 
   function toggle(id: AccountProductId, checked: boolean) {
@@ -93,51 +99,64 @@
   }
   async function openSelected() {
     if (busy || locked || failed) return;
-    if (!selected.length) { addEno('Pick at least one account from the list, then say “yes” or tap Open selected accounts.'); return; }
+    pacing.userSent();
+    if (!selected.length) {
+      replying = true;
+      try { await addEno('Pick at least one account from the list, then say “yes” or tap Open selected accounts.'); }
+      finally { replying = false; }
+      return;
+    }
     submitting = true;
     const labels = available.filter((option) => selected.includes(option.id)).map((option) => option.label);
-    addEno(`On it — I’m setting up ${labels.join(' and ')} with sample activity. I’ll take you straight back to your dashboard when it’s ready.`);
+    await addEno(`On it — I’m setting up ${labels.join(' and ')} with sample activity. I’ll take you straight back to your dashboard when it’s ready.`);
+    if (disposed) return;
     try {
       const response = await fetch('/api/accounts/open', {
         method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': attemptKey },
         body: JSON.stringify({ customerId: profileId, products: selected })
       });
       const result = await response.json();
+      if (disposed) return;
       if (!response.ok) {
         if (response.status === 409) {
           // Refresh may itself reject if another tab switched profiles. Never write to that profile.
           await loadChoices();
-          addEno(result.error || 'Your account list changed. Check the refreshed choices before continuing.');
-        } else if (response.status === 400) addEno(result.error || 'Please check your selection.');
-        else if (response.status === 401 || response.status === 403 || response.status === 404) { failed = true; addEno(result.error || 'Please choose your profile again through Sign in.'); }
-        else { locked = true; addEno('I couldn’t confirm the account request. Let’s check your dashboard before trying again.'); }
+          await addEno(result.error || 'Your account list changed. Check the refreshed choices before continuing.');
+        } else if (response.status === 400) await addEno(result.error || 'Please check your selection.');
+        else if (response.status === 401 || response.status === 403 || response.status === 404) { failed = true; await addEno(result.error || 'Please choose your profile again through Sign in.'); }
+        else { locked = true; await addEno('I couldn’t confirm the account request. Let’s check your dashboard before trying again.'); }
         return;
       }
       locked = true;
-      if (result.accountError) { addEno(result.accountError); return; }
+      if (result.accountError) { await addEno(result.accountError); return; }
       rememberCustomerId(profileId);
       await goto(dashboard);
     } catch {
       locked = true;
-      addEno('I couldn’t confirm the account request. Let’s check your dashboard before trying again.');
+      await addEno('I couldn’t confirm the account request. Let’s check your dashboard before trying again.');
     } finally { submitting = false; }
   }
-  function send(event: SubmitEvent) {
+  async function send(event: SubmitEvent) {
     event.preventDefault();
     const text = reply.trim();
     if (!text || busy || locked || failed) return;
     reply = '';
+    pacing.userSent();
+    if (speechSupported) speechSynthesis.cancel();
     messages.push({ role: 'you', text });
-    if (isAffirmative(text)) { void openSelected(); return; }
-    if (/\b(no|cancel|never mind|nevermind)\b/i.test(text)) { addEno('No rush! You can change your picks above or head back to your dashboard.'); return; }
-    const mentioned = available.filter((option) => text.toLowerCase().includes(option.id) || (option.id === 'savings' && /\bsaving\b/i.test(text)));
-    if (text.includes('?') || /\b(what|explain|tell|how|difference)\b/i.test(text)) {
-      const options = mentioned.length ? mentioned : available;
-      addEno(options.map((option) => `${option.label}: ${option.description.toLowerCase()}.`).join('\n\n') + '\n\nThese are demo accounts. Each new account gets 100 sample transactions, with a balance and points based on that history. You can only have one checking, one savings, and one of each credit card.');
-    } else if (mentioned.length) {
-      selected = mentioned.map((option) => option.id);
-      addEno(`I’ve selected ${mentioned.map((option) => option.label).join(' and ')}. Adjust the list if you like, then say “yes” and I’ll open your picks.`);
-    } else addEno('Use the account list to pick what you’d like, or ask me about checking, savings, or a card. When your picks look good, say “yes” and I’ll get them ready.');
+    if (isAffirmative(text)) { await openSelected(); return; }
+    replying = true;
+    try {
+      if (/\b(no|cancel|never mind|nevermind)\b/i.test(text)) { await addEno('No rush! You can change your picks above or head back to your dashboard.'); return; }
+      const mentioned = available.filter((option) => text.toLowerCase().includes(option.id) || (option.id === 'savings' && /\bsaving\b/i.test(text)));
+      if (text.includes('?') || /\b(what|explain|tell|how|difference)\b/i.test(text)) {
+        const options = mentioned.length ? mentioned : available;
+        await addEno(options.map((option) => `${option.label}: ${option.description.toLowerCase()}.`).join('\n\n') + '\n\nThese are demo accounts. Each new account gets 100 sample transactions, with a balance and points based on that history. You can only have one checking, one savings, and one of each credit card.');
+      } else if (mentioned.length) {
+        selected = mentioned.map((option) => option.id);
+        await addEno(`I’ve selected ${mentioned.map((option) => option.label).join(' and ')}. Adjust the list if you like, then say “yes” and I’ll open your picks.`);
+      } else await addEno('Use the account list to pick what you’d like, or ask me about checking, savings, or a card. When your picks look good, say “yes” and I’ll get them ready.');
+    } finally { replying = false; }
   }
 </script>
 
@@ -184,6 +203,7 @@
           </div>
         {/each}
         {#if submitting}<p class="progress" role="status">Setting up your accounts and sample activity…</p>{/if}
+        {#if replying}<p class="progress" role="status">Eno is typing…</p>{/if}
         {#if !loading && (locked || failed || !available.length)}
           <a class="primary dashboard-link" href={failed ? '/' : dashboard}>{failed ? 'Go to Sign in' : 'Open my dashboard'} →</a>
         {/if}
