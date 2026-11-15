@@ -17,7 +17,8 @@ export async function createNessieAccounts(
   for (const type of [...new Set(types)]) {
     if (type === 'Credit Card' && !options.card) throw new Error('A matching demo card is required');
     const nickname = type === 'Credit Card' ? options.card!.nickname : type === 'Checking' ? products.checking.name : products.savings.name;
-    const transactions = buildDemoTransactions(type, `${customerId}:${type}`, new Date(), options.categories);
+    const seed = type === 'Credit Card' ? `${customerId}:${type}:${options.card!.id}` : `${customerId}:${type}`;
+    const transactions = buildDemoTransactions(type, seed, new Date(), options.categories);
     const totals = demoAccountTotals(transactions, type);
     const url = new URL(`/customers/${encodeURIComponent(customerId)}/accounts`, runtime.NESSIE_BASE_URL);
     url.searchParams.set('key', runtime.NESSIE_API_KEY);

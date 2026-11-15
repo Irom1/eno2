@@ -101,5 +101,8 @@ export function upcomingBills(bills: readonly WalletBill[]): WalletBill[] {
 
 export function formatAmount(value: unknown): string {
   const parsed = typeof value === 'number' ? value : Number(value);
-  return (Number.isFinite(parsed) ? parsed : 0).toFixed(2);
+  return (Number.isFinite(parsed) ? parsed : 0).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
 }

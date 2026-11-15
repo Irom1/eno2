@@ -24,18 +24,24 @@ describe('mapboxStaticUrl', () => {
   it('builds a Static Images URL with a pin and encoded token', () => {
     const url = mapboxStaticUrl('pk.test/token', 38.88, -77.1);
     expect(url).toBe(
-      'https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/' +
-        'pin-s(-77.1,38.88)/-77.1,38.88,15,0/640x280@2x' +
+      'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/' +
+        'pin-l+9fdbf0(-77.1,38.88)/-77.1,38.88,15,0/640x360@2x' +
         '?access_token=pk.test%2Ftoken'
     );
   });
 
   it('honours a valid zoom', () => {
     expect(mapboxStaticUrl('token', 38.88, -77.1, 12)).toContain(
-      '/-77.1,38.88,12,0/640x280@2x'
+      '/-77.1,38.88,12,0/640x360@2x'
     );
     expect(mapboxStaticUrl('token', 38.88, -77.1, 1)).not.toBeNull();
     expect(mapboxStaticUrl('token', 38.88, -77.1, 20)).not.toBeNull();
+  });
+
+  it('uses the light basemap and a darker pin in light mode', () => {
+    expect(mapboxStaticUrl('token', 38.88, -77.1, 15, 'light')).toContain(
+      '/mapbox/light-v11/static/pin-l+087ea4(-77.1,38.88)/'
+    );
   });
 
   it('returns null for a missing token', () => {

@@ -29,6 +29,7 @@
     writeWalletCache
   } from '$lib/walletCache';
   import AccountDetailView from './AccountDetailView.svelte';
+  import ScheduledPaymentInfo from './ScheduledPaymentInfo.svelte';
   import ViewShell from './ViewShell.svelte';
   import ChatPanel from './ChatPanel.svelte';
   import CapitalOneLogo from './CapitalOneLogo.svelte';
@@ -92,8 +93,6 @@
   let liveAccounts = $state<WalletAccount[]>([]);
   let liveBills = $state<WalletBill[]>([]);
   let recentActivity = $state<WalletTransaction[]>([]);
-  // Bumped after each successful load, so widgets that fetch their own data (ClimateWise) refetch for the new session.
-  let snapshotVersion = $state(0);
   let snapshotLoading = $state(true);
   let snapshotError = $state('');
   let accountNotice = $state('');
@@ -104,6 +103,8 @@
   let closeProfileError = $state('');
   let snapshotSeq = 0;
   let snapshotCustomerId = $state('');
+  // Bumped whenever a snapshot is applied, so cards can refetch.
+  let snapshotVersion = $state(0);
   let walletView = $derived.by(() => {
     if (page.params.view !== 'dashboard' || !activeCustomerId ||
         page.url.searchParams.get('customer') !== activeCustomerId ||
@@ -417,6 +418,7 @@
   let guestChat = $derived(inChat && page.url.searchParams.get('topic') === 'open-account');
   let routeCustomerId = $derived(guestChat ? '' : page.url.searchParams.get('customer') || activeCustomerId);
   let dashboardHref = $derived(customerHref('/dashboard', routeCustomerId));
+  let openAccountsHref = $derived(`${customerHref('/setup', routeCustomerId)}${routeCustomerId ? '&' : '?'}mode=accounts`);
   let query = $state('');
   let compactComposer = $state(false);
   const composerPlaceholder = $derived(
@@ -732,8 +734,8 @@
       </div>
     </div>
 
-    {#if !inChat || coveringDashboard}
-      <main class="account-overview" aria-label="Account overview" inert={inChat}
+    {#if !guestChat}
+      <main class="account-overview" aria-label="Account overview" inert={inChat} hidden={inChat && !coveringDashboard}
         style:--dashboard-header-height={`${dashboardHeaderHeight}px`}>
         <div class="container content">
           <section class="stack" aria-labelledby="accounts-title">
@@ -758,6 +760,7 @@
                 <h2>Welcome to your fresh start, {activeFirstName}.</h2>
                 <p class="muted">No accounts or cards yet. When you add them, they’ll feel right at home here.</p>
                 <button class="primary" onclick={openChat}>Say hello to Eno {@render arrowIcon()}</button>
+                <a class="primary" href={openAccountsHref}>Open a new account {@render arrowIcon()}</a>
               </article>
             {:else}
               {#each displayAccounts as account (account.id)}
@@ -769,15 +772,17 @@
                       <button class="pill" onclick={() => openAccountView(account.id, 'activity')}>{@render arrowIcon()} View activity</button>
                       <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account settings</button>
                     </div>
-                    {#if account.scheduled}
-                      <p class="account-note">{account.scheduled}</p>
-                    {/if}
                   </div>
                   <div class="account-balance">
                     <div class="balance" aria-live="polite">
                       ${dollars}<span class="cents">.{cents}</span>
                     </div>
-                    <div class="balance-label">{account.kind}</div>
+                    <div class="balance-label">
+                      {account.kind}
+                      {#if account.scheduled}
+                        <ScheduledPaymentInfo text={account.scheduled} />
+                      {/if}
+                    </div>
                   </div>
                 </article>
               {/each}
@@ -831,7 +836,7 @@
 
             {#if liveAccounts.length > 0}
             <div class="score-cards">
-              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={routeCustomerId} onAsk={() => send('What is my ClimateWise score?')} />
+              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={snapshotCustomerId || routeCustomerId} accountIds={liveAccounts.map((account) => account.id)} onAsk={() => send('What is my ClimateWise score?')} />
               <ScoreCard
                 title="CreditWise"
                 logoLight={creditWiseLogoLight}
@@ -851,7 +856,7 @@
             <article class="panel feature products">
               <div class="feature-main">
                 <div><h2>Explore other products</h2><p class="muted">Find an account that’s right for you.</p></div>
-                <a class="link" href="https://www.capitalone.com/">Open a new account {@render chevronIcon()}</a>
+                <a class="link" href={openAccountsHref}>Open a new account {@render chevronIcon()}</a>
               </div>
             </article>
             {:else if !snapshotLoading && !snapshotError}
@@ -861,6 +866,12 @@
                 <button class="link" onclick={() => send('I’m new here. What can I do with Eno?')}>Let’s get acquainted {@render arrowIcon()}</button>
               </article>
             {/if}
+            <article class="panel feature">
+              <div class="feature-main">
+                <h2>ATM locator</h2>
+                <button class="link" onclick={() => send("ATM's near me")}>Find ATMs near me {@render arrowIcon()}</button>
+              </div>
+            </article>
             {#if activeCustomerId && activeCustomerId !== GUEST_CUSTOMER_ID && !snapshotLoading && !snapshotError}
               <article class="panel feature">
                 <div class="feature-main">
@@ -983,6 +994,7 @@
     position: absolute;
     inset: var(--dashboard-header-height) 0 auto;
   }
+  .account-overview[hidden] { display: none; }
   .chat .dashboard-body { overflow: clip; }
   .chat .header-inner {
     height: 100%;
@@ -1189,7 +1201,7 @@
   .account-top h3 { margin: 0; font-size: 21px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
   .account-top h3 span { color: currentColor; font-size: 12px; margin-left: 4px; white-space: nowrap; }
   .account-balance { display: grid; gap: 4px; text-align: right; }
-  .balance-label { color: currentColor; font-size: 12px; }
+  .balance-label { display: flex; align-items: center; justify-content: flex-end; gap: 6px; color: currentColor; font-size: 12px; }
   .account :is(a, button):focus-visible { outline-color: currentColor; }
   .balance { font-size: clamp(26px, 4vw, 36px); line-height: 1; font-weight: 550; font-variant-numeric: tabular-nums; letter-spacing: -.045em; }
   .cents { color: currentColor; font-size: .69em; letter-spacing: -.03em; }
@@ -1207,7 +1219,6 @@
   .primary { background: var(--button); border: 1px solid transparent; color: var(--button-text); border-radius: 10px; text-align: center; }
   .primary:hover { opacity: .88; }
   .primary:disabled { opacity: .55; cursor: default; }
-  .account-note { margin-top: 4px; color: currentColor; font-size: 12px; }
 
   .panel { background: var(--surface); border-radius: 16px; overflow: hidden; }
   .feature { display: flex; flex-direction: column; }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { EntityCard } from '$lib/chat/entityCards.js';
+  import type { EnoVariant } from '$lib/eno.js';
   import TransactionCard from './TransactionCard.svelte';
   import TransactionListCard from './TransactionListCard.svelte';
   import PieChartCard from './PieChartCard.svelte';
@@ -20,9 +21,10 @@
     card: EntityCard;
     /** Render single-entity cards as compact rows inside the assistant bubble. */
     inline?: boolean;
+    variant?: EnoVariant;
   }
 
-  let { card, inline = false }: Props = $props();
+  let { card, inline = false, variant = 'light' }: Props = $props();
 </script>
 
 {#if card.kind === 'transaction'}
@@ -39,7 +41,7 @@
   <LoanCard {card} />
 {:else if card.kind === 'location'}
   {#if card.payload.type === 'atm'}
-    <AtmLocatorCard {card} />
+    <AtmLocatorCard {card} {variant} />
   {:else}
     <LocationCard {card} />
   {/if}

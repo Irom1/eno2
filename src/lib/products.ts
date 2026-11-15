@@ -7,8 +7,8 @@ export const products = {
   checking: {
     name: '360 Checking',
     url: 'https://www.capitalone.com/bank/checking-accounts/online-checking-account/',
-    gradient: themedGradient('#ededf0, #c6c8cd 68%, #eab1b7', '#28282c, #3f3f45 68%, #5d353d'),
-    ink: 'light-dark(#20242b, #f7f7f7)'
+    gradient: 'linear-gradient(to top, #023c5b, transparent 25%), linear-gradient(105deg, #023c5b, #175071)',
+    ink: '#fff'
   },
   savings: {
     name: '360 Performance Savings',

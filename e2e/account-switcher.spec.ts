@@ -112,7 +112,7 @@ test('wallet navigation keeps the customer and restores card tabs from the URL',
   const card = {
     id: 'credit',
     customerId: future.id,
-    nickname: 'Future Rewards',
+    nickname: 'Quicksilver',
     type: 'Credit Card',
     accountNumber: '5678',
     balance: 50,
@@ -152,7 +152,7 @@ test('wallet navigation keeps the customer and restores card tabs from the URL',
   await expect(page).toHaveURL(/\/dashboard\?customer=future&account=credit&tab=activity$/);
   const accountView = page.locator('.view-shell');
   await expect(accountView.getByRole('button', { name: /Coffee shop/ })).toBeVisible();
-  await expect(accountView.locator('.tabs button')).toHaveCount(4);
+  await expect(accountView.locator('.tabs button')).toHaveCount(3);
   await page.goBack();
   await expect(accountView).toBeHidden();
   await page.goForward();

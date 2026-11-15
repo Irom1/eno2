@@ -2,22 +2,23 @@
 	import logoLight from '$lib/assets/climatewise-card-logo-light.png';
 	import logoDark from '$lib/assets/climatewise-card-logo-dark.png';
 	import ScoreCard from '$lib/components/ScoreCard.svelte';
-	import { fetchWithSession } from '$lib/sessionRecovery';
 	import { SCORE_MAX, scoreFraction, type ClimateReport } from './emissions';
+	import { climateReportCache } from './reportCache';
 
-	let { href = '/climatewise', refresh = 0, customerId = '', onAsk }: { href?: string; /** Change to refetch, e.g. after switching customers. */ refresh?: number; customerId?: string; /** Plain-click action; the href stays as the modifier/middle-click fallback. */ onAsk?: () => void } = $props();
+	let { href = '/climatewise', refresh = 0, customerId = '', accountIds = [], onAsk }: { href?: string; /** Change to refetch, e.g. after switching customers. */ refresh?: number; customerId?: string; accountIds?: string[]; /** Plain-click action; the href stays as the modifier/middle-click fallback. */ onAsk?: () => void } = $props();
 	let report = $state<ClimateReport | null>(null);
 	let loading = $state(true);
 
-	$effect(() => {
+	$effect.pre(() => {
 		refresh;
 		let cancelled = false;
-		report = null;
-		loading = true;
+		const cached = climateReportCache.peek(customerId, 90, accountIds);
+		report = cached;
+		loading = !cached && !!customerId;
+		if (!customerId || cached) return;
 		// same 90-day window as the ClimateWise card, so both show the same score
-		fetchWithSession('/api/climate?days=90', undefined, customerId)
-			.then((r) => (r.ok ? r.json() : null))
-			.then((d) => !cancelled && (report = d?.report ?? null))
+		climateReportCache.load(customerId, accountIds)
+			.then((loaded) => { if (!cancelled) report = loaded; })
 			.catch(() => {})
 			.finally(() => { if (!cancelled) loading = false; });
 		// a slower response for the previous customer must not overwrite the new one
