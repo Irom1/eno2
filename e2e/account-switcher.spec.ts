@@ -185,7 +185,7 @@ test('wallet navigation keeps the customer and restores card tabs from the URL',
   await accountView.getByRole('button', { name: 'Back to dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
 
-  await dashboardCard.getByRole('button', { name: 'Account settings' }).click();
+  await dashboardCard.getByRole('button', { name: 'Account details' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=future&account=credit&tab=details$/);
   await page.goto('/dashboard?customer=future&account=credit&txn=purchase');
   await expect(accountView.locator('[data-transaction-id="purchase"]')).toHaveClass(/highlight/);

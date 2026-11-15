@@ -783,7 +783,7 @@
                     <h3>{account.name} <span>•• {account.ending}</span></h3>
                     <div class="card-actions">
                       <button class="pill" onclick={() => openAccountView(account.id, 'activity')}>{@render arrowIcon()} View activity</button>
-                      <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account settings</button>
+                      <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account details</button>
                     </div>
                   </div>
                   <div class="account-balance">
@@ -936,7 +936,7 @@
 
   {#if walletView}
     {@const { accountId, tab } = walletView}
-    <ViewShell title={tab === 'details' ? 'Account settings' : 'Account details'} subtitle={activeName} onBack={closeAccountView}>
+    <ViewShell title="Account details" subtitle={activeName} onBack={closeAccountView}>
       {#snippet children(heading)}
         <AccountDetailView
           {accountId}

@@ -74,8 +74,8 @@ test.describe('dashboard', () => {
 
     await page.goto('/dashboard');
     const card = page.locator('article.account', { hasText: checking.nickname });
-    await card.getByRole('button', { name: 'Account settings' }).click();
-    const settings = page.getByRole('dialog', { name: 'Account settings' });
+    await card.getByRole('button', { name: 'Account details' }).click();
+    const settings = page.getByRole('dialog', { name: 'Account details' });
     const openDelete = settings.getByRole('button', { name: 'Delete account', exact: true });
     const confirmation = page.getByRole('dialog', { name: 'Delete account?' });
 
