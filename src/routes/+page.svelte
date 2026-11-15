@@ -20,7 +20,7 @@
     {
       id: 'eno',
       title: 'AI-first banking',
-      description: 'Ask Eno about your money in your own words. Powered by Gemini.'
+      description: 'Ask Eno about your money in your own words. Now powered by Gemini.'
     },
     {
       id: 'climate',
@@ -147,7 +147,7 @@
 </script>
 
 <svelte:head>
-  <title>Eno 2.0 | A new day in banking</title>
+  <title>Eno 2.0 | A new era of banking</title>
   <meta name="description" content="Explore conversational banking and get to know your wallet with the Eno 2.0 demo." />
   <link rel="preload" href="/sign-in-hills.svg" as="image" />
 </svelte:head>
@@ -210,7 +210,7 @@
     <section class="hero" class:choosing={accountsOpen} aria-label={accountsOpen ? 'Sign in' : undefined} aria-labelledby={accountsOpen ? undefined : 'hero-title'}>
       <div class="hills" aria-hidden="true"></div>
       <div class="intro" inert={accountsOpen}>
-        <h1 id="hero-title">A new day in banking</h1>
+        <h1 id="hero-title">A new era of banking</h1>
         <p>Find out what’s <em>really</em> in your wallet.</p>
       </div>
 
