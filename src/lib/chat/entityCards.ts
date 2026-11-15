@@ -43,6 +43,7 @@ export interface TransactionRow {
 
 export interface TransactionListPayload {
   rows: TransactionRow[];
+  remainingRows?: TransactionRow[]; // fetched rows available for progressive expansion
   more: number; // transactions not shown beyond the cap; uses payload.count when provided
 }
 
@@ -586,7 +587,8 @@ function uniqueRows(rows: TransactionRow[]): TransactionRow[] {
 
 /**
  * Build one list card from a transactions tool payload, or null when empty.
- * Rows are whitelisted and deduped; only `cap` rows are visible.
+ * Rows are whitelisted and deduped; only `cap` rows are initially visible.
+ * Keep the remaining fetched rows so the list can expand without another request.
  */
 export function transactionListCard(
   payload: unknown,
@@ -614,7 +616,11 @@ export function transactionListCard(
       id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
       entityId: TRANSACTION_LIST_ENTITY_ID,
       kind: 'transaction-list',
-      payload: { rows: visible, more: Math.max(0, total - visible.length) }
+      payload: {
+        rows: visible,
+        remainingRows: rows.slice(visible.length),
+        more: Math.max(0, total - visible.length)
+      }
     };
     if (typeof afterText === 'number' && Number.isFinite(afterText)) {
       card.afterText = afterText;
@@ -1783,7 +1789,7 @@ export function climateWiseCard(
 }
 
 /**
- * Merge rows into a single list card, dedupe by transaction id, cap the rows,
+ * Merge rows into a single list card, dedupe by transaction id, cap the initial rows,
  * and keep the earliest anchor (a real anchor beats end-of-text).
  */
 export function mergeTransactionListCards(
@@ -1793,7 +1799,9 @@ export function mergeTransactionListCards(
 ): TransactionListEntityCard {
   const rows = uniqueRows([
     ...(existing?.payload?.rows ?? []),
-    ...(incoming?.payload?.rows ?? [])
+    ...(existing?.payload?.remainingRows ?? []),
+    ...(incoming?.payload?.rows ?? []),
+    ...(incoming?.payload?.remainingRows ?? [])
   ]);
   const visible = rows.slice(0, normalizeListCap(cap));
 
@@ -1808,7 +1816,9 @@ export function mergeTransactionListCards(
     : 0;
   const duplicateCount =
     (existing?.payload.rows.length ?? 0) +
-    (incoming?.payload.rows.length ?? 0) -
+    (existing?.payload.remainingRows?.length ?? 0) +
+    (incoming?.payload.rows.length ?? 0) +
+    (incoming?.payload.remainingRows?.length ?? 0) -
     rows.length;
   const total = Math.max(rows.length, existingTotal + incomingTotal - duplicateCount);
 
@@ -1820,7 +1830,11 @@ export function mergeTransactionListCards(
     id: existing?.id ?? incoming?.id ?? 1,
     entityId: TRANSACTION_LIST_ENTITY_ID,
     kind: 'transaction-list',
-    payload: { rows: visible, more: Math.max(0, total - visible.length) }
+    payload: {
+      rows: visible,
+      remainingRows: rows.slice(visible.length),
+      more: Math.max(0, total - visible.length)
+    }
   };
   if (anchors.length > 0) card.afterText = Math.min(...anchors);
   return card;

@@ -2346,51 +2346,73 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Show me my recent transactions" caps rows and shows how many more', async ({ page }) => {
-    const errors = collectErrors(page);
-    const items = Array.from({ length: 10 }, (_, index) => ({
-      _id: `wd-more-${index}`,
-      description: `Merchant ${index}`,
-      amount: 10 + index,
-      transactionDate: '2026-11-03',
-      status: 'posted'
-    }));
-    const events = [
-      `event: text\ndata: ${JSON.stringify({
-        type: 'text',
-        delta: 'Here are the latest entries: '
-      })}`,
-      `event: insight\ndata: ${JSON.stringify({
-        type: 'insight',
-        kind: 'nessie_list_account_withdrawals',
-        accountId: 'acct-checking',
-        payload: { count: 10, items }
-      })}`,
-      `event: text\ndata: ${JSON.stringify({
-        type: 'text',
-        delta: 'Most recent first.'
-      })}`,
-      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
-    ].join('\n\n');
+  for (const total of [50, 100]) {
+    test(`recent transactions expand eight at a time from ${total - 8} more`, async ({ page }) => {
+      const errors = collectErrors(page);
+      const customer = { id: MAYA.id, firstName: 'Maya', lastName: 'Chen' };
+      await page.route('**/api/customers*', (route) => route.fulfill({
+        json: { customers: [customer] }
+      }));
+      await page.route('**/api/session', (route) => route.fulfill({ json: { customer } }));
+      await page.route('**/api/accounts', (route) => route.fulfill({
+        json: { customer, accounts: [], bills: [], recentActivity: [] }
+      }));
+      await page.route('**/api/accounts/acct-*', (route) => route.fulfill({
+        json: { account: {}, transactions: [], bills: [], loans: [] }
+      }));
 
-    await page.route('**/api/chat', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/event-stream',
-        body: `${events}\n\n`
+      const items = Array.from({ length: total }, (_, index) => ({
+        _id: `wd-more-${index}`,
+        description: `Merchant ${index}`,
+        amount: 10 + index,
+        transactionDate: '2026-11-03',
+        status: 'posted'
+      }));
+      const events = [
+        { type: 'text', delta: 'Here are the latest entries: ' },
+        ...Array.from({ length: total / 50 }, (_, index) => ({
+          type: 'insight',
+          kind: index === 0 ? 'nessie_list_account_withdrawals' : 'nessie_list_account_deposits',
+          accountId: 'acct-checking',
+          payload: { count: 50, items: items.slice(index * 50, (index + 1) * 50) }
+        })),
+        { type: 'text', delta: 'Most recent first.' },
+        { type: 'done', sessionId: 'test-session' }
+      ].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('');
+
+      let chatRequests = 0;
+      await page.route('**/api/chat', async (route) => {
+        chatRequests += 1;
+        await route.fulfill({ status: 200, contentType: 'text/event-stream', body: events });
       });
+
+      await loadChat(page);
+      await askChat(page, 'Show me my recent transactions');
+
+      const list = page.locator('.transaction-list-card');
+      await expect(list).toHaveCount(1);
+      await expect(list.locator('.transaction-row')).toHaveCount(8);
+      for (let shown = 8; shown < total; shown += 8) {
+        const more = list.getByRole('button', { name: `${total - shown} more transactions`, exact: true });
+        await expect(more).toBeVisible();
+        if (shown === 8) {
+          await more.focus();
+          await more.press('Enter');
+        } else {
+          await more.click();
+        }
+        await expect(list.locator('.transaction-row')).toHaveCount(Math.min(shown + 8, total));
+      }
+      await expect(list.locator('.truncation-footer')).toHaveCount(0);
+      await expect(list.locator('.description')).toHaveText(items.map((item) => item.description));
+      await expect(list.locator('a.transaction-link')).toHaveCount(total);
+      await expect(list.locator('a.transaction-link').last()).toHaveAttribute(
+        'href', new RegExp(`account=acct-checking&txn=wd-more-${total - 1}$`)
+      );
+      expect(chatRequests).toBe(1);
+      expectNoErrors(errors);
     });
-
-    await askChat(page, 'Show me my recent transactions');
-
-    const list = page.locator('.transaction-list-card').first();
-    await expect(list).toBeVisible({ timeout: 20_000 });
-    await expect(list.locator('.transaction-row')).toHaveCount(8);
-    await expect(list.locator('.truncation-footer')).toHaveText(/\d+ more transactions/);
-    await expect(list.locator('.truncation-footer')).toContainText('2 more transactions');
-
-    expectNoErrors(errors);
-  });
+  }
 
   test('"Show me my credit card rewards" shows rewards without repeating values', async ({
     page
