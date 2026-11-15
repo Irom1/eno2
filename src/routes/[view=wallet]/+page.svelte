@@ -651,10 +651,6 @@
   <meta name="description" content="Your Capital One accounts, rewards, and credit tools." />
 </svelte:head>
 
-{#snippet cardIcon()}
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18m-14 5h4"/></svg>
-{/snippet}
-
 {#snippet arrowIcon()}
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M8 6h10v10"/></svg>
 {/snippet}
@@ -783,7 +779,6 @@
                     <h3>{account.name} <span>•• {account.ending}</span></h3>
                     <div class="card-actions">
                       <button class="pill" onclick={() => openAccountView(account.id, 'activity')}>{@render arrowIcon()} View activity</button>
-                      <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account details</button>
                     </div>
                   </div>
                   <div class="account-balance">
