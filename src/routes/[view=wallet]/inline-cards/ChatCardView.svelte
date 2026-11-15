@@ -5,6 +5,7 @@
   import TransactionListCard from './TransactionListCard.svelte';
   import PieChartCard from './PieChartCard.svelte';
   import BillCard from './BillCard.svelte';
+  import BillListCard from './BillListCard.svelte';
   import AccountCard from './AccountCard.svelte';
   import LoanCard from './LoanCard.svelte';
   import LocationCard from './LocationCard.svelte';
@@ -22,9 +23,11 @@
     /** Render single-entity cards as compact rows inside the assistant bubble. */
     inline?: boolean;
     variant?: EnoVariant;
+    /** Final content of the last message: sharpen the chat-bubble tail corner. */
+    tail?: boolean;
   }
 
-  let { card, inline = false, variant = 'light' }: Props = $props();
+  let { card, inline = false, variant = 'light', tail = false }: Props = $props();
 </script>
 
 {#if card.kind === 'transaction'}
@@ -35,6 +38,8 @@
   <PieChartCard {card} />
 {:else if card.kind === 'bill'}
   <BillCard {card} />
+{:else if card.kind === 'bill-list'}
+  <BillListCard {card} />
 {:else if card.kind === 'account'}
   <AccountCard {card} />
 {:else if card.kind === 'loan'}
@@ -58,5 +63,5 @@
 {:else if card.kind === 'profile'}
   <ProfileCard {card} />
 {:else if card.kind === 'climatewise'}
-  <ClimateWiseChatCard {card} {variant} />
+  <ClimateWiseChatCard {card} {variant} {tail} />
 {/if}

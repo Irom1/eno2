@@ -16,7 +16,8 @@
 		fill = false,
 		embedded = false,
 		reportOverride = null,
-		theme = $bindable<Theme>(readTheme())
+		theme = $bindable<Theme>(readTheme()),
+		tail = false
 	}: {
 		customerId?: string | null;
 		/** Fill the parent box (used by the resizable preview) instead of the viewport. */
@@ -30,6 +31,8 @@
 		reportOverride?: ClimateReport | null;
 		/** Pass the dashboard's theme in (bind:theme) to keep both pages in sync. */
 		theme?: Theme;
+		/** Chat only: sharpen the bottom-left corner as the final message content. */
+		tail?: boolean;
 	} = $props();
 
 	function readTheme(): Theme {
@@ -181,6 +184,7 @@
 
 	<article
 		class="card"
+		class:tail
 		bind:this={cardEl}
 		data-mode={climateSize.mode}
 		data-density={climateSize.density}
@@ -332,10 +336,11 @@
 		box-sizing: border-box;
 		border: var(--chat-bubble-border);
 		border-radius: var(--assistant-bubble-radius);
-		/* Standalone chat card has no bubble tail: keep the bottom-left corner rounded. */
 		border-bottom-left-radius: var(--bubble-radius);
 		box-shadow: none;
 	}
+	/* Final card in the last message gets the message-bubble tail. */
+	.cw.embedded .card.tail { border-bottom-left-radius: 0; }
 	/* With no fixed card height, let the grid size to its content and pin the
 	   list to one exact height, so hover/select/clear can never resize the card. */
 	.cw.embedded .card > .grid { flex: none; }

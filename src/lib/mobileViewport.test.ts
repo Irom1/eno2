@@ -23,9 +23,9 @@ describe('chatViewportMetrics', () => {
     expect(chatViewportMetrics(800, 500, 48.4).offsetTop).toBe(48);
   });
 
-  it('never reports a height below the 320px minimum', () => {
+  it('reports the true visual height when the keyboard is open', () => {
     expect(chatViewportMetrics(800, 120, 0)).toEqual({
-      height: 320,
+      height: 120,
       offsetTop: 0,
       keyboardOpen: true
     });

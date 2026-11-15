@@ -37,6 +37,8 @@ export interface TransactionRow {
   status?: string;
   accountId?: string;
   customerId?: string;
+  /** Purchase emissions in kg CO2e (ClimateWise rows only). */
+  kg?: number;
 }
 
 export interface TransactionListPayload {
@@ -87,6 +89,29 @@ export interface BillEntityCard {
   entityId: string;
   kind: 'bill';
   payload: BillCardPayload;
+  afterText?: number;
+}
+
+export interface BillListRow {
+  id: string;
+  payee: string;
+  amount: number | null;
+  dueDate: string;
+  status?: string;
+  accountId?: string;
+  customerId?: string;
+}
+
+export interface BillListPayload {
+  rows: BillListRow[];
+  more: number; // valid bills not shown beyond the cap
+}
+
+export interface BillListEntityCard {
+  id: number;
+  entityId: 'bill-list'; // one list card per turn
+  kind: 'bill-list';
+  payload: BillListPayload;
   afterText?: number;
 }
 
@@ -266,6 +291,7 @@ export type EntityCard =
   | TransactionListEntityCard
   | SpendingPieEntityCard
   | BillEntityCard
+  | BillListEntityCard
   | AccountEntityCard
   | LoanEntityCard
   | LocationEntityCard
@@ -279,6 +305,7 @@ export type EntityCard =
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
 export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
+export const BILL_LIST_ENTITY_ID = 'bill-list';
 
 /**
  * Deep link into the dashboard account activity view for one transaction.
@@ -529,9 +556,18 @@ function transactionRowOf(
       ? String(explicitId).trim()
       : `${description}|${date}|${amount === null ? 'null' : String(amount)}`;
 
-  const row: TransactionRow = { id, description, amount, date, ...contextIds };
+  // Prefer ids carried on the row itself (ClimateWise spans accounts), then
+  // fall back to the shared caller context.
+  const accountId = optionalTrimmed(item.accountId) ?? contextIds.accountId;
+  const customerId = optionalTrimmed(item.customerId) ?? contextIds.customerId;
+  const row: TransactionRow = { id, description, amount, date };
+  if (accountId) row.accountId = accountId;
+  if (customerId) row.customerId = customerId;
   if (typeof item.status === 'string' && item.status.trim().length > 0) {
     row.status = item.status.trim();
+  }
+  if (typeof item.kg === 'number' && Number.isFinite(item.kg)) {
+    row.kg = item.kg;
   }
   return row;
 }
@@ -857,8 +893,79 @@ export function billCard(
 }
 
 /**
+ * Normalize insight_upcoming_bills into one series card: up to eight valid
+ * bills in the tool's order (earliest due first). Invalid entries are skipped
+ * rather than thrown on. Returns null without a valid bill so the caller keeps
+ * the single-bill card path.
+ */
+export function billListCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): BillListEntityCard | null {
+  try {
+    if (!isRecord(payload) || !Array.isArray(payload.bills)) return null;
+
+    const customerId = optionalTrimmed(context?.customerId);
+    const rows: BillListRow[] = [];
+    for (const entry of payload.bills) {
+      if (!isRecord(entry)) continue;
+
+      const payee = trimmedString(entry.payee);
+      if (!payee) continue;
+
+      const amount = finiteNumberOrNull(entry.amount);
+      // Negative amounts are malformed for a bill; zero stays visible.
+      if (amount !== null && amount < 0) continue;
+
+      const dueDate = trimmedString(entry.dueDate);
+      if (!dueDate) continue;
+
+      const rawId = entry.billId ?? entry._id;
+      const id =
+        (typeof rawId === 'string' || typeof rawId === 'number') &&
+        String(rawId).trim().length > 0
+          ? String(rawId).trim()
+          : '';
+      if (!id) continue;
+
+      const row: BillListRow = {
+        id,
+        payee,
+        amount,
+        dueDate,
+        ...(optionalTrimmed(entry.status) ? { status: optionalTrimmed(entry.status) } : {}),
+        ...(optionalTrimmed(entry.accountId)
+          ? { accountId: optionalTrimmed(entry.accountId) }
+          : {}),
+        ...(customerId ? { customerId } : {})
+      };
+      rows.push(row);
+    }
+
+    if (rows.length === 0) return null;
+
+    const visible = rows.slice(0, 8);
+    const card: BillListEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: BILL_LIST_ENTITY_ID,
+      kind: 'bill-list',
+      payload: { rows: visible, more: Math.max(0, rows.length - visible.length) }
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Build a single-account card. Account lists (zero or more than one row) return
- * null so the prose answers instead of rendering an all-accounts dump.
+ * null here so single-entity callers keep one card; use `accountCards` for an
+ * explicit accounts-list question that should render one card per account.
  */
 export function accountCard(
   payload: unknown,
@@ -910,6 +1017,36 @@ export function accountCard(
     return card;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Build one account card per valid account in a list payload, preserving the
+ * tool's order. Malformed rows are skipped rather than thrown on; an empty or
+ * invalid payload returns an empty list. This is only for an explicit
+ * accounts-list question; single-account callers keep `accountCard`.
+ */
+export function accountCards(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): AccountEntityCard[] {
+  try {
+    const items = asItems(payload);
+    const cards: AccountEntityCard[] = [];
+    for (const item of items) {
+      const card = accountCard(
+        { items: [item] },
+        afterText,
+        startId + cards.length,
+        context
+      );
+      if (card) cards.push(card);
+    }
+    return cards;
+  } catch {
+    return [];
   }
 }
 

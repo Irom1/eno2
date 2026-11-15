@@ -553,15 +553,15 @@ test.describe('chat prompts', () => {
         type: 'text',
         delta: 'Here’s what goes into your LORAX® Score: '
       })}`,
-      `event: insight\ndata: ${JSON.stringify({
-        type: 'insight',
-        kind: 'insight_climatewise',
-        payload: report
-      })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
         delta:
           'Your everyday purchases add up to a meaningful footprint, and small habit changes can bring it down. You can swap two drives a week for the T or a bike to make the biggest dent.'
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: report
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -740,8 +740,9 @@ test.describe('chat prompts', () => {
     ).toBe(false);
     await expect(page.locator('.bubble.assistant .climatewise-chat-card')).toHaveCount(0);
 
-    // Standalone card, so there is no bubble tail: the bottom-left corner is
-    // rounded like the other corners and never collapses to 0.
+    // The card is the last content of the last message, so it takes the
+    // message-bubble tail: the bottom-left corner is sharp while the other
+    // corners stay rounded.
     const cardRadius = await card.locator('article.card').evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -751,12 +752,16 @@ test.describe('chat prompts', () => {
     });
     expect(
       parseFloat(cardRadius.bottomLeft),
-      'the card bottom-left corner stays rounded'
+      'the final card bottom-left corner is sharp'
+    ).toBeLessThanOrEqual(0.1);
+    expect(
+      parseFloat(cardRadius.topLeft),
+      'the card keeps its rounded top-left corner'
     ).toBeGreaterThan(0);
     expect(
-      Math.abs(parseFloat(cardRadius.bottomLeft) - parseFloat(cardRadius.topLeft)),
-      'the card bottom-left radius matches the top-left radius'
-    ).toBeLessThanOrEqual(1);
+      parseFloat(cardRadius.topLeft),
+      'the card top-left corner stays fully rounded'
+    ).toBeGreaterThanOrEqual(23);
 
     // The card keeps the same bounding box in the empty pick state, on hover, after
     // selecting, and after clearing. Only the list body's contents may change.
@@ -825,6 +830,323 @@ test.describe('chat prompts', () => {
     ]);
 
     await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('a top-emitting-purchases follow-up renders a transaction list, not the full card', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const topPurchases = [
+      { id: 'tx-1', kind: 'withdrawal', amount: 62, description: 'SHELL', date: '2026-10-01', kg: 120.2, accountId: 'acct-card' },
+      { id: 'tx-2', kind: 'withdrawal', amount: 40, description: 'DELTA AIR LINES', date: '2026-10-02', kg: 98.4, accountId: 'acct-card' },
+      { id: 'tx-3', kind: 'withdrawal', amount: 120, description: 'WHOLE FOODS MKT', date: '2026-10-03', kg: 66.0, accountId: 'acct-checking' },
+      { id: 'tx-4', kind: 'withdrawal', amount: 300, description: 'EVERSOURCE', date: '2026-10-04', kg: 55.5, accountId: 'acct-checking' },
+      { id: 'tx-5', kind: 'withdrawal', amount: 80, description: 'UBER', date: '2026-10-05', kg: 36.0, accountId: 'acct-card' },
+      { id: 'tx-6', kind: 'withdrawal', amount: 45, description: 'AMAZON MKTPLACE', date: '2026-10-06', kg: 11.3, accountId: 'acct-card' },
+      { id: 'tx-7', kind: 'withdrawal', amount: 25, description: 'STARBUCKS', date: '2026-10-07', kg: 7.5, accountId: 'acct-checking' },
+      { id: 'tx-8', kind: 'withdrawal', amount: 22, description: 'CHIPOTLE', date: '2026-10-08', kg: 6.6, accountId: 'acct-checking' },
+      { id: 'tx-9', kind: 'withdrawal', amount: 18, description: 'NETFLIX', date: '2026-10-09', kg: 1.4, accountId: 'acct-card' }
+    ];
+    const report = {
+      asOf: '2026-11-14',
+      days: 90,
+      totalKg: 412.4,
+      totalSpend: 3000,
+      purchaseCount: 42,
+      kgPerDollar: 0.14,
+      annualizedTonnes: 1.67,
+      benchmarkTonnes: 16,
+      targetTonnes: 2.5,
+      score: 712,
+      tier: 'Good',
+      categories: [
+        { id: 'transport', label: 'Travel & transport', color: '#c4562e', kg: 180.2, spend: 62, count: 3, share: 0.43, weight: 0.27 }
+      ],
+      nudges: [],
+      topPurchases,
+      greenness: { ratings: [], greenShare: 0.42, flexibleSpend: 3200, fixedSpend: 1620 },
+      equivalents: { milesDriven: 3120, treeSeedlings: 41 }
+    };
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta:
+          'Your footprint is concentrated in a few big buys. Travel and home energy dominate the top of the list, so those are the highest-leverage places to cut.'
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: report
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, 'Show my top emitting purchases');
+
+    // No full report card is rebuilt for the follow-up.
+    await expect(page.locator('.climatewise-chat-card')).toHaveCount(0);
+
+    const list = page.locator('.transaction-list-card');
+    await expect(list).toHaveCount(1, { timeout: 20_000 });
+    await expect(list.locator('.transaction-row')).toHaveCount(8);
+    const text = await list.innerText();
+    expect(text).toContain('SHELL');
+    expect(text).toContain('DELTA AIR LINES');
+    expect(text).toContain('120.2 kg CO₂e');
+    expect(text).toContain('98.4 kg CO₂e');
+    // Only the capped rows render; the ninth row is behind the footer.
+    expect(text).not.toContain('NETFLIX');
+    await expect(list.locator('.truncation-footer, footer')).toHaveCount(1);
+
+    // The list is standalone, never folded into the assistant bubble.
+    expect(
+      await list.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the transaction list renders outside the prose bubble'
+    ).toBe(false);
+
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('an earlier ClimateWise card keeps its sharp tail after a later message', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const report = {
+      asOf: '2026-11-14',
+      days: 90,
+      totalKg: 412.4,
+      totalSpend: 3000,
+      purchaseCount: 42,
+      kgPerDollar: 0.14,
+      annualizedTonnes: 1.67,
+      benchmarkTonnes: 16,
+      targetTonnes: 2.5,
+      score: 712,
+      tier: 'Good',
+      categories: [
+        {
+          id: 'transport',
+          label: 'Travel & transport',
+          color: '#c4562e',
+          kg: 180.2,
+          spend: 62,
+          count: 3,
+          share: 0.43,
+          weight: 0.27
+        }
+      ],
+      nudges: [],
+      topPurchases: [
+        {
+          id: 'tx-1',
+          kind: 'withdrawal',
+          amount: 62,
+          description: 'SHELL',
+          date: '2026-10-01',
+          category: 'transport',
+          kg: 120.2
+        }
+      ],
+      greenness: { ratings: [], greenShare: 0.42, flexibleSpend: 3200, fixedSpend: 1620 },
+      equivalents: { milesDriven: 3120, treeSeedlings: 41 }
+    };
+
+    const cardEvents = [
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: report
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+    const followUpEvents = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Happy to help — ask me anything else about your money.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    let releaseFollowUp: () => void = () => {};
+    const followUpGate = new Promise<void>((resolve) => {
+      releaseFollowUp = resolve;
+    });
+
+    let requests = 0;
+    await page.route('**/api/chat', async (route) => {
+      requests += 1;
+      if (requests > 1) await followUpGate;
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${requests === 1 ? cardEvents : followUpEvents}\n\n`
+      });
+    });
+
+    const readRadius = () =>
+      page.locator('.climatewise-chat-card article.card').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          topLeft: style.borderTopLeftRadius,
+          bottomLeft: style.borderBottomLeftRadius
+        };
+      });
+
+    // First turn: the card is the final content of the last message, so its
+    // bottom-left corner is the sharp bubble tail.
+    await askChat(page, "What's my LORAX® Score?");
+    await expect(page.locator('.climatewise-chat-card article.card')).toHaveCount(1, {
+      timeout: 20_000
+    });
+    const tailed = await readRadius();
+    expect(parseFloat(tailed.bottomLeft), 'the last card keeps the sharp tail').toBeLessThanOrEqual(
+      0.1
+    );
+    expect(parseFloat(tailed.topLeft), 'the tailed card keeps rounded corners').toBeGreaterThan(0);
+
+    // A later user turn starts: while the next assistant turn is pending, the
+    // earlier card keeps the tail it earned as the last content of its own
+    // completed bot turn.
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Thanks!');
+    await composer.press('Enter');
+    await expect(page.locator('.from-you')).toHaveCount(2);
+    await expect(page.locator('.thinking-row')).toBeVisible();
+    const throughUserTurn = await readRadius();
+    expect(
+      parseFloat(throughUserTurn.bottomLeft),
+      'the previous card keeps the sharp tail while the next turn is pending'
+    ).toBeLessThanOrEqual(0.1);
+
+    // Once the later assistant message completes, the earlier card is still the
+    // last group of its own bot turn, so it keeps the sharp tail instead of
+    // rounding again.
+    releaseFollowUp();
+    await expect(
+      page.getByText('Happy to help — ask me anything else about your money.')
+    ).toBeVisible({ timeout: 20_000 });
+    await waitForChatSettled(page);
+    await expect(page.locator('.climatewise-chat-card article.card')).toHaveCount(1);
+    const earlier = await readRadius();
+    expect(
+      parseFloat(earlier.bottomLeft),
+      'the earlier card keeps the sharp tail after a later message'
+    ).toBeLessThanOrEqual(0.1);
+    expect(
+      parseFloat(earlier.topLeft),
+      'the earlier card keeps its rounded top-left corner'
+    ).toBeGreaterThan(0);
+
+    expectNoErrors(errors);
+  });
+
+  test('a ClimateWise card followed by prose in the same bot turn stays rounded', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const report = {
+      asOf: '2026-11-14',
+      days: 90,
+      totalKg: 412.4,
+      totalSpend: 3000,
+      purchaseCount: 42,
+      kgPerDollar: 0.14,
+      annualizedTonnes: 1.67,
+      benchmarkTonnes: 16,
+      targetTonnes: 2.5,
+      score: 712,
+      tier: 'Good',
+      categories: [
+        {
+          id: 'transport',
+          label: 'Travel & transport',
+          color: '#c4562e',
+          kg: 180.2,
+          spend: 62,
+          count: 3,
+          share: 0.43,
+          weight: 0.27
+        }
+      ],
+      nudges: [],
+      topPurchases: [
+        {
+          id: 'tx-1',
+          kind: 'withdrawal',
+          amount: 62,
+          description: 'SHELL',
+          date: '2026-10-01',
+          category: 'transport',
+          kg: 120.2
+        }
+      ],
+      greenness: { ratings: [], greenShare: 0.42, flexibleSpend: 3200, fixedSpend: 1620 },
+      equivalents: { milesDriven: 3120, treeSeedlings: 41 }
+    };
+
+    // The card arrives between two prose deltas of the same assistant message,
+    // so it is not the last rendered group of the turn.
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is what goes into your LORAX® Score: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: report
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Ask me about any category to dig into the purchases behind it.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, "What's my LORAX® Score?");
+    const card = page.locator('.climatewise-chat-card article.card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await waitForChatSettled(page);
+
+    const radius = await card.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        topLeft: style.borderTopLeftRadius,
+        bottomLeft: style.borderBottomLeftRadius
+      };
+    });
+    expect(
+      parseFloat(radius.bottomLeft),
+      'a card followed by prose in the same turn stays fully rounded'
+    ).toBeGreaterThan(0);
+    expect(
+      Math.abs(parseFloat(radius.bottomLeft) - parseFloat(radius.topLeft)),
+      'the rounded card matches its top-left radius'
+    ).toBeLessThanOrEqual(1);
+
     expectNoErrors(errors);
   });
 
@@ -1256,10 +1578,11 @@ test.describe('chat prompts', () => {
     await waitForChatSettled(page);
 
     await expect(page.locator('.assistant-turn')).toHaveCount(turnsBefore + 1);
-    await expect.poll(() => page.locator('.bill-card').count(), { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => page.locator('.bill-list-card').count(), { timeout: 20_000 }).toBe(1);
 
     await expect(page.locator('.loan-card')).toHaveCount(1);
-    await expect(page.locator('.bill-card')).toHaveCount(1);
+    await expect(page.locator('.bill-list-card')).toHaveCount(1);
+    await expect(page.locator('.bill-card')).toHaveCount(0);
     await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
     await expectCardStyle(page);
@@ -1813,33 +2136,32 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('"Show me my bills" renders one primitive bill card and no duplicated totals', async ({
+  test('"Show me my bills" renders one bill list and no duplicated totals', async ({
     page
   }) => {
     const errors = collectErrors(page);
     await runPrompt(page, 'Show me my bills');
 
     await expectCardCount(page, { min: 1, max: 1 });
-    const bill = page.locator('.bill-card');
-    await expect(bill).toHaveCount(1);
-    await expect(bill).toHaveAttribute('data-kind', 'bill');
+    const list = page.locator('.bill-list-card');
+    await expect(list).toHaveCount(1);
+    await expect(list).toHaveAttribute('data-kind', 'bill-list');
+    await expect(page.locator('.bill-card')).toHaveCount(0);
     await expect(page.locator('.cashflow-card')).toHaveCount(0);
 
+    // The list shows the due bills in tool order, capped at eight rows.
+    const rowCount = await list.locator('.bill-row').count();
+    expect(rowCount, 'a multi-bill result renders several rows').toBeGreaterThan(1);
+    expect(rowCount, 'the list caps visible rows at eight').toBeLessThanOrEqual(8);
+
     await expectNoCardValueDuplicate(page, ['$4,283.59', '$65.59']);
-    await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    await expect(list.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
     await expectCardStyle(page);
 
-    // The bill card shows the largest bill's payee, amount, and due date, so
-    // the prose must use timing analytically instead of restating those fields.
+    // Each row is evidence for the prose, which adds analysis instead of
+    // restating the same payees, amounts, or dates.
     const prose = await assistantText(page);
-    expect(prose, 'prose must not restate the card payee').not.toContain('MIT Bursar');
-    expect(prose, 'prose must not restate the card amount').not.toContain('1,800');
-    expect(prose, 'prose must not restate the card due date').not.toMatch(
-      /2026-12-05|Dec 5/
-    );
-    expect(prose, 'prose uses relative timing').toMatch(
-      /largest payment is due (within the next three weeks|in the coming weeks)/
-    );
+    expect(prose, 'prose must not restate the largest card amount').not.toContain('1,800');
     expect(prose, 'prose has a natural next step without labels').toMatch(
       /you can|consider|worth|move money|review|check/i
     );
@@ -2098,8 +2420,8 @@ test.describe('chat prompts', () => {
     const errors = collectErrors(page);
     await runPrompt(page, 'What credit cards do I have?');
 
-    // An accounts list stays in prose: only a single-account payload renders an
-    // account card, and there is no account-list primitive.
+    // A credit-card-only question is not an accounts-list question: it stays in
+    // prose (or one matching card) and renders no account cards.
     await expect(page.locator('.account-card')).toHaveCount(0);
 
     const prose = await assistantText(page);
@@ -3252,7 +3574,7 @@ test.describe('Eno mascot', () => {
 
 
 test.describe('primitive bill and account cards', () => {
-  test('"Show me my bills" renders one primitive bill card and no legacy chrome', async ({
+  test('"Show me my bills" renders one bill list with both due bills', async ({
     page
   }) => {
     const errors = collectErrors(page);
@@ -3261,7 +3583,7 @@ test.describe('primitive bill and account cards', () => {
     const events = [
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'The largest bill is City Power: '
+        delta: 'Two payments land within the next week.'
       })}`,
       `event: insight\ndata: ${JSON.stringify({
         type: 'insight',
@@ -3299,7 +3621,7 @@ test.describe('primitive bill and account cards', () => {
       })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'it is the largest item in the window.'
+        delta: 'Together they fit comfortably in the window.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -3314,44 +3636,52 @@ test.describe('primitive bill and account cards', () => {
 
     await askChat(page, 'Show me my bills');
 
-    const bill = page.locator('.bill-card');
-    await expect(bill).toHaveCount(1, { timeout: 20_000 });
-    await expect(bill).toBeVisible();
-    await expect(bill).toHaveAttribute('data-kind', 'bill');
+    const list = page.locator('.bill-list-card');
+    await expect(list).toHaveCount(1, { timeout: 20_000 });
+    await expect(list).toBeVisible();
+    await expect(list).toHaveAttribute('data-kind', 'bill-list');
+    await expect(page.locator('.bill-card')).toHaveCount(0);
+    await expect(list.locator('.bill-row')).toHaveCount(2);
 
-    const text = await bill.innerText();
-    // The largest bill wins even though it is not the earliest.
-    expect(text).toContain('Maple Property');
-    expect(text).not.toContain('City Power');
-    expect(text, 'amount is shown').toContain('$3,000.00');
-    expect(text, 'due date is shown').toMatch(/Nov 20/);
-    expect(text, 'factual status is shown').toContain('Pending');
+    const rows = list.locator('.bill-row');
+    await expect(rows.nth(0)).toContainText('Maple Property');
+    await expect(rows.nth(1)).toContainText('City Power');
+    await expect(rows.nth(0)).toContainText('$3,000.00');
+    await expect(rows.nth(0)).toContainText('Nov 20');
+    await expect(rows.nth(1)).toContainText('$120.00');
+    await expect(rows.nth(1)).toContainText('Nov 18');
+    await expect(rows.nth(0)).toContainText('Pending');
 
+    const text = await list.innerText();
     // Primitive: no coverage, total, insight, or recommendation copy.
     expect(text.toLowerCase()).not.toMatch(/coverage|covered|shortfall|recommend|insight|top bill/);
     await expect(page.locator('.chat-card')).toHaveCount(0);
-    await expect(bill.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
-    await expect(page.locator('.entity-card .bill-card')).toHaveCount(1);
+    await expect(list.locator('.card-head, .badge, .eyebrow')).toHaveCount(0);
+    await expect(page.locator('.entity-card .bill-list-card')).toHaveCount(1);
     expect(
-      await bill.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
-      'the bill card renders inline inside the prose bubble'
-    ).toBe(true);
-    await expectInlineCardCorners(page);
+      await list.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the bill list renders standalone, outside the prose bubble'
+    ).toBe(false);
+    await expectCardStyle(page);
 
-    // It deep-links to the owning account when the ids are present.
-    const link = bill.locator('a.bill-link');
-    await expect(link).toHaveCount(1);
-    await expect(link).not.toHaveAttribute('target', '_blank');
-    await expect(link).toHaveAttribute(
+    // Every row deep-links to its owning account bill.
+    const links = list.locator('a.bill-link');
+    await expect(links).toHaveCount(2);
+    await expect(links.nth(0)).not.toHaveAttribute('target', '_blank');
+    await expect(links.nth(0)).toHaveAttribute(
       'href',
       /^\/dashboard\?customer=[^&]+&account=acct-checking&tab=bills&bill=bill-rent$/
     );
-    await expect(bill.locator('.open-icon')).toBeVisible();
+    await expect(links.nth(1)).toHaveAttribute(
+      'href',
+      /^\/dashboard\?customer=[^&]+&account=acct-checking&tab=bills&bill=bill-power$/
+    );
+    await expect(list.locator('.open-icon')).toHaveCount(2);
 
     expectNoErrors(errors);
   });
 
-  test('an accounts list stays in prose and renders no account list card', async ({ page }) => {
+  test('an accounts list renders one account card per account', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);
 
@@ -3404,13 +3734,34 @@ test.describe('primitive bill and account cards', () => {
 
     await askChat(page, 'What accounts do I have?');
 
-    await expect(page.locator('.account-card')).toHaveCount(0);
-    // No legacy account-list card either.
+    const cards = page.locator('.account-card');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toHaveAttribute('data-kind', 'account');
+    await expect(cards.nth(1)).toHaveAttribute('data-kind', 'account');
+
+    const checkingText = await cards.nth(0).innerText();
+    expect(checkingText).toContain('360 Checking');
+    expect(checkingText, 'the checking balance is shown in its card').toContain('$4,218.00');
+
+    const ventureText = await cards.nth(1).innerText();
+    expect(ventureText).toContain('Venture');
+    expect(ventureText, 'the Venture balance is shown in its card').toContain('$862.00');
+
+    for (const card of [cards.nth(0), cards.nth(1)]) {
+      expect(
+        await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+        'each account card renders inline inside the prose bubble'
+      ).toBe(true);
+    }
+
+    // No legacy account-list card.
     await expect(page.locator('.chat-card')).toHaveCount(0);
+
     const prose = (await assistantText(page)).trim();
     expect(prose.length, 'the prose answers the account question').toBeGreaterThan(0);
     expect(prose).toMatch(/Everyday Checking|Venture/);
 
+    await expectCardStyle(page);
     expectNoErrors(errors);
   });
 

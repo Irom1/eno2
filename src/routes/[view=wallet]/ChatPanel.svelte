@@ -9,11 +9,13 @@
   import { createSseParser } from '$lib/sse.js';
   import {
     accountCard,
+    accountCards,
     anchorEntityCards,
     anomalyExplanation,
     anomalyTransactionCards,
     completeAnomalyContext,
     billCard,
+    billListCard,
     cashflowCard,
     climateWiseCard,
     goalCard,
@@ -42,7 +44,7 @@
     prefetchSnapshot,
     prefetchTransactionContext
   } from '$lib/walletCache';
-  import { classifyIntents } from '$lib/chat/intents.js';
+  import { classifyIntents, wantsTopEmittingPurchases } from '$lib/chat/intents.js';
   import { shouldInferTransactionList } from '$lib/chat/transactionListIntent.js';
   import { isConversationFollowUp, requestsExplanationOnly } from '$lib/chat/requestScope.js';
   import type { EnoVariant } from '$lib/eno.js';
@@ -250,11 +252,43 @@
     cardSeq = Math.max(cardSeq, incoming.id);
   }
 
+  /**
+   * A turn shows either one single bill card or one bill list, never both.
+   * Replace the first bill-family card in place and drop any extra so an
+   * earlier insight cannot leave a stale single card next to the list.
+   */
+  function replaceBillCard(message: ChatMessage, incoming: EntityCard): void {
+    const current = message.inlineCards ?? [];
+    const exists = current.some(
+      (card) => card.kind === 'bill' || card.kind === 'bill-list'
+    );
+    if (!exists) {
+      message.inlineCards = [...current, incoming];
+      cardSeq = Math.max(cardSeq, incoming.id);
+      return;
+    }
+    let placed = false;
+    const next: EntityCard[] = [];
+    for (const card of current) {
+      if (card.kind === 'bill' || card.kind === 'bill-list') {
+        if (!placed) {
+          next.push(incoming);
+          placed = true;
+        }
+        continue;
+      }
+      next.push(card);
+    }
+    message.inlineCards = next;
+    cardSeq = Math.max(cardSeq, incoming.id);
+  }
+
   const SUPPORTED_CARD_KINDS = new Set<EntityCard['kind']>([
     'transaction',
     'transaction-list',
     'spending-pie',
     'bill',
+    'bill-list',
     'account',
     'loan',
     'location',
@@ -440,22 +474,20 @@
               }
             }
             if (data.kind === 'insight_upcoming_bills') {
-              // One primitive bill card per turn. The prose names the largest
-              // bill; a later bills insight replaces the earlier card.
+              // One bill family card per turn: a single bill keeps its inline
+              // card, while multiple due bills become one standalone list in the
+              // tool's order. A later insight replaces the earlier card.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
-              const incoming = billCard(payload, anchor, cardSeq + 1, { customerId });
-              if (incoming) {
-                const existing = (message.inlineCards ?? []).some(
-                  (card) => card.kind === 'bill'
-                );
-                message.inlineCards = existing
-                  ? (message.inlineCards ?? []).map((card) =>
-                      card.kind === 'bill' ? incoming : card
-                    )
-                  : [...(message.inlineCards ?? []), incoming];
-                cardSeq = Math.max(cardSeq, incoming.id);
-              }
+              const bills =
+                payload && typeof payload === 'object' && !Array.isArray(payload)
+                  ? (payload as Record<string, unknown>).bills
+                  : undefined;
+              const incoming =
+                Array.isArray(bills) && bills.length > 1
+                  ? billListCard(payload, anchor, cardSeq + 1, { customerId })
+                  : billCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceBillCard(message, incoming);
             }
             if (data.kind === 'nessie_get_account') {
               // Accounts are single-entity cards; an all-accounts list stays in
@@ -473,6 +505,26 @@
                     )
                   : [...(message.inlineCards ?? []), incoming];
                 cardSeq = Math.max(cardSeq, incoming.id);
+              }
+            }
+            if (
+              data.kind === 'nessie_list_customer_accounts' &&
+              intents.has('accounts') &&
+              !intents.has('credit')
+            ) {
+              // An explicit accounts-list question renders one account card per
+              // account in the tool's order. A credit-card-only question stays
+              // in prose (or its one matching card), and other card kinds from
+              // the same payload (for example a reward card) are preserved.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = accountCards(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming.length > 0) {
+                const otherCards = (message.inlineCards ?? []).filter(
+                  (card) => card.kind !== 'account'
+                );
+                message.inlineCards = [...otherCards, ...incoming];
+                cardSeq = Math.max(cardSeq, ...incoming.map((card) => card.id));
               }
             }
             if (data.kind === 'nessie_list_account_loans') {
@@ -569,12 +621,54 @@
               if (incoming) replaceInlineCard(message, incoming);
             }
             if (data.kind === 'insight_climatewise') {
-              // One full ClimateWise card per turn; a later report replaces it.
-              // The grouping layer renders it standalone, outside the prose bubble.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
-              const incoming = climateWiseCard(payload, anchor, cardSeq + 1, { customerId });
-              if (incoming) replaceInlineCard(message, incoming);
+              if (wantsTopEmittingPurchases(message.prompt ?? '')) {
+                // A ranked-purchases follow-up is a transaction list, not the
+                // full report card again. The rows carry their own account ids.
+                const source =
+                  payload && typeof payload === 'object' && !Array.isArray(payload)
+                    ? (payload as Record<string, unknown>)
+                    : {};
+                const report =
+                  source.report && typeof source.report === 'object'
+                    ? (source.report as Record<string, unknown>)
+                    : source;
+                const topPurchases = Array.isArray(report.topPurchases)
+                  ? report.topPurchases
+                  : [];
+                if (topPurchases.length > 0) {
+                  const incoming = transactionListCard(
+                    { items: topPurchases, count: topPurchases.length },
+                    anchor,
+                    cardSeq + 1,
+                    { customerId, cap: 8 }
+                  );
+                  if (incoming) {
+                    // Drop any earlier full report card in this turn: the list
+                    // is the answer, and the two must never stack.
+                    const current = (message.inlineCards ?? []).filter(
+                      (card) => card.kind !== 'climatewise'
+                    );
+                    const existing = current.find(
+                      (card): card is TransactionListEntityCard =>
+                        card.kind === 'transaction-list'
+                    );
+                    const merged = mergeTransactionListCards(existing, incoming);
+                    message.inlineCards = existing
+                      ? current.map((card) =>
+                          card.kind === 'transaction-list' ? merged : card
+                        )
+                      : [...current, merged];
+                    cardSeq = Math.max(cardSeq, merged.id);
+                  }
+                }
+              } else {
+                // One full ClimateWise card per turn; a later report replaces it.
+                // The grouping layer renders it standalone, outside the prose bubble.
+                const incoming = climateWiseCard(payload, anchor, cardSeq + 1, { customerId });
+                if (incoming) replaceInlineCard(message, incoming);
+              }
             }
             if (
               data.kind === 'insight_financial_overview' &&
@@ -693,6 +787,15 @@
             }
 
             const current = message.inlineCards ?? [];
+            // The bill list already covers every due bill in this turn; a
+            // present_card single bill would duplicate one of its rows.
+            if (
+              incoming.kind === 'bill' &&
+              current.some((card) => card.kind === 'bill-list')
+            ) {
+              scrollToLatest();
+              break;
+            }
             const index = current.findIndex(
               (card) => chargeIdentity(card) === chargeIdentity(incoming)
             );
@@ -836,7 +939,7 @@
                   </div>
                 </div>
               {/if}
-              {#each groups as group}
+              {#each groups as group, groupIndex}
                 {#if group.type === 'inline'}
                   <div class="bubble assistant inline-entities">
                     {#each group.blocks as block, blockIndex (blockIndex)}
@@ -852,7 +955,11 @@
                     {/each}
                   </div>
                 {:else}
-                  <ChatCardView card={group.card} {variant} />
+                  <ChatCardView
+                    card={group.card}
+                    {variant}
+                    tail={groupIndex === groups.length - 1 && !message.pending}
+                  />
                 {/if}
               {/each}
               {#if message.pending && hasBlocks}

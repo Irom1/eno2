@@ -908,16 +908,23 @@ export async function buildClimateReport(
   const accountIds = accounts
     .map((account) => String(account._id ?? ""))
     .filter((id) => id.length > 0);
-  const transactions = (
-    await Promise.all(accountIds.map((id) => fetchTransactions(client, id)))
-  ).flat();
-  const rows: AppTransaction[] = transactions.map((tx) => ({
-    id: tx.id,
-    kind: tx.kind,
-    amount: tx.amount,
-    description: tx.description,
-    date: toISODate(tx.date),
-  }));
+  const perAccount = await Promise.all(
+    accountIds.map(async (accountId) => ({
+      accountId,
+      transactions: await fetchTransactions(client, accountId),
+    })),
+  );
+  const rows: AppTransaction[] = perAccount.flatMap(({ accountId, transactions }) =>
+    transactions.map((tx) => ({
+      id: tx.id,
+      kind: tx.kind,
+      amount: tx.amount,
+      description: tx.description,
+      date: toISODate(tx.date),
+      accountId,
+      customerId,
+    })),
+  );
   return buildReport(rows, { days, asOf: todayUTC() });
 }
 

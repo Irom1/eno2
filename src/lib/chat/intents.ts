@@ -59,3 +59,16 @@ export function classifyIntents(prompt: string): Set<Intent> {
   }
   return intents;
 }
+
+/**
+ * True when the prompt ranks purchases by their emissions, e.g. "Show my top
+ * emitting purchases". The chat renders those rows as a transaction list
+ * instead of repeating the full ClimateWise report card. Pure and case-safe.
+ */
+export function wantsTopEmittingPurchases(prompt: string): boolean {
+  const text = String(prompt ?? '').toLowerCase();
+  if (!text.trim()) return false;
+  return /\b(?:top|biggest|highest|most)\b[^.!?\n]*(?:emitting|emissions?|carbon|co2|co₂|footprint)[^.!?\n]*\b(?:purchases?|transactions?|spend(?:ing)?)\b/.test(
+    text
+  );
+}
