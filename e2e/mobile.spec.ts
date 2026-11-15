@@ -237,14 +237,14 @@ test.describe('360x640 keyboard viewport', () => {
         type: 'text',
         delta: 'Here’s what goes into your LORAX® Score:'
       })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Small habit changes can lower your footprint.'
+      })}`,
       `event: insight\ndata: ${JSON.stringify({
         type: 'insight',
         kind: 'insight_climatewise',
         payload: report
-      })}`,
-      `event: text\ndata: ${JSON.stringify({
-        type: 'text',
-        delta: 'Small habit changes can lower your footprint.'
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'mobile-test-session' })}`
     ].join('\n\n');
@@ -314,8 +314,9 @@ test.describe('360x640 keyboard viewport', () => {
     ).toBe(false);
     await expect(page.locator('.bubble.assistant .climatewise-chat-card')).toHaveCount(0);
 
-    // Standalone card, so there is no bubble tail: the bottom-left corner is
-    // rounded like the other corners and never collapses to 0.
+    // The card is the last content of the last message, so it takes the
+    // message-bubble tail: the bottom-left corner is sharp while the top-left
+    // corner stays rounded.
     const cardRadius = await cardEl.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -325,12 +326,12 @@ test.describe('360x640 keyboard viewport', () => {
     });
     expect(
       parseFloat(cardRadius.bottomLeft),
-      'the card bottom-left corner stays rounded'
-    ).toBeGreaterThan(0);
+      'the final card bottom-left corner is sharp'
+    ).toBeLessThanOrEqual(0.1);
     expect(
-      Math.abs(parseFloat(cardRadius.bottomLeft) - parseFloat(cardRadius.topLeft)),
-      'the card bottom-left radius matches the top-left radius'
-    ).toBeLessThanOrEqual(1);
+      parseFloat(cardRadius.topLeft),
+      'the card top-left corner stays rounded'
+    ).toBeGreaterThan(0);
 
     // The 96% column cap keeps the card inside the viewport.
     const sizes = await card.evaluate((element) => {

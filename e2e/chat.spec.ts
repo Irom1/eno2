@@ -553,15 +553,15 @@ test.describe('chat prompts', () => {
         type: 'text',
         delta: 'Here’s what goes into your LORAX® Score: '
       })}`,
-      `event: insight\ndata: ${JSON.stringify({
-        type: 'insight',
-        kind: 'insight_climatewise',
-        payload: report
-      })}`,
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
         delta:
           'Your everyday purchases add up to a meaningful footprint, and small habit changes can bring it down. You can swap two drives a week for the T or a bike to make the biggest dent.'
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: report
       })}`,
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
@@ -740,8 +740,9 @@ test.describe('chat prompts', () => {
     ).toBe(false);
     await expect(page.locator('.bubble.assistant .climatewise-chat-card')).toHaveCount(0);
 
-    // Standalone card, so there is no bubble tail: the bottom-left corner is
-    // rounded like the other corners and never collapses to 0.
+    // The card is the last content of the last message, so it takes the
+    // message-bubble tail: the bottom-left corner is sharp while the other
+    // corners stay rounded.
     const cardRadius = await card.locator('article.card').evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -751,12 +752,16 @@ test.describe('chat prompts', () => {
     });
     expect(
       parseFloat(cardRadius.bottomLeft),
-      'the card bottom-left corner stays rounded'
+      'the final card bottom-left corner is sharp'
+    ).toBeLessThanOrEqual(0.1);
+    expect(
+      parseFloat(cardRadius.topLeft),
+      'the card keeps its rounded top-left corner'
     ).toBeGreaterThan(0);
     expect(
-      Math.abs(parseFloat(cardRadius.bottomLeft) - parseFloat(cardRadius.topLeft)),
-      'the card bottom-left radius matches the top-left radius'
-    ).toBeLessThanOrEqual(1);
+      parseFloat(cardRadius.topLeft),
+      'the card top-left corner stays fully rounded'
+    ).toBeGreaterThanOrEqual(23);
 
     // The card keeps the same bounding box in the empty pick state, on hover, after
     // selecting, and after clearing. Only the list body's contents may change.
@@ -825,6 +830,114 @@ test.describe('chat prompts', () => {
     ]);
 
     await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
+  test('an earlier ClimateWise card rounds again after a later message', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const report = {
+      asOf: '2026-11-14',
+      days: 90,
+      totalKg: 412.4,
+      totalSpend: 3000,
+      purchaseCount: 42,
+      kgPerDollar: 0.14,
+      annualizedTonnes: 1.67,
+      benchmarkTonnes: 16,
+      targetTonnes: 2.5,
+      score: 712,
+      tier: 'Good',
+      categories: [
+        {
+          id: 'transport',
+          label: 'Travel & transport',
+          color: '#c4562e',
+          kg: 180.2,
+          spend: 62,
+          count: 3,
+          share: 0.43,
+          weight: 0.27
+        }
+      ],
+      nudges: [],
+      topPurchases: [
+        {
+          id: 'tx-1',
+          kind: 'withdrawal',
+          amount: 62,
+          description: 'SHELL',
+          date: '2026-10-01',
+          category: 'transport',
+          kg: 120.2
+        }
+      ],
+      greenness: { ratings: [], greenShare: 0.42, flexibleSpend: 3200, fixedSpend: 1620 },
+      equivalents: { milesDriven: 3120, treeSeedlings: 41 }
+    };
+
+    const cardEvents = [
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: report
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+    const followUpEvents = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Happy to help — ask me anything else about your money.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    let requests = 0;
+    await page.route('**/api/chat', async (route) => {
+      requests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${requests === 1 ? cardEvents : followUpEvents}\n\n`
+      });
+    });
+
+    const readRadius = () =>
+      page.locator('.climatewise-chat-card article.card').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          topLeft: style.borderTopLeftRadius,
+          bottomLeft: style.borderBottomLeftRadius
+        };
+      });
+
+    // First turn: the card is the final content of the last message, so its
+    // bottom-left corner is the sharp bubble tail.
+    await askChat(page, "What's my LORAX® Score?");
+    await expect(page.locator('.climatewise-chat-card article.card')).toHaveCount(1, {
+      timeout: 20_000
+    });
+    const tailed = await readRadius();
+    expect(parseFloat(tailed.bottomLeft), 'the last card keeps the sharp tail').toBeLessThanOrEqual(
+      0.1
+    );
+    expect(parseFloat(tailed.topLeft), 'the tailed card keeps rounded corners').toBeGreaterThan(0);
+
+    // A later assistant message arrives, so the earlier card is no longer the
+    // final content and returns to a fully rounded bubble.
+    await askChat(page, 'Thanks!');
+    await expect(page.locator('.climatewise-chat-card article.card')).toHaveCount(1);
+    const earlier = await readRadius();
+    expect(
+      parseFloat(earlier.bottomLeft),
+      'an earlier card rounds its bottom-left corner again'
+    ).toBeGreaterThan(0);
+    expect(
+      Math.abs(parseFloat(earlier.bottomLeft) - parseFloat(earlier.topLeft)),
+      'the earlier card bottom-left radius matches the top-left radius'
+    ).toBeLessThanOrEqual(1);
+
     expectNoErrors(errors);
   });
 

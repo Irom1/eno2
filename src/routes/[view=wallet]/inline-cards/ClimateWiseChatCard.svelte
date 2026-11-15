@@ -5,8 +5,9 @@
 
   let {
     card,
-    variant = 'light'
-  }: { card: ClimateWiseEntityCard; variant?: EnoVariant } = $props();
+    variant = 'light',
+    tail = false
+  }: { card: ClimateWiseEntityCard; variant?: EnoVariant; tail?: boolean } = $props();
 
   const report = $derived(card.payload.report);
   const customerId = $derived(card.payload.customerId ?? '');
@@ -18,6 +19,7 @@
     reportOverride={report}
     customerId={customerId || null}
     theme={variant}
+    {tail}
   />
 </div>
 

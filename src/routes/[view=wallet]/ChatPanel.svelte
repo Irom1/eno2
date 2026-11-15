@@ -809,7 +809,7 @@
 >
   <div class="chat-log" role="log" aria-relevant="additions text" aria-live="polite" aria-label="Conversation">
     {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
-    {#each messages as message (message.id)}
+    {#each messages as message, messageIndex (message.id)}
       {#if message.role === 'user'}
         <div class="from-you">
           <div class="bubble user">{message.text}</div>
@@ -833,7 +833,7 @@
                   </div>
                 </div>
               {/if}
-              {#each groups as group}
+              {#each groups as group, groupIndex}
                 {#if group.type === 'inline'}
                   <div class="bubble assistant inline-entities">
                     {#each group.blocks as block, blockIndex (blockIndex)}
@@ -849,7 +849,13 @@
                     {/each}
                   </div>
                 {:else}
-                  <ChatCardView card={group.card} {variant} />
+                  <ChatCardView
+                    card={group.card}
+                    {variant}
+                    tail={messageIndex === messages.length - 1 &&
+                      groupIndex === groups.length - 1 &&
+                      !message.pending}
+                  />
                 {/if}
               {/each}
               {#if message.pending && hasBlocks}

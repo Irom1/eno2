@@ -23,9 +23,11 @@
     /** Render single-entity cards as compact rows inside the assistant bubble. */
     inline?: boolean;
     variant?: EnoVariant;
+    /** Final content of the last message: sharpen the chat-bubble tail corner. */
+    tail?: boolean;
   }
 
-  let { card, inline = false, variant = 'light' }: Props = $props();
+  let { card, inline = false, variant = 'light', tail = false }: Props = $props();
 </script>
 
 {#if card.kind === 'transaction'}
@@ -61,5 +63,5 @@
 {:else if card.kind === 'profile'}
   <ProfileCard {card} />
 {:else if card.kind === 'climatewise'}
-  <ClimateWiseChatCard {card} {variant} />
+  <ClimateWiseChatCard {card} {variant} {tail} />
 {/if}
