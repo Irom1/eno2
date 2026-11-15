@@ -1,6 +1,9 @@
 <script lang="ts">
   import { accountProduct } from '$lib/products';
   import { money, titleCase } from '$lib/format.js';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
+  import { prefetchTransactionContext } from '$lib/walletCache';
+  import { prefetchOnApproach } from '$lib/prefetchOnApproach';
   import { accountHref, type AccountEntityCard } from '$lib/chat/entityCards.js';
   import MoneyText from './primitives/MoneyText.svelte';
   import OpenIcon from './OpenIcon.svelte';
@@ -27,6 +30,11 @@
   const label = $derived(
     `${productName} account${balanceText ? `, ${balanceText}` : ''}`
   );
+
+  function warmContext(): void {
+    if (!href || !payload.customerId || payload.customerId === GUEST_CUSTOMER_ID) return;
+    void prefetchTransactionContext(payload.customerId, payload.accountId);
+  }
 </script>
 
 {#snippet content(linked: boolean)}
@@ -64,8 +72,8 @@
     <a
       class="account-link"
       {href}
-      target="_blank"
-      rel="noopener noreferrer"
+      onpointerdown={warmContext}
+      use:prefetchOnApproach={warmContext}
       aria-label={`Open ${productName} account`}
     >
       {@render content(true)}

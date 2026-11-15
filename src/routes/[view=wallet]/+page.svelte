@@ -121,6 +121,9 @@
     return { accountId, tab };
   });
   let focusTransactionId = $derived(page.url.searchParams.get('txn') ?? '');
+  // True when the account view was opened from the mounted chat, so the
+  // header's return control goes back to chat instead of the dashboard.
+  let openedFromChat = $state(false);
 
   let displayAccounts = $derived.by(() => {
     const rank = (type: string): number => {
@@ -421,7 +424,9 @@
   }
 
   function closeAccountView(): Promise<void> {
-    return goto(dashboardHref, { replaceState: true, noScroll: true });
+    const destination = openedFromChat ? customerHref('/chat', routeCustomerId) : dashboardHref;
+    openedFromChat = false;
+    return goto(destination, { replaceState: true, noScroll: true });
   }
 
   async function handleAccountDeleted(accountId: string): Promise<void> {
@@ -465,6 +470,11 @@
   let chatRevealAnimation: Animation | undefined;
 
   beforeNavigate(({ from, to }) => {
+    const fromAccount = from?.params?.view === 'dashboard' && Boolean(from?.url.searchParams.get('account'));
+    const toAccount = to?.params?.view === 'dashboard' && Boolean(to?.url.searchParams.get('account'));
+    if (!fromAccount && toAccount) openedFromChat = from?.params?.view === 'chat';
+    else if (!toAccount) openedFromChat = false;
+
     previousComposerBounds = undefined;
     if (
       composer && from?.route.id === to?.route.id &&
@@ -660,10 +670,6 @@
   <meta name="description" content="Your Capital One accounts, rewards, and credit tools." />
 </svelte:head>
 
-{#snippet cardIcon()}
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18m-14 5h4"/></svg>
-{/snippet}
-
 {#snippet arrowIcon()}
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M8 6h10v10"/></svg>
 {/snippet}
@@ -792,7 +798,6 @@
                     <h3>{account.name} <span>•• {account.ending}</span></h3>
                     <div class="card-actions">
                       <button class="pill" onclick={() => openAccountView(account.id, 'activity')}>{@render arrowIcon()} View activity</button>
-                      <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account settings</button>
                     </div>
                   </div>
                   <div class="account-balance">
@@ -945,7 +950,12 @@
 
   {#if walletView}
     {@const { accountId, tab } = walletView}
-    <ViewShell title={tab === 'details' ? 'Account settings' : 'Account details'} subtitle={activeName} onBack={closeAccountView}>
+    <ViewShell
+      title="Account details"
+      subtitle={activeName}
+      backLabel={openedFromChat ? 'Return to chat' : 'Back to dashboard'}
+      onBack={closeAccountView}
+    >
       {#snippet children(heading)}
         <AccountDetailView
           {accountId}

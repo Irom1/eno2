@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
-  import { readAloud, supportsReadAloud } from '$lib/chat/readAloud';
+  import { onDestroy, onMount, tick } from 'svelte';
+  import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
+  import { ENO_INTRO } from '$lib/chat/intro';
   import ReadAloudButton from '$lib/components/ReadAloudButton.svelte';
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
@@ -83,15 +84,12 @@
   let bootTarget = '';
   let sessionCustomerId = $state('');
 
-  const INTRO =
-    "Hi there, I'm Eno 2.0. I can help with spending, bills, balances, loans, and rewards. Ask me anything, or pick a question to get started.";
-
   let messageSeq = 0;
 
   function introMessage(): ChatMessage {
     const text = customerId === GUEST_CUSTOMER_ID
       ? "Hi, I'm Eno 2.0. I can help you explore how to open an account."
-      : INTRO;
+      : ENO_INTRO;
     return { id: ++messageSeq, role: 'assistant', text, intro: true, pending: false };
   }
 
@@ -112,10 +110,12 @@
   });
 
   function stopSpeech(): void {
-    if (speaking) speechSynthesis.cancel();
+    stopReadAloud();
     speaking = false;
     speechNotice = '';
   }
+
+  onDestroy(stopSpeech);
 
   function speak(text: string): void {
     stopSpeech();
@@ -123,7 +123,11 @@
     content.innerHTML = renderMarkdown(text);
     for (const block of content.querySelectorAll('p, li, h3, br')) block.after(' ');
     speaking = true;
-    readAloud(content.textContent?.trim() ?? '', (notice) => { speechNotice = notice; });
+    void readAloud(
+      content.textContent?.trim() ?? '',
+      (notice) => { speechNotice = notice; speaking = false; },
+      () => { speaking = false; }
+    );
   }
 
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import '$lib/assets/message-composer.css';
-  import { readAloud, supportsReadAloud } from '$lib/chat/readAloud';
+  import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import ReadAloudButton from '$lib/components/ReadAloudButton.svelte';
   import { createConversationPacer } from '$lib/conversationPacing';
   import { finishAccountSetup } from '$lib/accountSetup';
@@ -67,14 +67,14 @@
   }
 
   function stopSpeech() {
-    if (speechSupported) speechSynthesis.cancel();
+    stopReadAloud();
   }
 
   function speak(text: string) {
     if (!speechSupported) return;
     stopSpeech();
     speechNotice = '';
-    readAloud(text, (notice) => { speechNotice = notice; });
+    void readAloud(text, (notice) => { speechNotice = notice; });
   }
 
 

@@ -2,6 +2,7 @@
   import { money } from '$lib/format.js';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
   import { prefetchTransactionContext } from '$lib/walletCache';
+  import { prefetchOnApproach } from '$lib/prefetchOnApproach';
   import { transactionHref, type TransactionEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
   import DateText from './primitives/DateText.svelte';
@@ -56,10 +57,10 @@
       class="transaction-card inline transaction-link"
       data-kind="transaction"
       {href}
-      target="_blank"
-      rel="noopener noreferrer"
+      use:prefetchOnApproach={warmContext}
       data-sveltekit-preload-data="hover"
       onpointerenter={warmContext}
+      onpointerdown={warmContext}
       onfocus={warmContext}
       aria-label={`Open ${payload.description} in your account`}
     >
@@ -77,10 +78,10 @@
         <a
           class="transaction-link"
           {href}
-          target="_blank"
-          rel="noopener noreferrer"
+          use:prefetchOnApproach={warmContext}
           data-sveltekit-preload-data="hover"
           onpointerenter={warmContext}
+          onpointerdown={warmContext}
           onfocus={warmContext}
           aria-label={`Open ${payload.description} in your account`}
         >

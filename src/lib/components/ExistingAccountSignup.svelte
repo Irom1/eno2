@@ -1,6 +1,7 @@
 <script lang="ts">
   import '$lib/assets/message-composer.css';
   import { createConversationPacer } from '$lib/conversationPacing';
+  import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import { finishAccountSetup } from '$lib/accountSetup';
   import { fetchWithSession } from '$lib/sessionRecovery';
   import { goto } from '$app/navigation';
@@ -35,11 +36,9 @@
 
   function speak(text: string) {
     if (!speechSupported) return;
-    speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
-    utterance.onerror = (event) => { if (!['canceled', 'interrupted'].includes(event.error)) notice = 'Voice couldn’t start. You can keep chatting here.'; };
-    try { speechSynthesis.speak(utterance); } catch { notice = 'Voice isn’t available right now.'; }
+    stopReadAloud();
+    notice = '';
+    void readAloud(text, (message) => { notice = message; });
   }
   async function addEno(text: string) {
     return await pacing.reply(() => {
@@ -72,7 +71,7 @@
     systemDark = media.matches;
     const change = () => { systemDark = media.matches; };
     media.addEventListener('change', change);
-    speechSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    speechSupported = supportsReadAloud();
     try { const saved = localStorage.getItem('dashboard-theme'); if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved; } catch { /* Follow the system. */ }
     void (async () => {
       try {
@@ -90,7 +89,7 @@
         if (!disposed) { failed = true; await addEno(error instanceof Error ? error.message : 'I couldn’t load your profile. Please try Sign in.'); }
       } finally { if (!disposed) loading = false; }
     })();
-    return () => { disposed = true; pacing.dispose(); media.removeEventListener('change', change); if (speechSupported) speechSynthesis.cancel(); };
+    return () => { disposed = true; pacing.dispose(); media.removeEventListener('change', change); stopReadAloud(); };
   });
 
   function toggle(id: AccountProductId, checked: boolean) {
@@ -142,7 +141,7 @@
     if (!text || busy || locked || failed) return;
     reply = '';
     pacing.userSent();
-    if (speechSupported) speechSynthesis.cancel();
+    stopReadAloud();
     messages.push({ role: 'you', text });
     if (isAffirmative(text)) { await openSelected(); return; }
     replying = true;
@@ -165,7 +164,7 @@
   <header>
     <a class="brand" href="/" aria-label="Capital One home"><CapitalOneLogo label="Capital One" /></a>
     <div class="actions">
-      <button class="icon" aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} onclick={toggleTheme}>{isDark ? '☀' : '☾'}</button>
+      <button type="button" class="icon" aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-pressed={isDark} onclick={toggleTheme}>{#if isDark}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5" /></svg>{:else}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" /></svg>{/if}</button>
       <a class="icon" href={dashboard} aria-label="Back to dashboard">×</a>
     </div>
   </header>
@@ -226,7 +225,8 @@
   header { width: min(1200px, calc(100% - 72px)); margin: 0 auto; padding: 24px 0; display: flex; align-items: center; justify-content: space-between; }
   .brand { display: flex; color: var(--dark, #fff) var(--light, #013d5b); } .brand :global(svg) { width: 110px; height: 40px; }
   .actions { display: flex; align-items: center; gap: 16px; } .icon { border: 1px solid var(--border); background: transparent; border-radius: 24px; }
-  .icon { width: 38px; height: 38px; display: grid; place-items: center; font-size: 22px; }
+  .icon { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; font-size: 22px; color: inherit; }
+  .icon svg { width: 18px; height: 18px; flex: none; display: block; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .messages { display: flex; flex-direction: column; gap: 28px; padding: 30px 22px 36px; } .message { display: grid; align-self: flex-start; grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; max-width: 94%; } .avatar { display: block; align-self: end; width: 40px; height: 40px; }
   .sender { grid-column: -2 / -1; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; margin: 5px 0 0 2px; } .read { display: grid; place-items: center; padding: 1px; background: transparent; border: 0; } .read svg { width: 13px; height: 13px; }

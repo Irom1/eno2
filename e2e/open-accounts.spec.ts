@@ -153,8 +153,16 @@ test('account opening keeps a new-user draft intact and supports mobile, theme, 
   await expect(page.locator('html')).not.toHaveAttribute('data-spoken-text');
   await page.getByRole('button', { name: 'Read Eno message aloud' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-spoken-text', /Hey, Ada/);
-  await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+  const themeToggle = page.getByRole('button', { name: 'Switch to dark mode' });
+  await expect(themeToggle.locator('svg')).toHaveCount(1);
+  await expect(themeToggle).toHaveText('');
+  expect(await themeToggle.textContent()).not.toMatch(/[☀☾]/);
+  await expect(themeToggle).toHaveAttribute('aria-pressed', 'false');
+  await themeToggle.click();
   await expect(page.locator('.existing-signup')).toHaveAttribute('data-theme', 'dark');
+  const lightToggle = page.getByRole('button', { name: 'Switch to light mode' });
+  await expect(lightToggle.locator('svg')).toHaveCount(1);
+  await expect(lightToggle).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('textbox', { name: 'Message Eno' }).fill('What is Savor?');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByText('Capital One Savor: for food', { exact: false })).toBeVisible();

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { titleCase } from '$lib/format.js';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
   import { prefetchTransactionContext } from '$lib/walletCache';
@@ -33,6 +34,13 @@
     if (!hrefFor(row) || row.customerId === GUEST_CUSTOMER_ID) return;
     void prefetchTransactionContext(row.customerId, row.accountId);
   }
+
+  // Warm just the first row's account once. The cache dedupes repeated calls,
+  // and this avoids fetching every account in the list.
+  onMount(() => {
+    const first = rows[0];
+    if (first) warmRow(first);
+  });
 </script>
 
 {#snippet content(row: TransactionRow, linked: boolean)}
@@ -67,10 +75,9 @@
             <a
               class="transaction-link"
               {href}
-              target="_blank"
-              rel="noopener noreferrer"
               data-sveltekit-preload-data="hover"
               onpointerenter={() => warmRow(row)}
+              onpointerdown={() => warmRow(row)}
               onfocus={() => warmRow(row)}
               aria-label={`Open ${row.description} in your account`}
             >

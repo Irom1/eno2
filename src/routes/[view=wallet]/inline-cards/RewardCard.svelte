@@ -1,5 +1,8 @@
 <script lang="ts">
   import { accountHref, type RewardEntityCard } from '$lib/chat/entityCards.js';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
+  import { prefetchTransactionContext } from '$lib/walletCache';
+  import { prefetchOnApproach } from '$lib/prefetchOnApproach';
   import CardFrame from './CardFrame.svelte';
   import OpenIcon from './OpenIcon.svelte';
 
@@ -13,6 +16,11 @@
   const pointsText = $derived(`${payload.points.toLocaleString('en-US')} pts`);
   const href = $derived(accountHref(payload.customerId, payload.accountId));
   const label = $derived(`${payload.label}, ${pointsText}`);
+
+  function warmContext(): void {
+    if (!href || !payload.customerId || payload.customerId === GUEST_CUSTOMER_ID) return;
+    void prefetchTransactionContext(payload.customerId, payload.accountId);
+  }
 </script>
 
 {#snippet content(linked: boolean)}
@@ -31,8 +39,8 @@
       <a
         class="reward-link"
         {href}
-        target="_blank"
-        rel="noopener noreferrer"
+        onpointerdown={warmContext}
+        use:prefetchOnApproach={warmContext}
         aria-label={`Open ${payload.label} rewards in your account`}
       >
         {@render content(true)}

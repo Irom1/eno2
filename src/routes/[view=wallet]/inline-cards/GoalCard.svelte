@@ -1,6 +1,9 @@
 <script lang="ts">
   import { dateLabel, money } from '$lib/format.js';
   import { accountHref, type GoalEntityCard } from '$lib/chat/entityCards.js';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
+  import { prefetchTransactionContext } from '$lib/walletCache';
+  import { prefetchOnApproach } from '$lib/prefetchOnApproach';
   import CardFrame from './CardFrame.svelte';
   import EntityKeyValue from './EntityKeyValue.svelte';
   import OpenIcon from './OpenIcon.svelte';
@@ -27,6 +30,11 @@
     payload.projectedDate ? dateLabel(payload.projectedDate) : ''
   );
   const label = $derived(`Goal, target ${targetText}`);
+
+  function warmContext(): void {
+    if (!href || !payload.customerId || payload.customerId === GUEST_CUSTOMER_ID) return;
+    void prefetchTransactionContext(payload.customerId, payload.accountId);
+  }
 </script>
 
 {#snippet content(linked: boolean)}
@@ -58,8 +66,8 @@
       <a
         class="goal-link"
         {href}
-        target="_blank"
-        rel="noopener noreferrer"
+        onpointerdown={warmContext}
+        use:prefetchOnApproach={warmContext}
         aria-label="Open the goal account"
       >
         {@render content(true)}
