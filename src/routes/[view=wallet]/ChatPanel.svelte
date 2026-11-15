@@ -856,7 +856,10 @@
   }
 
   $effect(() => {
-    if (open) void ensureSession(customerId);
+    if (open) {
+      scrollToLatest();
+      void ensureSession(customerId);
+    }
   });
 
   $effect(() => {

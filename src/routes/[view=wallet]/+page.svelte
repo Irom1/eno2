@@ -523,6 +523,9 @@
     } else if (inChat && !customersLoading && !chatOpen) {
       void goto('/', { replaceState: true });
     }
+    if (chatOpen) {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+    }
     if (!previousComposerBounds) return;
 
     const { left, top, height } = composer.getBoundingClientRect();
@@ -535,9 +538,14 @@
       slideTiming
     );
     if (chatOpen) {
-      // Keep the history's reveal edge just above the moving composer.
+      // The transcript can be taller than the viewport. Clip from its actual
+      // bottom so maps and other cards stay behind the moving composer too.
+      const bottom = chatResults.getBoundingClientRect().bottom;
       chatRevealAnimation = chatResults.animate(
-        [{ clipPath: `inset(0 0 ${Math.max(0, -y)}px 0)` }, { clipPath: 'inset(0)' }],
+        [
+          { clipPath: `inset(0 0 ${Math.max(0, bottom - top - y)}px 0)` },
+          { clipPath: `inset(0 0 ${Math.max(0, bottom - top)}px 0)` }
+        ],
         slideTiming
       );
     }
@@ -974,11 +982,12 @@
     display: grid;
     grid-template-columns: 130px minmax(0, 720px) auto;
     justify-content: space-between;
-    align-items: start;
-    gap: 16px;
+    align-items: center;
+    column-gap: 16px;
+    row-gap: 0;
     padding-block: 28px;
   }
-  .header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-top: 4px; }
+  .header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; }
   .composer-area { grid-column: 2; grid-row: 1; }
   .chat .account-overview {
     position: absolute;
@@ -1075,7 +1084,6 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 8px;
   }
   .header-actions .profile { margin-top: 0; }
   .profile:hover, .profile[aria-expanded='true'] { background: var(--surface); }
