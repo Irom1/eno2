@@ -1,6 +1,7 @@
 <script lang="ts">
   import '$lib/assets/message-composer.css';
   import { createConversationPacer } from '$lib/conversationPacing';
+  import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import { finishAccountSetup } from '$lib/accountSetup';
   import { fetchWithSession } from '$lib/sessionRecovery';
   import { goto } from '$app/navigation';
