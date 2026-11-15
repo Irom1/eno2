@@ -77,7 +77,7 @@ export const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map((c) => [c.id, c]
  */
 const RULES: [RegExp, CategoryId, Rating, string, number][] = [
 	[/\b(SHELL|EXXON|MOBIL|CHEVRON|SUNOCO|BP|CITGO|GULF|MARATHON|SPEEDWAY|GAS|FUEL|OIL)\b/i, 'transport', 'heavy', 'Gas', 2.87],
-	[/\b(UBER|LYFT|TAXI|CAB)\b/i, 'transport', 'mixed', 'Rideshare', 0.45],
+	[/\b(UBER(?! ?EATS)|LYFT|TAXI|CAB)\b/i, 'transport', 'mixed', 'Rideshare', 0.45],
 	[/\b(MBTA|SUBWAY|TRANSIT|AMTRAK|METRO|BUS|BLUEBIKES|BIKE)\b/i, 'transport', 'green', 'Public transit & bikes', 0.2],
 	// Air transportation (NAICS 481) is the most carbon-intensive spend per dollar after fuel
 	[/\b(DELTA|JETBLUE|SOUTHWEST|AIR ?LINES?|AIRWAYS|AIRFARE)\b/i, 'transport', 'heavy', 'Flights', 1.0],
@@ -86,14 +86,15 @@ const RULES: [RegExp, CategoryId, Rating, string, number][] = [
 	[/\b(WHOLE FOODS|SAFEWAY|TRADER JOE'?S?|KROGER|STOP ?& ?SHOP|MARKET BASKET|GROCER|MKT|ALDI|COSTCO|FARMERS)\b/i, 'food', 'green', 'Groceries', 0.55],
 	[/\b(DOORDASH|GRUBHUB|UBER ?EATS|POSTMATES|INSTACART)\b/i, 'food', 'heavy', 'Delivery', 0.3],
 	[/\b(COFFEE|CAFE|STARBUCKS|DUNKIN)\b/i, 'food', 'mixed', 'Coffee shops', 0.3],
-	[/\b(CHIPOTLE|BISTRO|RESTAURANT|PIZZA|BURGER|GRILL|KITCHEN)\b/i, 'food', 'mixed', 'Eating out', 0.3],
+	[/\b(CHIPOTLE|PANERA|BISTRO|RESTAURANT|PIZZA|BURGER|GRILL|KITCHEN)\b/i, 'food', 'mixed', 'Eating out', 0.3],
 	[/\b(RENT|PROPERTIES|APARTMENT|MORTGAGE|LEASING)\b/i, 'housing', 'fixed', 'Rent', 0.1],
 	[/\b(APPLE STORE|BEST ?BUY|ELECTRONICS|MICRO ?CENTER)\b/i, 'shopping', 'heavy', 'New electronics', 0.2],
 	[/\b(THRIFT|GOODWILL|REFURB|BACK ?MARKET)\b/i, 'shopping', 'green', 'Secondhand', 0.1],
 	[/\b(MARRIOTT|HILTON|HYATT|HOTELS?|MOTEL|AIRBNB)\b/i, 'shopping', 'mixed', 'Hotels', 0.2],
 	[/\b(AMAZON|MKTPLACE|MARKETPLACE|TEMU|SHEIN)\b/i, 'shopping', 'mixed', 'Online orders', 0.25],
 	[/\b(FAST FASHION)\b/i, 'shopping', 'heavy', 'Fast fashion', 0.25],
-	[/\b(TARGET|WALMART|IKEA|STORE|SHOP|BOOKSTORE|BOOKS|CVS|PHARMACY|WALGREENS)\b/i, 'shopping', 'mixed', 'Retail', 0.2],
+	[/\b(TARGET|WALMART|IKEA|PETCO|HOME DEPOT|STAPLES|STORE|SHOP|BOOKSTORE|BOOKS|CVS|PHARMACY|WALGREENS)\b/i, 'shopping', 'mixed', 'Retail', 0.2],
+	[/\b(ADOBE)\b/i, 'shopping', 'green', 'Software', 0.08],
 	[/\b(NETFLIX|SPOTIFY|HULU|DISNEY)\b/i, 'shopping', 'green', 'Streaming', 0.08],
 	[/\b(AMC|THEATRES?|THEATERS?|CINEMA|CONCERT|LIVE NATION|TICKETMASTER)\b/i, 'shopping', 'green', 'Entertainment', 0.15],
 	[/\b(COMCAST|VERIZON|AT&T|T-MOBILE|MOBILE PHONE|PHONE BILL|WIRELESS)\b/i, 'shopping', 'green', 'Phone & internet', 0.1],

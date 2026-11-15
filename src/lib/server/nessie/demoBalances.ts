@@ -24,5 +24,5 @@ export async function reconcileDemoAccount(value: unknown, read: (path: string) 
     return Number.isFinite(amount) && amount > 0 ? sum + amount : sum;
   }, 0);
   const spending = total(withdrawals);
-  return { ...value, balance: Math.round((credit ? spending - total(deposits) : total(deposits) - spending) * 100) / 100, rewards: Math.floor(spending) };
+  return { ...value, balance: Math.round((credit ? spending - total(deposits) : total(deposits) - spending) * 100) / 100, rewards: credit ? Math.floor(spending) : 0 };
 }

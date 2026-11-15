@@ -19,11 +19,11 @@ export interface DemoTransaction {
   description: string;
 }
 
-/** Demo points: one point per whole dollar of completed spending. */
+/** Credit card demo points: one point per whole dollar of completed spending. */
 export function demoAccountTotals(transactions: readonly DemoTransaction[], type: DemoAccountType = 'Checking') {
   const deposits = transactions.filter((item) => item.kind === 'deposit' && item.status === 'completed').reduce((sum, item) => sum + item.amount, 0);
   const spending = transactions.filter((item) => item.kind === 'withdrawal' && item.status === 'completed').reduce((sum, item) => sum + item.amount, 0);
-  return { balance: Math.round((type === 'Credit Card' ? spending - deposits : deposits - spending) * 100) / 100, rewards: Math.floor(spending) };
+  return { balance: Math.round((type === 'Credit Card' ? spending - deposits : deposits - spending) * 100) / 100, rewards: type === 'Credit Card' ? Math.floor(spending) : 0 };
 }
 
 /** Fifty deposits + fifty withdrawals fit both existing 50-row Nessie tools. */

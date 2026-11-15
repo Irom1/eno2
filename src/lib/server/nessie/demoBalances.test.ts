@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest';
 import { NessieClient } from './client';
 
-it('reconciles old zero balances and rewards from completed Nessie history on account and customer reads', async () => {
-  const account = { _id: 'demo-id', type: 'Checking', nickname: 'Everyday Checking', balance: 0, rewards: 0 };
+it.each(['Checking', 'Savings'])('reconciles %s balances and clears legacy points on account and customer reads', async (type) => {
+  const account = { _id: 'demo-id', type, nickname: type === 'Checking' ? 'Everyday Checking' : 'My Savings', balance: 0, rewards: 150 };
   const transport = vi.fn(async (url: RequestInfo | URL) => {
     const path = new URL(String(url)).pathname;
     if (path.endsWith('/deposits')) return Response.json([{ status: 'completed', amount: 1000, description: 'DEMO OPENING DEPOSIT' }, { status: 'pending', amount: 99 }]);
@@ -10,7 +10,7 @@ it('reconciles old zero balances and rewards from completed Nessie history on ac
     return Response.json(path.startsWith('/customers/') ? [account] : account);
   });
   const client = new NessieClient({ apiKey: 'test', baseUrl: 'https://nessie.test', fetchImpl: transport });
-  const expected = { ...account, balance: 849.75, rewards: 150 };
+  const expected = { ...account, balance: 849.75, rewards: 0 };
   expect(await client.get('/accounts/demo-id')).toEqual(expected);
   expect(await client.get('/customers/customer-id/accounts')).toEqual([expected]);
   expect(transport.mock.calls.filter(([url]) => new URL(String(url)).pathname.endsWith('/withdrawals'))).toHaveLength(1);

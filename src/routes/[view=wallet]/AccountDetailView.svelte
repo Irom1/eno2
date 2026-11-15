@@ -261,7 +261,7 @@
         <h2>{productName}</h2>
         <p class="hero-ending">•••• {ending}</p>
       </div>
-      {#if credit || account.rewards > 0}
+      {#if credit}
         <p class="hero-rewards">{account.rewards.toLocaleString('en-US')} pts</p>
       {/if}
     </div>

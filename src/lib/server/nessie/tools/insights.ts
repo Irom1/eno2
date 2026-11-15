@@ -957,7 +957,7 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
       const cardBalances = toMoney(
         cardAccounts.reduce((sum, account) => sum + accountBalance(account), 0),
       );
-      const totalRewards = accounts.reduce(
+      const totalRewards = cardAccounts.reduce(
         (sum, account) => sum + num(account.rewards),
         0,
       );

@@ -77,6 +77,7 @@ describe('sample transaction history', () => {
       expect(suspicious).toHaveLength(2);
       const totals = demoAccountTotals(history, type);
       expect(totals.balance).toBeGreaterThan(0);
+      if (type !== 'Credit Card') expect(totals.rewards).toBe(0);
       const withLargePending = history.map((item) => item.status === 'pending' ? { ...item, amount: 999999 } : item);
       expect(demoAccountTotals(withLargePending, type)).toEqual(totals);
     });

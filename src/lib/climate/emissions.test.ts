@@ -94,7 +94,7 @@ describe('ClimateWise report', () => {
   it('classifies every merchant the demo seed generates', () => {
     const categories = ['dining', 'groceries', 'entertainment', 'travel', 'shopping', 'gas', 'bills', 'other'] as const;
     const seeded = (['Checking', 'Savings', 'Credit Card'] as const).flatMap((type) =>
-      buildDemoTransactions(type, `acct-${type}`, asOf, categories)
+      Array.from({ length: 100 }, (_, index) => buildDemoTransactions(type, `acct-${type}-${index}`, asOf, categories)).flat()
     );
     const merchants = new Set(seeded.filter((t) => t.kind === 'withdrawal').map((t) => t.description));
     const counts = (description: string) =>

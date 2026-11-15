@@ -75,17 +75,17 @@ it('opens only the chosen accounts and saves 100 Nessie transactions for each', 
     const account = JSON.parse(String(init?.body));
     expect(account.nickname).toBe(account.type === 'Checking' ? '360 Checking' : '360 Performance Savings');
     const calls = transport.mock.calls.filter(([url]) => new URL(String(url)).pathname.startsWith(`/accounts/${account.type.toLowerCase()}-id/`) && /\/(?:deposits|withdrawals)$/.test(new URL(String(url)).pathname));
-    let balance = 0; let spending = 0;
+    let balance = 0;
     for (const [url, transactionInit] of calls) {
       const transaction = JSON.parse(String(transactionInit?.body));
       if (transaction.status !== 'completed') continue;
       const amount = transaction.amount;
       if (new URL(String(url)).pathname.endsWith('/deposits')) balance += amount;
-      else { balance -= amount; spending += amount; }
+      else balance -= amount;
     }
     expect(account.balance).toBeGreaterThan(0);
     expect(account.balance).toBe(balance);
-    expect(account.rewards).toBe(Math.floor(spending));
+    expect(account.rewards).toBe(0);
     expectReviewableCharges(calls.filter(([url]) => new URL(String(url)).pathname.endsWith('/withdrawals')).map(([, init]) => JSON.parse(String(init?.body))));
   }
   for (const id of ['checking-id', 'savings-id']) {

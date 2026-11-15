@@ -91,7 +91,7 @@ it('adds multiple remaining products to the existing customer with 100 persisted
     const purchases = total(withdrawals), payments = total(deposits);
     const balance = account.type === 'Credit Card' ? purchases - payments : payments - purchases;
     expect(account.balance).toBeCloseTo(balance, 2);
-    expect(account.rewards).toBe(Math.floor(purchases));
+    expect(account.rewards).toBe(account.type === 'Credit Card' ? Math.floor(purchases) : 0);
     expect(Number(account.balance)).toBeGreaterThan(0);
   }
   const writes = fake.transport.mock.calls.filter(([, init]) => init?.method === 'POST');

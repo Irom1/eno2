@@ -157,7 +157,7 @@
       const mentioned = available.filter((option) => text.toLowerCase().includes(option.id) || (option.id === 'savings' && /\bsaving\b/i.test(text)));
       if (text.includes('?') || /\b(what|explain|tell|how|difference)\b/i.test(text)) {
         const options = mentioned.length ? mentioned : available;
-        await addEno(options.map((option) => `${option.label}: ${option.description.toLowerCase()}.`).join('\n\n') + '\n\nThese are demo accounts. Each new account gets 100 sample transactions, with a balance and points based on that history. You can only have one checking, one savings, and one of each credit card.');
+        await addEno(options.map((option) => `${option.label}: ${option.description.toLowerCase()}.`).join('\n\n') + '\n\nThese are demo accounts. Each new account gets 100 sample transactions with a balance based on that history. Only credit cards earn demo points; checking and savings accounts have no points. You can only have one checking, one savings, and one of each credit card.');
       } else if (mentioned.length) {
         selected = mentioned.map((option) => option.id);
         await addEno(`I’ve selected ${mentioned.map((option) => option.label).join(' and ')}. Adjust the list if you like, then say “yes” and I’ll open your picks.`);

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { accountProduct } from '$lib/products';
   import { money, titleCase } from '$lib/format.js';
+  import { isCredit } from '$lib/wallet';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
   import { prefetchTransactionContext } from '$lib/walletCache';
   import { prefetchOnApproach } from '$lib/prefetchOnApproach';
@@ -22,7 +23,7 @@
     payload.balance === null ? '' : money(payload.balance, { decimals: 2 })
   );
   const rewardsText = $derived(
-    payload.rewards !== null && payload.rewards > 0
+    isCredit(payload.type) && payload.rewards !== null && payload.rewards > 0
       ? `${payload.rewards.toLocaleString('en-US')} points`
       : ''
   );
