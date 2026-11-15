@@ -1,5 +1,8 @@
 <script lang="ts">
   import { money } from '$lib/format.js';
+  import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
+  import { prefetchTransactionContext } from '$lib/walletCache';
+  import { prefetchOnApproach } from '$lib/prefetchOnApproach';
   import {
     accountHref,
     type BillEntityCard
@@ -22,6 +25,11 @@
   );
   const href = $derived(accountHref(payload.customerId, payload.accountId));
   const label = $derived(`Bill for ${payload.payee}${amountText ? `, ${amountText}` : ''}`);
+
+  function warmContext(): void {
+    if (!href || !payload.customerId || payload.customerId === GUEST_CUSTOMER_ID) return;
+    void prefetchTransactionContext(payload.customerId, payload.accountId);
+  }
 </script>
 
 {#snippet content(linked: boolean)}
@@ -52,8 +60,8 @@
       <a
         class="bill-link"
         {href}
-        target="_blank"
-        rel="noopener noreferrer"
+        onpointerdown={warmContext}
+        use:prefetchOnApproach={warmContext}
         aria-label={`Open ${payload.payee} in your account`}
       >
         {@render content(true)}

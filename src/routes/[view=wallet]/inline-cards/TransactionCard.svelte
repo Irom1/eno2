@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { money } from '$lib/format.js';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
   import { prefetchTransactionContext } from '$lib/walletCache';
+  import { prefetchOnApproach } from '$lib/prefetchOnApproach';
   import { transactionHref, type TransactionEntityCard } from '$lib/chat/entityCards.js';
   import CardFrame from './CardFrame.svelte';
   import DateText from './primitives/DateText.svelte';
@@ -28,35 +28,10 @@
     `Transaction at ${payload.description}${amountText ? `, ${amountText}` : ''}`
   );
 
-  let linkEl = $state<HTMLAnchorElement | null>(null);
-
   function warmContext(): void {
     if (!href || payload.customerId === GUEST_CUSTOMER_ID) return;
     void prefetchTransactionContext(payload.customerId, payload.accountId);
   }
-
-  // Warm the deep-link payloads as soon as the card is near the viewport, so a
-  // touch tap (which fires no hover event) lands on already-cached data.
-  onMount(() => {
-    const element = linkEl;
-    if (!element || typeof IntersectionObserver === 'undefined') {
-      warmContext();
-      return;
-    }
-
-    let warmed = false;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (warmed || !entries.some((entry) => entry.isIntersecting)) return;
-        warmed = true;
-        warmContext();
-        observer.disconnect();
-      },
-      { rootMargin: '300px' }
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  });
 </script>
 
 {#snippet content(linked: boolean)}
@@ -82,7 +57,7 @@
       class="transaction-card inline transaction-link"
       data-kind="transaction"
       {href}
-      bind:this={linkEl}
+      use:prefetchOnApproach={warmContext}
       data-sveltekit-preload-data="hover"
       onpointerenter={warmContext}
       onpointerdown={warmContext}
@@ -103,7 +78,7 @@
         <a
           class="transaction-link"
           {href}
-          bind:this={linkEl}
+          use:prefetchOnApproach={warmContext}
           data-sveltekit-preload-data="hover"
           onpointerenter={warmContext}
           onpointerdown={warmContext}

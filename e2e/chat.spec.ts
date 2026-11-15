@@ -2866,6 +2866,18 @@ test.describe('chat prompts', () => {
     );
 
     await expect(page.locator('.view-shell')).toBeVisible({ timeout: 30_000 });
+    const topbar = page.locator('.view-topbar');
+    await expect(topbar).toBeVisible();
+    await expect(topbar.locator('.back-button[aria-label="Back to dashboard"]')).toBeVisible();
+    expect(await topbar.evaluate((element) => getComputedStyle(element).position)).toBe('sticky');
+    const [topbarBox, bodyBox] = await Promise.all([
+      topbar.boundingBox(),
+      page.locator('.view-body').boundingBox()
+    ]);
+    expect(
+      topbarBox && bodyBox && topbarBox.y < bodyBox.y,
+      'the sticky topbar sits above the scrolling body'
+    ).toBe(true);
     await expect(page.locator('.profile-name')).toHaveText('Maya', { timeout: 30_000 });
     await expect(page.locator('.tab[aria-pressed="true"]')).toContainText('Activity');
 
@@ -3197,7 +3209,7 @@ test.describe('primitive bill and account cards', () => {
     // It deep-links to the owning account when the ids are present.
     const link = bill.locator('a.bill-link');
     await expect(link).toHaveCount(1);
-    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).not.toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute('href', /^\/dashboard\?customer=[^&]+&account=acct-checking$/);
     await expect(bill.locator('.open-icon')).toBeVisible();
 
@@ -3335,7 +3347,7 @@ test.describe('primitive bill and account cards', () => {
 
     const link = card.locator('a.account-link');
     await expect(link).toHaveCount(1);
-    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).not.toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute(
       'href',
       '/dashboard?customer=cust-test&account=acct-checking'
