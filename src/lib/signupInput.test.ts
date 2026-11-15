@@ -7,6 +7,8 @@ describe('setup input autofill', () => {
     ['And your last name?', 'family-name'],
     ['Please enter your full name.', 'name'],
     ['What is your mailing address?', 'street-address'],
+    ['What is your street number and street name?', 'street-address'],
+    ['Can you share your street name?', 'street-address'],
     ['What city do you live in?', 'address-level2'],
     ['Pick your state so I can put the address together.', 'address-level1'],
     ['What is your ZIP code?', 'postal-code'],

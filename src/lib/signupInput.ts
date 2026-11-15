@@ -11,12 +11,12 @@ export function signupInputHints(message: string) {
   if (/\b(?:full name|first and last name)\b/i.test(prompt)) autocomplete = 'name';
   else if (/\b(?:last name|surname|family name)\b/i.test(prompt)) autocomplete = 'family-name';
   else if (/\b(?:first name|given name|call you)\b/i.test(prompt)) autocomplete = 'given-name';
-  else if (/\bname\b/i.test(prompt)) autocomplete = 'name';
   else if (/\b(?:your|which|what) state\b/i.test(prompt)) autocomplete = 'address-level1';
   else if (/\b(?:address|street)\b/i.test(prompt)) autocomplete = 'street-address';
   else if (/\bcity\b/i.test(prompt)) autocomplete = 'address-level2';
   else if (/\bstate\b/i.test(prompt)) autocomplete = 'address-level1';
   else if (/\b(?:zip|postal code)\b/i.test(prompt)) autocomplete = 'postal-code';
+  else if (/\bname\b/i.test(prompt)) autocomplete = 'name';
   if (!autocomplete) return normal;
   return { ...normal, name: autocomplete, autocomplete, autocapitalize: 'words' as const };
 }

@@ -37,8 +37,7 @@
 
 <!--
   The ATM locator is a standalone card (not inside the prose bubble). The map
-  card holds only the primitive data plus the Mapbox preview; the Apple/Google
-  actions sit below the card, outside both the card and the bubble.
+  card holds the primitive data, Mapbox preview, and Apple/Google map actions.
 -->
 <div class="atm-locator">
   <CardFrame {label}>
@@ -64,31 +63,31 @@
         <div class="map-fallback" role="status">Map preview unavailable</div>
       {/if}
     </div>
+    {#if appleUrl || googleUrl}
+      <div class="atm-actions">
+        {#if appleUrl}
+          <a
+            class="atm-action"
+            href={appleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open in Apple Maps
+          </a>
+        {/if}
+        {#if googleUrl}
+          <a
+            class="atm-action"
+            href={googleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open in Google Maps
+          </a>
+        {/if}
+      </div>
+    {/if}
   </CardFrame>
-  {#if appleUrl || googleUrl}
-    <div class="atm-actions">
-      {#if appleUrl}
-        <a
-          class="atm-action"
-          href={appleUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open in Apple Maps
-        </a>
-      {/if}
-      {#if googleUrl}
-        <a
-          class="atm-action"
-          href={googleUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open in Google Maps
-        </a>
-      {/if}
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -136,21 +135,15 @@
     border-radius: var(--bubble-radius);
     background: color-mix(in srgb, var(--surface) 80%, var(--ink) 8%);
   }
-  /* Matches the CardFrame max width in .assistant-content: two equal columns. */
+  /* Keep both map actions together inside the card surface. */
   .atm-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    width: 88%;
-    max-width: 88%;
+    width: 100%;
+    margin-top: 12px;
   }
 
-  @media (max-width: 570px) {
-    .atm-actions {
-      width: 96%;
-      max-width: 96%;
-    }
-  }
   .atm-action {
     display: inline-flex;
     align-items: center;

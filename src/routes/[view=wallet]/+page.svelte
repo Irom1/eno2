@@ -1304,6 +1304,9 @@
     .content { grid-template-columns: minmax(0, 1fr); }
   }
   @container (max-width: 600px) {
+    /* Anchor the menu after all controls so it cannot spill past the left edge. */
+    .header-actions { position: relative; }
+    .account-menu { position: static; }
     .chat .wallet-header { padding-inline: 18px; }
     .chat .header-actions { gap: 10px; }
     .chat .brand :global(svg) { width: 94px; height: 34px; }
