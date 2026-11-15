@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createConversationPacer } from '$lib/conversationPacing';
   import { asksToConfirmAddress, isAffirmative, reviewFingerprint as profileFingerprint } from '$lib/signupConfirmation';
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
@@ -16,6 +17,7 @@
   interface Message { id: number; role: 'eno' | 'you'; text: string; review?: SignupAnswers; accountChoice?: AccountChoice; spending?: SpendingPreferences; includeCreditCard?: boolean | null; choices?: 'spending' | 'accounts'; selectedCategories?: SpendingPreferences['categories']; selection?: AccountSelection; recommendedCard?: DemoCard | null; retryChoices?: ChoiceInput; card?: DemoCard | null; retry?: 'turn' | 'signup'; retryText?: string; selectedAddress?: MailingAddress; addressCheck?: AddressCheck; recovery?: boolean; dashboard?: string }
   interface ConversationReply { message: string; answers: SignupAnswers; accountChoice: AccountChoice; spending: SpendingPreferences; includeCreditCard: boolean | null; recommendedCard: DemoCard | null; stage: SignupStage; card: DemoCard | null; ready: boolean; confirmed: boolean; addressCheck?: AddressCheck }
   const draftKey = 'eno-signup-conversation-v2';
+  const pacing = createConversationPacer();
   let answers = $state(emptyAnswers());
   let accountChoice = $state<AccountChoice>('undecided');
   let spending = $state<SpendingPreferences>(emptySpending());
@@ -68,9 +70,9 @@
     speaking = false;
   }
 
-  function speak(text: string) {
+  function speak(text: string, interrupt = true) {
     if (!speechSupported) return;
-    stopSpeech();
+    if (interrupt) stopSpeech();
     speechNotice = '';
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = speechSynthesis.getVoices();
@@ -92,6 +94,7 @@
 
   onMount(() => {
     disposed = false;
+    pacing.enoShown();
     const media = matchMedia('(prefers-color-scheme: dark)');
     systemDark = media.matches;
     reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -121,7 +124,7 @@
     media.addEventListener('change', onTheme);
     ready = true;
     void settle();
-    return () => { disposed = true; turnController?.abort(); stopSpeech(); media.removeEventListener('change', onTheme); };
+    return () => { disposed = true; pacing.dispose(); turnController?.abort(); stopSpeech(); media.removeEventListener('change', onTheme); };
   });
 
   $effect(() => {
@@ -131,11 +134,14 @@
 
   function toggleTheme() { theme = isDark ? 'light' : 'dark'; try { localStorage.setItem('dashboard-theme', theme); } catch { /* Keep this visit’s choice. */ } }
 
-  function addEno(text: string, extra: Partial<Message> = {}, read = true) {
-    const message = { id: ++nextId, role: 'eno' as const, text, ...extra };
-    messages.push(message);
-    if (voiceEnabled && read) speak(text);
-    return message.id;
+  async function addEno(text: string, extra: Partial<Message> = {}, read = true) {
+    return await pacing.reply(() => {
+      const message = { id: ++nextId, role: 'eno' as const, text, ...extra };
+      messages.push(message);
+      if (voiceEnabled && read) speak(text, false);
+      void settle();
+      return message.id;
+    }) ?? 0;
   }
 
   async function send(event: SubmitEvent) { event.preventDefault(); const text = reply.trim(); if (!text || busy || !ready || recovery) return; reply = ''; await sendText(text); }
@@ -143,14 +149,16 @@
   async function sendText(text: string, selectedAddress?: MailingAddress, choices: ChoiceInput = {}) {
     if (busy || recovery || createdCustomerId) return;
     stopSpeech();
+    pacing.userSent();
     const activeChoice = messages.find((message) => message.id === latestChoiceId && message.choices);
     if (!selectedAddress && !choices.selectedSpending && !choices.selectedAccounts && activeChoice && isAffirmative(text)) {
       const selected = choicesFor(activeChoice);
       if (selected) choices = selected;
       else {
         messages.push({ id: ++nextId, role: 'you', text });
-        addEno('Pick at least one spending category first. “A bit of everything” works if you don’t have a favorite. Then you can just say yes.');
-        void settle();
+        waiting = true;
+        try { await addEno('Pick at least one spending category first. “A bit of everything” works if you don’t have a favorite. Then you can just say yes.'); }
+        finally { waiting = false; void settle(); }
         return;
       }
     }
@@ -167,6 +175,8 @@
 
   async function retryTurn(text: string, selectedAddress?: MailingAddress, choices: ChoiceInput = {}) {
     if (busy) return;
+    pacing.userSent();
+    stopSpeech();
     const index = messages.findLastIndex((item) => item.role === 'you' && item.text === text);
     const history = messages.slice(0, index).slice(-32).map(({ role, text }) => ({ role, text }));
     await requestTurn(text, history, selectedAddress, choices);
@@ -197,17 +207,19 @@
       if (currentStage !== 'review') { latestReviewId = 0; reviewFingerprint = ''; }
       pendingAddress = result.addressCheck?.status === 'correction' && result.addressCheck.candidates?.length === 1 ? result.addressCheck.candidates[0].address : result.addressCheck?.status === 'matched' && asksToConfirmAddress(result.message) ? result.addressCheck.address : undefined;
       const choiceStep = currentStage === 'spending' || currentStage === 'accounts' ? currentStage : undefined;
-      const messageId = addEno(result.message, { addressCheck: result.addressCheck, ...(choiceStep ? { choices: choiceStep, selectedCategories: [...spending.categories], selection: { checking: accountChoice === 'undecided' || accountChoice === 'both' || accountChoice === 'checking', savings: accountChoice === 'undecided' || accountChoice === 'both' || accountChoice === 'savings', creditCard: includeCreditCard !== false }, recommendedCard: result.recommendedCard ?? recommendDemoCard(spending) } : {}) });
+      const messageId = await addEno(result.message, { addressCheck: result.addressCheck, ...(choiceStep ? { choices: choiceStep, selectedCategories: [...spending.categories], selection: { checking: accountChoice === 'undecided' || accountChoice === 'both' || accountChoice === 'checking', savings: accountChoice === 'undecided' || accountChoice === 'both' || accountChoice === 'savings', creditCard: includeCreditCard !== false }, recommendedCard: result.recommendedCard ?? recommendDemoCard(spending) } : {}) });
+      if (disposed) return;
       latestChoiceId = choiceStep ? messageId : 0;
       const fingerprint = profileFingerprint(answers, accountChoice, spending, includeCreditCard);
       if (readyToCreate && !result.confirmed && fingerprint !== reviewFingerprint) {
-        latestReviewId = addEno('Your profile, at a glance. Take a look before we make it official.', { review: { ...answers }, accountChoice, spending: { ...spending, categories: [...spending.categories] }, includeCreditCard, card: includeCreditCard === false ? null : result.card ?? recommendDemoCard(spending), addressCheck: result.addressCheck }, false);
+        latestReviewId = await addEno('Your profile, at a glance. Take a look before we make it official.', { review: { ...answers }, accountChoice, spending: { ...spending, categories: [...spending.categories] }, includeCreditCard, card: includeCreditCard === false ? null : result.card ?? recommendDemoCard(spending), addressCheck: result.addressCheck }, false);
+        if (disposed) return;
         reviewFingerprint = fingerprint;
       }
       waiting = false;
       if (result.confirmed && readyToCreate) await submit();
     } catch (cause) {
-      if (!disposed) addEno(cause instanceof Error && cause.name !== 'AbortError' ? cause.message : 'That reply took a little longer than expected. Your details are still here — want to try again?', { retry: 'turn', retryText: text, selectedAddress, retryChoices: choices });
+      if (!disposed) await addEno(cause instanceof Error && cause.name !== 'AbortError' ? cause.message : 'That reply took a little longer than expected. Your details are still here — want to try again?', { retry: 'turn', retryText: text, selectedAddress, retryChoices: choices });
     } finally { clearTimeout(timeout); waiting = false; void settle(); }
   }
 
@@ -231,13 +243,16 @@
 
   async function confirm() {
     if (busy || recovery || !readyToCreate) return;
+    pacing.userSent();
+    stopSpeech();
     messages.push({ id: ++nextId, role: 'you', text: 'Looks good. Let’s go.' });
     await submit();
   }
 
   async function submit() {
     submitting = true;
-    addEno(accountChoice === 'none' && !matchingCard ? `You got it, ${answers.first_name}. I’m getting your space ready.` : `You got it, ${answers.first_name}. I’m setting up your demo accounts with 100 sample transactions each. This may take a moment.`);
+    await addEno(accountChoice === 'none' && !matchingCard ? `You got it, ${answers.first_name}. I’m getting your space ready.` : `You got it, ${answers.first_name}. I’m setting up your demo accounts with 100 sample transactions each. This may take a moment.`);
+    if (disposed) return;
     void settle();
     try {
       if (!createdCustomerId) {
@@ -248,21 +263,21 @@
           pendingAddress = result.addressCheck.status === 'correction' && result.addressCheck.candidates?.length === 1 ? result.addressCheck.candidates[0].address : undefined;
           readyToCreate = result.addressCheck.status === 'unavailable';
           reviewFingerprint = '';
-          addEno(result.error || result.addressCheck.message, { addressCheck: result.addressCheck, ...(readyToCreate ? { retry: 'signup' as const } : {}) });
+          await addEno(result.error || result.addressCheck.message, { addressCheck: result.addressCheck, ...(readyToCreate ? { retry: 'signup' as const } : {}) });
           return;
         }
-        if (result.created && !result.customerId) { recovery = true; addEno(result.error || 'Your profile was created, but I couldn’t open it yet. Head back to Sign in and choose your name.', { recovery: true }); return; }
-        if (!response.ok || !result.customerId) { addEno(result.error || 'That hit a little bump. Your details are still here. Want to try again?', { retry: 'signup' }); return; }
+        if (result.created && !result.customerId) { recovery = true; await addEno(result.error || 'Your profile was created, but I couldn’t open it yet. Head back to Sign in and choose your name.', { recovery: true }); return; }
+        if (!response.ok || !result.customerId) { await addEno(result.error || 'That hit a little bump. Your details are still here. Want to try again?', { retry: 'signup' }); return; }
         createdCustomerId = result.customerId;
-        if (result.accountError) { addEno(result.accountError, { dashboard: `/dashboard?customer=${encodeURIComponent(createdCustomerId)}` }); return; }
+        if (result.accountError) { await addEno(result.accountError, { dashboard: `/dashboard?customer=${encodeURIComponent(createdCustomerId)}` }); return; }
       }
       completed = true;
       try { sessionStorage.removeItem(draftKey); } catch { /* The profile is saved in Nessie. */ }
       await goto(`/dashboard?customer=${encodeURIComponent(createdCustomerId)}`);
     } catch {
       completed = false;
-      if (createdCustomerId) addEno('Your profile is ready. Let’s try opening your dashboard again.', { retry: 'signup' });
-      else { recovery = true; addEno('I couldn’t confirm whether your profile was created. Head back to Sign in and check for your name before starting again.', { recovery: true }); }
+      if (createdCustomerId) await addEno('Your profile is ready. Let’s try opening your dashboard again.', { retry: 'signup' });
+      else { recovery = true; await addEno('I couldn’t confirm whether your profile was created. Head back to Sign in and check for your name before starting again.', { recovery: true }); }
     } finally { submitting = false; void settle(); }
   }
 </script>
