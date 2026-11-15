@@ -20,8 +20,15 @@
 
   let { card }: Props = $props();
 
-  const rows = $derived(card.payload.rows);
-  const more = $derived(card.payload.more);
+  let revealedCount = $state(0);
+  const remainingRows = $derived(card.payload.remainingRows ?? []);
+  const revealed = $derived(Math.min(revealedCount, remainingRows.length));
+  const rows = $derived([
+    ...card.payload.rows,
+    ...remainingRows.slice(0, revealed)
+  ]);
+  const more = $derived(Math.max(0, card.payload.more - revealed));
+  const canExpand = $derived(revealed < remainingRows.length);
   const label = $derived(
     `Transactions, ${rows.length} shown${more > 0 ? `, ${more} more transactions` : ''}`
   );
@@ -95,7 +102,15 @@
       {/each}
     </ul>
     {#if more > 0}
-      <TruncationFooter {more} label="more transactions" />
+      {#if canExpand}
+        <button
+          type="button"
+          class="truncation-footer"
+          onclick={() => revealedCount = revealed + 8}
+        >{more} more transactions</button>
+      {:else}
+        <TruncationFooter {more} label="more transactions" />
+      {/if}
     {/if}
   </div>
 </CardFrame>
@@ -103,6 +118,24 @@
 <style>
   .transaction-list-card {
     min-width: 0;
+  }
+  button.truncation-footer {
+    display: block;
+    margin: 8px 0 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 11.5px;
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+  }
+  button.truncation-footer:hover,
+  button.truncation-footer:focus-visible {
+    color: var(--link);
+    text-decoration: underline;
   }
   .rows {
     list-style: none;

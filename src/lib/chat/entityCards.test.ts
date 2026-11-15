@@ -647,6 +647,9 @@ describe('transactionListCard', () => {
     const items = Array.from({ length: 41 }, (_, index) => ({ _id: `tx-${index}` }));
     const card = transactionListCard({ count: 41, items }, 0, 1);
     expect(card?.payload.rows).toHaveLength(8);
+    expect(card?.payload.remainingRows?.map((row) => row.id)).toEqual(
+      items.slice(8).map((item) => item._id)
+    );
     expect(card?.payload.more).toBe(33);
   });
 
@@ -730,7 +733,22 @@ describe('mergeTransactionListCards', () => {
 
     const merged = mergeTransactionListCards(existing, incoming);
     expect(merged.payload.rows).toHaveLength(8);
+    expect(merged.payload.remainingRows).toHaveLength(39);
+    expect(merged.payload.remainingRows?.at(-1)?.id).toBe('d-5');
     expect(merged.payload.more).toBe(39);
+  });
+
+  it('deduplicates overlapping hidden rows without losing expandable transactions', () => {
+    const items = Array.from({ length: 20 }, (_, index) => ({ _id: `tx-${index}` }));
+    const existing = card(items.slice(0, 15), 0, 1);
+    const incoming = card(items.slice(5), 0, 2);
+    const merged = mergeTransactionListCards(existing, incoming);
+
+    expect(merged.payload.more).toBe(12);
+    expect([
+      ...merged.payload.rows,
+      ...(merged.payload.remainingRows ?? [])
+    ].map((row) => row.id)).toEqual(items.map((item) => item._id));
   });
 
   it('preserves each row id and account/customer context while merging', () => {
