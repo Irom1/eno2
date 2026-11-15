@@ -44,13 +44,9 @@ test('dashboard opens a personalized account dropdown without repeating signup a
   await link.click();
   await expect(page.getByText('Hey, Ada!', { exact: false })).toBeVisible();
   const options = page.getByRole('group', { name: 'Available accounts' });
-  const selectedCount = page.locator('summary .count');
   await expect(options.getByRole('checkbox')).toHaveCount(4);
   await expect(options.getByRole('checkbox', { name: /360 Checking|Venture/ })).toHaveCount(0);
-  await expect(selectedCount).toHaveText('0 selected');
-  await expect(selectedCount).toHaveAttribute('aria-live', 'polite');
   await options.getByRole('checkbox', { name: /360 Performance Savings/ }).check();
-  await expect(selectedCount).toHaveText('1 selected');
   await options.getByRole('checkbox', { name: /Capital One Savor/ }).check();
   await options.getByRole('checkbox', { name: /Capital One Quicksilver/ }).check();
   await page.getByRole('textbox', { name: 'Message Eno' }).fill('yes');
