@@ -777,6 +777,12 @@
                 <button class="link" onclick={() => send('I’m new here. What can I do with Eno?')}>Let’s get acquainted {@render arrowIcon()}</button>
               </article>
             {/if}
+            <article class="panel feature">
+              <div class="feature-main">
+                <h2>ATM locator</h2>
+                <button class="link" onclick={() => send("ATM's near me")}>Find ATMs near me {@render arrowIcon()}</button>
+              </div>
+            </article>
             {#if activeCustomerId && activeCustomerId !== GUEST_CUSTOMER_ID && !snapshotLoading && !snapshotError}
               <article class="panel feature">
                 <div class="feature-main">

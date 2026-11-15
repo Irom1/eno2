@@ -229,7 +229,7 @@
       </div>
 
       <div class="foreground">
-        <img class="hills" src="/rolling-hills.svg" alt="" width="1440" height="340" />
+        <div class="hills" aria-hidden="true"></div>
         <a class="account-link" href="/signup">
           I'd like to open my first account <span aria-hidden="true">↑</span>
         </a>
@@ -404,8 +404,10 @@
     justify-items: center;
     text-align: center;
     background:
+      url('/images/hero-grain.png') 0 0 / 128px 128px repeat,
+      radial-gradient(ellipse 36% 35% at 84% 52%, #c7b5ce 0%, transparent 100%),
       radial-gradient(ellipse 65% 38% at 18% 76%, #ffcfad 0%, transparent 100%),
-      linear-gradient(173deg, #697ba9 0%, #a1afd0 32%, #c7b5ce 64%, #e6b3ab 100%);
+      linear-gradient(173deg, #87ceeb 0%, #b1d8e7 32%, #e8d1c5 64%, #e6b3ab 100%);
   }
 
   .dark .hero {
@@ -413,12 +415,13 @@
     color: #f3f7fc;
     background:
       url('/images/hero-stars.svg') center top,
-      radial-gradient(ellipse 65% 38% at 18% 76%, #905b65 0%, transparent 100%),
-      linear-gradient(173deg, #0b142b 0%, #172544 35%, #343557 68%, #523f5d 100%);
+      url('/images/hero-grain.png') 0 0 / 128px 128px repeat,
+      radial-gradient(ellipse 65% 38% at 18% 76%, #9d6570 0%, transparent 100%),
+      linear-gradient(173deg, #101c36 0%, #203052 35%, #3e3f65 68%, #5d4969 100%);
   }
   .dark .intro p, .dark article p { color: var(--muted); }
   .dark article { background: #242424; border-color: #454545; }
-  .dark .hills { filter: brightness(0.58) saturate(0.78); }
+  .dark .hills { filter: brightness(0.64) saturate(0.86); }
 
   .intro {
     align-self: center;
@@ -447,6 +450,15 @@
     width: 100%;
     height: 85%;
     pointer-events: none;
+    background: url('/rolling-hills.svg') 0 0 / 100% 100% no-repeat;
+  }
+
+  .hills::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: url('/images/hero-grain.png') 0 0 / 128px 128px repeat;
+    mask: url('/rolling-hills.svg') 0 0 / 100% 100% no-repeat;
   }
 
   h1 {
@@ -508,19 +520,25 @@
     width: min(100%, 360px);
     padding: 7px 7px 7px 20px;
     border-radius: 99px;
-    background: #102321;
+    background: linear-gradient(180deg, #0c1b19 0%, #17322b 100%);
     color: white;
     font-weight: 650;
-    box-shadow: 0 8px 30px #14302155;
+    box-shadow:
+      inset 0 3px 7px #0009,
+      inset 0 0 0 1px #0a1a1673,
+      0 1px 0 #ddffb280;
   }
-  .account-link:hover { background: #203f36; }
   .account-link span {
     display: grid;
     place-items: center;
     flex: 0 0 44px;
     height: 44px;
     border-radius: 50%;
-    background: #b6ed78;
+    background: linear-gradient(180deg, #d0fa9d 0%, #a4df64 100%);
+    box-shadow:
+      inset 0 1px 0 #f3ffda,
+      0 2px 0 #609436,
+      0 4px 8px #0008;
     color: #102321;
     font-size: 1.45rem;
     line-height: 1;
