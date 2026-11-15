@@ -5,7 +5,11 @@ import { createClimateReportCache } from './reportCache';
 const report = buildReport([], { days: 90 });
 function storage() {
   const values = new Map<string, string>();
-  return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  return {
+    values,
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+  };
 }
 function transport() {
   const fetch = vi.fn(async (url: string) => Response.json({ customer: { id: new URL(url, 'http://localhost').searchParams.get('customer') }, report }));
@@ -13,6 +17,24 @@ function transport() {
   return fetch;
 }
 afterEach(() => vi.unstubAllGlobals());
+
+it('ignores reports scored by the pre-weighting model, even when stored under the current key', async () => {
+  const store = storage();
+  const weighted = report.categories.map((category) => {
+    const stripped: Record<string, unknown> = { ...category };
+    delete stripped.weight;
+    delete stripped.greenness;
+    return stripped;
+  });
+  const legacy = JSON.stringify({ accountIds: ['a'], report: { ...report, categories: weighted } });
+  store.setItem('eno-climate-report-v2:ada:90', legacy);
+  store.setItem('eno-climate-report-v1:ada:90', legacy);
+  const fetch = transport();
+  const cache = createClimateReportCache(() => store);
+  expect(cache.peek('ada')).toBeNull();
+  await expect(cache.load('ada', ['a'])).resolves.toEqual(report);
+  expect(fetch).toHaveBeenCalledOnce();
+});
 
 it('reuses the profile report across remounts, account ordering changes, and page reloads', async () => {
   const store = storage();

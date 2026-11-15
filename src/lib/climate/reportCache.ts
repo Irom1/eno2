@@ -4,7 +4,12 @@ import { fetchWithSession } from '../sessionRecovery';
 interface Entry { accountIds: string[]; report: ClimateReport }
 type SessionStorage = Pick<Storage, 'getItem' | 'setItem'>;
 const signature = (ids: readonly string[]) => JSON.stringify([...new Set(ids)].sort());
-const storageKey = (customerId: string, days: number) => `eno-climate-report-v1:${encodeURIComponent(customerId)}:${days}`;
+
+/** Bumped whenever the report's scoring model changes, so old cached scores are never reused. */
+export const CLIMATE_REPORT_CACHE_VERSION = 2;
+
+const storageKey = (customerId: string, days: number) =>
+  `eno-climate-report-v${CLIMATE_REPORT_CACHE_VERSION}:${encodeURIComponent(customerId)}:${days}`;
 
 function validEntry(value: unknown, days: number): value is Entry {
   const entry = value as Entry | null;
@@ -12,7 +17,10 @@ function validEntry(value: unknown, days: number): value is Entry {
   return !!entry && Array.isArray(entry.accountIds) && entry.accountIds.every((id) => typeof id === 'string') &&
     !!report && report.days === days && Number.isFinite(report.score) && typeof report.tier === 'string' &&
     Number.isFinite(report.totalKg) && Array.isArray(report.categories) && Array.isArray(report.topPurchases) &&
-    Array.isArray(report.nudges) && Array.isArray(report.greenness?.ratings) && !!report.equivalents;
+    Array.isArray(report.nudges) && Array.isArray(report.greenness?.ratings) && !!report.equivalents &&
+    // Pre-weighting reports have no category weight/greenness (or an all-emissions score), so reject them.
+    report.categories.every((category) =>
+      !!category && Number.isFinite(category.weight) && Number.isFinite(category.greenness));
 }
 
 /** Browser-session reports survive component remounts and reloads, isolated by profile. */
