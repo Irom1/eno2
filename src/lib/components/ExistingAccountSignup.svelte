@@ -1,6 +1,7 @@
 <script lang="ts">
   import '$lib/assets/message-composer.css';
   import { createConversationPacer } from '$lib/conversationPacing';
+  import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
   import CapitalOneLogo from '../../routes/[view=wallet]/CapitalOneLogo.svelte';
@@ -33,11 +34,9 @@
 
   function speak(text: string) {
     if (!speechSupported) return;
-    speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
-    utterance.onerror = (event) => { if (!['canceled', 'interrupted'].includes(event.error)) notice = 'Voice couldn’t start. You can keep chatting here.'; };
-    try { speechSynthesis.speak(utterance); } catch { notice = 'Voice isn’t available right now.'; }
+    stopReadAloud();
+    notice = '';
+    void readAloud(text, (message) => { notice = message; });
   }
   async function addEno(text: string) {
     return await pacing.reply(() => {
@@ -70,7 +69,7 @@
     systemDark = media.matches;
     const change = () => { systemDark = media.matches; };
     media.addEventListener('change', change);
-    speechSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    speechSupported = supportsReadAloud();
     try { const saved = localStorage.getItem('dashboard-theme'); if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved; } catch { /* Follow the system. */ }
     void (async () => {
       try {
@@ -88,7 +87,7 @@
         if (!disposed) { failed = true; await addEno(error instanceof Error ? error.message : 'I couldn’t load your profile. Please try Sign in.'); }
       } finally { if (!disposed) loading = false; }
     })();
-    return () => { disposed = true; pacing.dispose(); media.removeEventListener('change', change); if (speechSupported) speechSynthesis.cancel(); };
+    return () => { disposed = true; pacing.dispose(); media.removeEventListener('change', change); stopReadAloud(); };
   });
 
   function toggle(id: AccountProductId, checked: boolean) {
@@ -139,7 +138,7 @@
     if (!text || busy || locked || failed) return;
     reply = '';
     pacing.userSent();
-    if (speechSupported) speechSynthesis.cancel();
+    stopReadAloud();
     messages.push({ role: 'you', text });
     if (isAffirmative(text)) { await openSelected(); return; }
     replying = true;

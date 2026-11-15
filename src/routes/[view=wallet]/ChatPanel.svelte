@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
-  import { readAloud, supportsReadAloud } from '$lib/chat/readAloud';
+  import { onDestroy, onMount, tick } from 'svelte';
+  import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import ReadAloudButton from '$lib/components/ReadAloudButton.svelte';
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
@@ -112,10 +112,12 @@
   });
 
   function stopSpeech(): void {
-    if (speaking) speechSynthesis.cancel();
+    stopReadAloud();
     speaking = false;
     speechNotice = '';
   }
+
+  onDestroy(stopSpeech);
 
   function speak(text: string): void {
     stopSpeech();
@@ -123,7 +125,11 @@
     content.innerHTML = renderMarkdown(text);
     for (const block of content.querySelectorAll('p, li, h3, br')) block.after(' ');
     speaking = true;
-    readAloud(content.textContent?.trim() ?? '', (notice) => { speechNotice = notice; });
+    void readAloud(
+      content.textContent?.trim() ?? '',
+      (notice) => { speechNotice = notice; speaking = false; },
+      () => { speaking = false; }
+    );
   }
 
 
