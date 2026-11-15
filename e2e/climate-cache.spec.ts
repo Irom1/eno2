@@ -32,7 +32,7 @@ async function fixtures(page: Page, delayed = false) {
   });
   return { calls, accountIds, release: () => release() };
 }
-const score = (page: Page, value = 720) => page.getByRole('img', { name: new RegExp(`^ClimateWise score: ${value} out of 850`) });
+const score = (page: Page, value = 720) => page.getByRole('img', { name: new RegExp(`^LORAXⓇ Score: ${value} out of 850`) });
 
 for (const reducedMotion of ['no-preference', 'reduce'] as const) {
   test(`closing chat keeps the same loaded score after a complete transition (${reducedMotion})`, async ({ page }) => {
@@ -70,7 +70,7 @@ test('cached LORAX score survives closing chat, browser refresh, and the full re
   await page.reload();
   await expect(score(page)).toBeVisible();
   expect(state.calls).toEqual(['ada']);
-  await page.getByRole('link', { name: 'Check your LORAX® score' }).click();
+  await page.getByRole('link', { name: 'Check your LORAXⓇ Score' }).click();
   await expect(page).toHaveURL(/\/climatewise\?customer=ada$/);
   await expect(page.getByRole('region', { name: 'Footprint' })).toBeVisible();
   await expect(page.getByText('Loading your report…', { exact: true })).toHaveCount(0);

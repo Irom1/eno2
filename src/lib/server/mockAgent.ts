@@ -82,7 +82,7 @@ const INTENT_NEXT_STEPS: Record<string, string> = {
   nessie_get_account: "Switch accounts to compare balances.",
   find_nearby_atms: "Open the map on OpenStreetMap for directions.",
   find_nearby_branches: "Open the map on OpenStreetMap for directions.",
-  insight_climatewise: "You can open ClimateWise for the full breakdown.",
+  insight_climatewise: "You can open the full report for a breakdown of your emissions.",
   insight_financial_overview:
     "Review bills and spending together when you plan the month."
 };
@@ -692,7 +692,7 @@ export function composeIntro(name: string): string {
     case "insight_top_merchants":
       return "Here is where you shop most:";
     case "insight_climatewise":
-      return "Here is your ClimateWise snapshot:";
+      return "Here’s what goes into your LORAXⓇ Score:";
     case "nessie_list_account_deposits":
     case "nessie_list_account_withdrawals":
     case "nessie_list_account_transactions":

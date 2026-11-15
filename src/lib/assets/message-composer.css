@@ -16,10 +16,10 @@
 
 .message-composer,
 .setup-composer-background {
-  --message-blue: #2f5ad9;
-  --message-blue-gradient: linear-gradient(180deg, #223aa7 0%, var(--message-blue) 100%);
-  --message-blue-edge: #6386ef;
-  --message-blue-shadow: inset 0 0 5px #89a9ffb3, 0 5px 12px #1c3d9a45;
+  /* Primary colors from the dark and light Eno icons. */
+  --message-accent: var(--dark, #89c6e2) var(--light, #043d58);
+  --message-accent-ink: var(--dark, #043d58) var(--light, #fff);
+  --message-accent-hover: color-mix(in srgb, var(--message-accent) 90%, black);
 }
 
 .message-composer > .message-send {
@@ -28,13 +28,23 @@
   flex: 0 0 44px;
   height: 44px;
   padding: 0;
-  border: 1px solid var(--message-blue-edge);
+  border: 1px solid transparent;
   border-radius: 50%;
-  background: var(--message-blue-gradient);
-  box-shadow: var(--message-blue-shadow);
-  color: #fff;
+  background: var(--message-accent);
+  color: var(--message-accent-ink);
   font-size: 1.45rem;
   line-height: 1;
+}
+
+.message-composer > .message-send-raised {
+  --message-send-highlight: color-mix(in srgb, var(--message-accent) 80%, white);
+  --message-send-shade: color-mix(in srgb, var(--message-accent) 78%, #001c24);
+  border-color: color-mix(in srgb, var(--message-accent) 72%, white);
+  background: linear-gradient(180deg, var(--message-send-highlight), var(--message-accent) 45%, var(--message-send-shade));
+  box-shadow:
+    inset 0 2px 2px #ffffff55,
+    inset 0 -2px 3px #001c2455,
+    0 3px 6px #001c2466;
 }
 
 .message-composer > input {
@@ -53,36 +63,43 @@
 
 .setup-composer-background {
   isolation: isolate;
-  --link: var(--dark, color-mix(in srgb, var(--message-blue) 45%, white))
-    var(--light, color-mix(in srgb, var(--message-blue) 85%, black));
-  --reply: color-mix(in srgb, var(--message-blue) var(--reply-tint), var(--surface));
+  --link: var(--dark, color-mix(in srgb, var(--message-accent) 45%, white))
+    var(--light, color-mix(in srgb, var(--message-accent) 85%, black));
+  --reply: color-mix(in srgb, var(--message-accent) var(--reply-tint), var(--surface));
   --reply-tint: var(--dark, 24%) var(--light, 14%);
   --setup-header-height: 88px;
   --bubble-radius: 24px;
   --composer-bottom-space: calc(16px + max(18px, env(safe-area-inset-bottom)));
-  --composer-bloom-strength: var(--dark, 28%) var(--light, 19%);
-  --composer-bloom: color-mix(in srgb, var(--message-blue) var(--composer-bloom-strength), transparent);
   background: var(--page);
-  accent-color: var(--message-blue);
+  accent-color: var(--message-accent);
 }
 
 .setup-composer-background ::selection {
-  background: var(--message-blue);
-  color: #fff;
+  background: var(--message-accent);
+  color: var(--message-accent-ink);
 }
 
 .setup-composer-background::before {
+  --composer-gradient-center: calc(100% - var(--composer-bottom-space) - 29px);
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+}
+
+.setup-composer-background::before,
+.wallet-gradient {
+  --gradient-base: var(--dark, #10191f) var(--light, #f4f6f8);
+  --glow: var(--dark, #21475f) var(--light, #c6e5fc);
   background:
     radial-gradient(
-      ellipse min(760px, 90vw) clamp(190px, 35dvh, 340px) at 50% calc(100% - var(--composer-bottom-space) - 29px),
-      var(--composer-bloom),
+      ellipse min(760px, 90vw) clamp(190px, 35dvh, 340px) at 50% var(--composer-gradient-center),
+      color-mix(in srgb, var(--glow) 74%, transparent),
+      color-mix(in srgb, var(--glow) 25%, transparent) 48%,
       transparent 100%
-    );
+    ),
+    var(--gradient-base);
 }
 
 .setup-composer-background > header {
@@ -99,7 +116,9 @@
 }
 
 .setup-composer-background > header::before,
+.setup-composer-background .wallet-chat-header::before,
 .setup-composer-background > header::after,
+.setup-composer-background .wallet-chat-header::after,
 .setup-composer-background .composer-area::before,
 .setup-composer-background .composer-area::after {
   content: '';
@@ -108,12 +127,14 @@
 }
 
 .setup-composer-background > header::before,
+.setup-composer-background .wallet-chat-header::before,
 .setup-composer-background .composer-area::before {
   backdrop-filter: blur(4px);
   mask-image: linear-gradient(var(--chat-blur-direction, to bottom), #000 25%, #000b 50%, #0004 76%, transparent);
 }
 
 .setup-composer-background > header::after,
+.setup-composer-background .wallet-chat-header::after,
 .setup-composer-background .composer-area::after {
   backdrop-filter: blur(10px);
   mask-image: linear-gradient(var(--chat-blur-direction, to bottom), #000 12%, #000c 36%, #0005 64%, transparent);
@@ -170,15 +191,14 @@
     var(--light, 0 2px 6px #17334a14, 0 12px 28px #17334a24);
 }
 
-.setup-composer-background .message-composer > input::placeholder {
+.setup-composer-background .message-composer :is(input, textarea)::placeholder {
   color: var(--dark, #c3cfda) var(--light, #50636e);
 }
 
 .setup-composer-background .from-you .bubble {
-  background: var(--dark, var(--message-blue))
-    var(--light, color-mix(in srgb, var(--message-blue) 22%, white));
+  background: var(--message-accent);
   border-color: transparent;
-  color: var(--dark, #fff) var(--light, #172b5c);
+  color: var(--message-accent-ink);
 }
 
 .setup-composer-background .setup-action {
@@ -190,16 +210,19 @@
   min-height: 40px;
   margin: 12px 0 0 auto;
   padding: 8px 15px;
-  border: 1px solid var(--message-blue-edge);
+  border: 1px solid transparent;
   border-radius: var(--bubble-radius);
-  background: var(--message-blue-gradient);
-  box-shadow: var(--message-blue-shadow);
-  color: #fff;
+  background: var(--message-accent);
+  color: var(--message-accent-ink);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
+}
+
+.setup-composer-background .setup-action:not(:disabled):hover {
+  background: var(--message-accent-hover);
 }
 
 .setup-composer-background .setup-action > span {

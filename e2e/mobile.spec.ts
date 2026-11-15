@@ -232,7 +232,7 @@ test.describe('360x640 keyboard viewport', () => {
     const events = [
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'Here is your ClimateWise snapshot.'
+        delta: 'Here’s what goes into your LORAXⓇ Score:'
       })}`,
       `event: insight\ndata: ${JSON.stringify({
         type: 'insight',
@@ -254,7 +254,7 @@ test.describe('360x640 keyboard viewport', () => {
       });
     });
 
-    await askChat(page, 'What is my ClimateWise score?');
+    await askChat(page, 'What is my LORAXⓇ Score?');
 
     const card = page.locator('.climatewise-chat-card');
     await expect(card).toHaveCount(1, { timeout: 20_000 });
@@ -295,7 +295,7 @@ test.describe('360x640 keyboard viewport', () => {
     }
     await info.click();
     await expect(card.locator('#score-info')).toBeVisible();
-    await expect(card.locator('#score-info')).toContainText('ClimateWise score estimated');
+    await expect(card.locator('#score-info')).toContainText('LORAXⓇ Score is estimated');
     await info.click();
     await expect(card.locator('#score-info')).toHaveCount(0);
 

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import { readAloud, supportsReadAloud } from '$lib/chat/readAloud';
+  import ReadAloudButton from '$lib/components/ReadAloudButton.svelte';
   import { renderMarkdown } from '$lib/markdown.js';
   import { createSseParser } from '$lib/sse.js';
   import {
@@ -37,13 +39,6 @@
     prefetchSnapshot,
     prefetchTransactionContext
   } from '$lib/walletCache';
-  import {
-    friendlyToolLabel,
-    initialThinking,
-    pushThinkingStep,
-    THINKING_COMPOSING,
-    type ThinkingState
-  } from '$lib/chat/thinking.js';
   import { classifyIntents } from '$lib/chat/intents.js';
   import { shouldInferTransactionList } from '$lib/chat/transactionListIntent.js';
   import type { EnoVariant } from '$lib/eno.js';
@@ -103,12 +98,34 @@
   let messages = $state<ChatMessage[]>([introMessage()]);
   let streaming = $state(false);
   let status = $state('');
-  let thinking = $state<ThinkingState>(initialThinking());
   let requestSeq = 0;
   let cardSeq = 0;
   let lastPromptId = 0;
   let inFlightPromptId = 0;
   let logEl: HTMLDivElement;
+  let speechSupported = $state(false);
+  let speechNotice = $state('');
+  let speaking = false;
+
+  onMount(() => {
+    speechSupported = supportsReadAloud();
+  });
+
+  function stopSpeech(): void {
+    if (speaking) speechSynthesis.cancel();
+    speaking = false;
+    speechNotice = '';
+  }
+
+  function speak(text: string): void {
+    stopSpeech();
+    const content = document.createElement('div');
+    content.innerHTML = renderMarkdown(text);
+    for (const block of content.querySelectorAll('p, li, h3, br')) block.after(' ');
+    speaking = true;
+    readAloud(content.textContent?.trim() ?? '', (notice) => { speechNotice = notice; });
+  }
+
 
   const suggestions = $derived.by(() => {
     if (streaming || customerId === GUEST_CUSTOMER_ID) return [];
@@ -143,6 +160,7 @@
 
   async function runEnsureSession(id: string): Promise<boolean> {
     if (ready) {
+      stopSpeech();
       requestSeq += 1;
       streaming = false;
       messages = [introMessage()];
@@ -267,13 +285,13 @@
     const value = text.trim();
     if (!value || !ready || streaming) return false;
 
+    stopSpeech();
     const requestId = ++requestSeq;
     const userId = ++messageSeq;
     const assistantId = ++messageSeq;
     messages.push({ id: userId, role: 'user', text: value });
     messages.push({ id: assistantId, role: 'assistant', text: '', prompt: value, pending: true });
     streaming = true;
-    thinking = initialThinking();
     status = '';
     scrollLog();
 
@@ -312,19 +330,8 @@
               scrollLog();
             }
             break;
-          case 'tool_start': {
-            const name = typeof data.name === 'string' ? data.name : '';
-            const label = typeof data.label === 'string' ? data.label : '';
-            thinking = pushThinkingStep(thinking, friendlyToolLabel(name, label));
-            break;
-          }
           case 'insight': {
             if (typeof data.kind !== 'string') break;
-            // Cards are about to render; the model still owes us prose. Surface
-            // that phase so the wait between the card and the answer is legible.
-            if (message.pending && !message.text.trim()) {
-              thinking = pushThinkingStep(thinking, THINKING_COMPOSING);
-            }
             const payload = data.payload;
             const accountId = typeof data.accountId === 'string' ? data.accountId : '';
             const intents = classifyIntents(message.prompt ?? '');
@@ -704,6 +711,10 @@
   });
 
   $effect(() => {
+    if (open) return stopSpeech;
+  });
+
+  $effect(() => {
     canSend = ready && !streaming;
   });
 
@@ -748,10 +759,14 @@
   data-streaming={streaming}
   inert={!open}
 >
-  <div class="chat-log" aria-live="polite" aria-label="Conversation" bind:this={logEl}>
+  <div class="chat-log" role="log" aria-relevant="additions text" aria-live="polite" aria-label="Conversation" bind:this={logEl}>
+    {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
     {#each messages as message (message.id)}
       {#if message.role === 'user'}
-        <div class="bubble user">{message.text}</div>
+        <div class="from-you">
+          <div class="bubble user">{message.text}</div>
+          <span class="sender">You</span>
+        </div>
       {:else}
         {@const arrangedCards = anchorEntityCards(message.text, message.inlineCards ?? [], { pending: !!message.pending })}
         {@const readyCards = revealInlineCards(arrangedCards, message.text.length, Boolean(message.pending))}
@@ -765,19 +780,8 @@
             <div class="assistant-content">
               {#if isThinking}
                 <div class="bubble assistant">
-                  <div class="thinking-row">
-                    <ol class="thinking-steps" aria-label="Eno is working">
-                      {#each thinking.steps as step, index (step + index)}
-                        <li class="step done">
-                          <svg class="step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                          <span>{step}</span>
-                        </li>
-                      {/each}
-                      <li class="step current status-line">
-                        <span class="step-dot" aria-hidden="true"></span>
-                        <span>{thinking.current || 'Looking that up'}</span>
-                      </li>
-                    </ol>
+                  <div class="thinking-row" role="status" aria-label="Eno is working">
+                    <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
                   </div>
                 </div>
               {/if}
@@ -801,15 +805,20 @@
                 {/if}
               {/each}
               {#if message.pending && hasBlocks}
-                <div class="loading-line status-line">
+                <div class="loading-line" role="status" aria-label="Eno is working">
                   <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                  <span>{thinking.current || 'Still working…'}</span>
                 </div>
               {/if}
               {#if message.intro && (booting || !ready)}
                 <p class="status-line intro-status">{status || 'Connecting…'}</p>
               {/if}
             </div>
+            <span class="sender">
+              Eno
+              {#if speechSupported && !message.pending && message.text.trim()}
+                <ReadAloudButton onclick={() => speak(message.text)} />
+              {/if}
+            </span>
           </div>
         {/if}
       {/if}
@@ -843,30 +852,35 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 18px;
+    padding: 30px 22px 36px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 28px;
   }
   .bubble {
-    max-width: 88%;
-    padding: 10px 14px;
+    padding: 17px 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--bubble-radius) var(--bubble-radius) var(--bubble-radius) 0;
+    background: var(--surface);
     overflow-wrap: anywhere;
   }
+  .from-you { align-self: flex-end; max-width: 80%; }
   .bubble.user {
-    align-self: flex-end;
-    max-width: 85%;
-    background: var(--button);
-    color: var(--button-text);
-    border-radius: 18px 18px 4px 18px;
+    padding-block: 12px;
+    border-radius: var(--bubble-radius) var(--bubble-radius) 0 var(--bubble-radius);
     white-space: pre-wrap;
   }
-  .bubble.assistant {
-    align-self: flex-start;
-    background: var(--page);
-    border: 1px solid var(--border);
-    border-radius: 18px 18px 18px 4px;
+  .bubble.assistant { max-width: 88%; }
+  .sender {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    margin: 5px 0 0 2px;
   }
+  .from-you .sender { justify-content: flex-end; margin-right: 3px; }
+  .speech-notice { margin: 0; color: var(--muted); font-size: 11px; text-align: center; }
   /*
    * Single-entity cards render inside the assistant bubble. CardFrame is owned
    * by a child component, so restyle it globally within the bubble: same border,
@@ -885,11 +899,11 @@
     align-self: flex-start;
     width: 100%;
     min-width: 0;
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 12px;
   }
+  .assistant-turn > .sender { grid-column: 2; }
   .assistant-turn > :global(.eno-thinking) {
     align-self: flex-end;
     margin-top: 0;
@@ -906,7 +920,7 @@
   .chat-followups-row {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
     min-width: 0;
   }
@@ -935,30 +949,23 @@
     flex: none;
   }
   .loading-dots i {
-    width: 4px;
-    height: 4px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
-    background: var(--link);
+    background: var(--muted);
     animation: loading-pulse 1s ease-in-out infinite;
   }
   .loading-dots i:nth-child(2) { animation-delay: 0.15s; }
   .loading-dots i:nth-child(3) { animation-delay: 0.3s; }
   @keyframes loading-pulse {
-    0%,
-    100% {
-      opacity: 0.3;
-      transform: scale(0.8);
-    }
-    50% {
-      opacity: 1;
-      transform: scale(1);
-    }
+    50% { opacity: .3; transform: translateY(-2px); }
   }
-  @media (max-width: 570px) {
-    .chat-log { padding: 10px 6px; }
-    .bubble { max-width: 94%; }
-    .bubble.user { max-width: 92%; }
-    .chat-followups { max-width: 94%; }
+  @media (max-width: 600px) {
+    .chat-log { padding: 18px 16px 28px; gap: 22px; }
+    .assistant-turn, .chat-followups-row { column-gap: 8px; }
+    .bubble { padding: 14px; font-size: 14px; }
+    .bubble.assistant, .chat-followups { max-width: 96%; }
+    .from-you { max-width: 85%; }
   }
   @media (prefers-reduced-motion: reduce) {
     .loading-dots i {
@@ -966,48 +973,7 @@
       opacity: 0.75;
     }
   }
-  .thinking-row { display: flex; align-items: flex-start; gap: 10px; }
-  .thinking-steps {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-  }
-  .step {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12.5px;
-    line-height: 1.35;
-    color: var(--muted);
-  }
-  .step.current { color: var(--ink); font-weight: 600; }
-  .step-check { width: 13px; height: 13px; flex: none; color: var(--link); }
-  .step-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--link);
-    flex: none;
-    animation: step-pulse 1.1s ease-in-out infinite;
-  }
-  @keyframes step-pulse {
-    0%,
-    100% {
-      opacity: 0.35;
-      transform: scale(0.85);
-    }
-    50% {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .step-dot { animation: none; }
-  }
-  .richtext { line-height: 1.5; }
+  .thinking-row { display: flex; }
   .richtext :global(p) { margin: 0 0 8px; }
   .richtext :global(p:last-child) { margin-bottom: 0; }
   .richtext :global(ul), .richtext :global(ol) {

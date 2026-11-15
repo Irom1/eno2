@@ -126,7 +126,7 @@
 				fetchedReport = data.report;
 			})
 			.catch(() => {
-				if (!controller.signal.aborted) error = 'We couldn’t load your ClimateWise report.';
+				if (!controller.signal.aborted) error = 'We couldn’t load your emissions report.';
 			});
 		return () => controller.abort();
 	});
@@ -214,10 +214,10 @@
 
 				<section class="chart" aria-label="Carbon emissions by category">
 					<div class="chart-head">
-						<button class="info" aria-expanded={showInfo} aria-controls="score-info" aria-label="How your score is estimated"
+						<button class="info" aria-expanded={showInfo} aria-controls="score-info" aria-label="How your LORAXⓇ Score is estimated"
 							onclick={() => (showInfo = !showInfo)}>i</button>
 						{#if showInfo}
-							<p class="info-text" id="score-info">ClimateWise score estimated from purchases over the past {report.days} days.</p>
+							<p class="info-text" id="score-info">Your LORAXⓇ Score is estimated from purchases over the past {report.days} days.</p>
 						{/if}
 					</div>
 
@@ -227,7 +227,7 @@
 							bind:selected
 							bind:hovered
 							size={climateSize.ringSize}
-							ariaLabel="Carbon emissions by purchase category"
+							ariaLabel={`LORAXⓇ Score: ${report.score}, ${report.tier}. Carbon emissions by purchase category.`}
 							centerValue={String(report.score)}
 							centerUnit={report.tier}
 						/>

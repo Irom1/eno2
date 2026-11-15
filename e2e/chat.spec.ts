@@ -14,7 +14,7 @@ import {
 } from './helpers';
 
 const STARTER_PROMPTS = [
-  'What is my ClimateWise score?',
+  'What is my LORAXⓇ Score?',
   "What's due in the next 30 days?",
   'Anything weird in my transactions?',
   'Find an ATM near Arlington, VA'
@@ -502,7 +502,7 @@ test.describe('chat prompts', () => {
     const events = [
       `event: text\ndata: ${JSON.stringify({
         type: 'text',
-        delta: 'Here is your ClimateWise snapshot: '
+        delta: 'Here’s what goes into your LORAXⓇ Score: '
       })}`,
       `event: insight\ndata: ${JSON.stringify({
         type: 'insight',
@@ -525,7 +525,7 @@ test.describe('chat prompts', () => {
       });
     });
 
-    await askChat(page, "What's my ClimateWise score?");
+    await askChat(page, "What's my LORAXⓇ Score?");
 
     const card = page.locator('.climatewise-chat-card');
     await expect(card).toHaveCount(1, { timeout: 20_000 });
@@ -1042,7 +1042,7 @@ test.describe('chat prompts', () => {
       expect(row.width, 'each suggestion spans most of the log').toBeGreaterThan(
         innerWidth * 0.6
       );
-      expect(row.height, 'follow-up rows stay compact').toBeLessThanOrEqual(40);
+      expect(row.height, 'follow-up rows have a roomy click target').toBeGreaterThanOrEqual(48);
     }
     await expectFollowupsMatchBubble(page);
     await expectFollowupBorders(page);
@@ -1309,7 +1309,7 @@ test.describe('chat prompts', () => {
       expect(row.width, 'each suggestion spans most of the log').toBeGreaterThan(
         innerWidth * 0.6
       );
-      expect(row.height, 'follow-up rows stay compact').toBeLessThanOrEqual(40);
+      expect(row.height, 'follow-up rows have a roomy click target').toBeGreaterThanOrEqual(48);
     }
     await expectFollowupsMatchBubble(page);
     await expectFollowupBorders(page);
@@ -2969,7 +2969,7 @@ test.describe('Eno mascot', () => {
     expectNoErrors(errors);
   });
 
-  test('shows high-level thinking steps then clears them when a card appears', async ({
+  test('shows only loading dots while the response streams', async ({
     page
   }) => {
     const errors = collectErrors(page);
@@ -3020,23 +3020,6 @@ test.describe('Eno mascot', () => {
 
     await loadChat(page);
 
-    await page.evaluate(() => {
-      const target = window as unknown as { __thinkingSteps?: string[] };
-      target.__thinkingSteps = [];
-      const log = document.querySelector('.chat-log');
-      if (!log) return;
-      const record = (): void => {
-        const current = document.querySelector('.thinking-steps li.current');
-        const text = current?.textContent?.trim();
-        if (!text) return;
-        const steps = target.__thinkingSteps!;
-        if (!steps.includes(text)) steps.push(text);
-      };
-      const observer = new MutationObserver(record);
-      observer.observe(log, { subtree: true, childList: true, characterData: true });
-      record();
-    });
-
     const composer = page.locator('textarea[aria-label="Ask Capital One"]');
     await composer.fill('Show me my bills');
     const send = page.locator('button.send[aria-label="Ask"]');
@@ -3049,17 +3032,17 @@ test.describe('Eno mascot', () => {
     );
     await composer.press('Enter');
 
-    const steps = page.locator('.thinking-steps');
-    await expect(steps).toBeVisible({ timeout: 20_000 });
-    await expect(steps.locator('li.current')).toHaveText('Understanding your question');
+    const thinkingRow = page.locator('.thinking-row');
+    await expect(thinkingRow).toBeVisible();
+    await expect(thinkingRow.locator('.loading-dots i')).toHaveCount(3);
+    await expect(thinkingRow).toHaveText('');
 
-    // The regression: once a card is visible the checklist may clear, but the
-    // compact loading line must stay until the turn finishes and the streamed
-    // prose must not be held back behind it.
     await expect(page.locator('.transaction-card').first()).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('.thinking-row')).toHaveCount(0);
-    await expect(page.locator('.loading-line')).toBeVisible();
-    await expect(page.locator('.chat-log .status-line')).not.toHaveCount(0);
+    const loadingLine = page.locator('.loading-line');
+    await expect(loadingLine).toBeVisible();
+    await expect(loadingLine.locator('.loading-dots i')).toHaveCount(3);
+    await expect(loadingLine).toHaveText('');
     await expect(page.locator('.bubble.assistant .richtext').last()).toContainText(
       'suspiciously large'
     );
@@ -3068,19 +3051,6 @@ test.describe('Eno mascot', () => {
     expect(response.status(), 'chat request should succeed').toBeLessThan(400);
     await response.finished().catch(() => undefined);
     await waitForChatSettled(page);
-
-    const observed = await page.evaluate(
-      () => (window as unknown as { __thinkingSteps?: string[] }).__thinkingSteps ?? []
-    );
-    expect(observed.length, `observed steps: ${JSON.stringify(observed)}`).toBeGreaterThanOrEqual(2);
-    expect(observed[0]).toBe('Understanding your question');
-    for (const label of observed) {
-      const lower = label.toLowerCase();
-      expect(lower).not.toContain('nessie');
-      expect(lower).not.toContain('insight');
-      expect(lower).not.toContain('tool');
-      expect(label).not.toContain('_');
-    }
 
     await expect(page.locator('.thinking-row')).toHaveCount(0);
     await expect(page.locator('.loading-line')).toHaveCount(0);

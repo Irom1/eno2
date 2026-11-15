@@ -157,13 +157,13 @@ test('wallet navigation keeps the customer and restores card tabs from the URL',
   await expect(page.getByRole('link', { name: 'Return to dashboard' })).toHaveCount(0);
   await page.getByRole('link', { name: 'Capital One dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
-  const climateLink = page.getByRole('link', { name: 'Check your LORAX® score' });
+  const climateLink = page.getByRole('link', { name: 'Check your LORAXⓇ Score' });
   await expect(climateLink).toHaveAttribute('href', '/climatewise?customer=future');
   await climateLink.click();
   // A plain click opens Eno chat and sends the starter prompt; the href above
   // remains the fallback for modifier and middle clicks.
   await expect(page).toHaveURL(/\/chat\?customer=future$/);
-  await expect(page.locator('.bubble.user')).toContainText('What is my ClimateWise score?');
+  await expect(page.locator('.bubble.user')).toContainText('What is my LORAXⓇ Score?');
   await page.getByRole('link', { name: 'Capital One dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '$lib/assets/message-composer.css';
   import { accountProduct } from '$lib/products';
   import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
   import { customerHref, orderCustomers, savedCustomerId, rememberCustomerId } from '$lib/customerSelection';
@@ -433,7 +434,7 @@
   let query = $state('');
   let compactComposer = $state(false);
   const composerPlaceholder = $derived(
-    compactComposer ? COMPACT_COMPOSER_PLACEHOLDER : FULL_COMPOSER_PLACEHOLDER
+    inChat ? 'Message Eno…' : compactComposer ? COMPACT_COMPOSER_PLACEHOLDER : FULL_COMPOSER_PLACEHOLDER
   );
   let keyboardOpen = $state(false);
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
@@ -664,11 +665,11 @@
 
 <svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
 
-<div class="dashboard" class:chat={inChat} class:keyboard-open={keyboardOpen} class:view-open={walletView !== null} data-theme={theme}>
+<div class="dashboard" class:chat={inChat} class:setup-composer-background={inChat} class:keyboard-open={keyboardOpen} class:view-open={walletView !== null} data-theme={theme}>
   <div class="dashboard-body" inert={walletView !== null}>
     <div class="wallet-band" style:--composer-half-height={`${composerHeight / 2}px`}>
       <div class="wallet-gradient" bind:this={gradient} aria-hidden="true"></div>
-      <div class="container header-inner">
+      <div class="container header-inner" class:wallet-chat-header={inChat}>
         <a class="brand" href={dashboardHref}><CapitalOneLogo label="Capital One dashboard" /></a>
         <div class="header-actions">
           {#if guestChat}
@@ -711,6 +712,11 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
             {/if}
           </button>
+          {#if inChat}
+            <a class="chat-exit" href={guestChat ? '/' : dashboardHref} aria-label={guestChat ? 'Back to home' : 'Back to dashboard'}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+            </a>
+          {/if}
         </div>
         <main class="chat-results" aria-label="Wallet chat" hidden={!inChat} bind:this={chatResults}>
           <ChatPanel
@@ -725,12 +731,16 @@
           />
         </main>
         <div class="composer-area">
-          <form class="composer" bind:this={composer} bind:offsetHeight={composerHeight} onsubmit={search}>
+          <form class="composer" class:message-composer={inChat} bind:this={composer} bind:offsetHeight={composerHeight} onsubmit={search}>
             <div class="composer-field" data-value={query || composerPlaceholder}>
               <textarea bind:value={query} onfocus={openChat} onkeydown={handleComposerKeydown} rows="1" aria-label="Ask Capital One" placeholder={composerPlaceholder}></textarea>
             </div>
-            <button class="primary send" aria-label="Ask" disabled={!query.trim() || (inChat && !canSend)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+            <button class="send" class:primary={!inChat} class:message-send={inChat} aria-label="Ask" disabled={!query.trim() || (inChat && !canSend)}>
+              {#if inChat}
+                <span aria-hidden="true">↑</span>
+              {:else}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+              {/if}
             </button>
           </form>
         </div>
@@ -839,7 +849,7 @@
 
             {#if liveAccounts.length > 0}
             <div class="score-cards">
-              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={snapshotCustomerId || routeCustomerId} accountIds={liveAccounts.map((account) => account.id)} onAsk={() => send('What is my ClimateWise score?')} />
+              <ClimateWiseWidget href={customerHref('/climatewise', routeCustomerId)} refresh={snapshotVersion} customerId={snapshotCustomerId || routeCustomerId} accountIds={liveAccounts.map((account) => account.id)} onAsk={() => send('What is my LORAXⓇ Score?')} />
               <ScoreCard
                 title="CreditWise"
                 logoLight={creditWiseLogoLight}
@@ -955,11 +965,9 @@
     --ink: var(--dark, #f2f2f2) var(--light, #142632);
     --muted: var(--dark, #bdbdbd) var(--light, #50636e);
     --border: var(--dark, #414141) var(--light, #dae3e8);
-    --link: var(--dark, #9fdbf0) var(--light, #075e80);
     --button: var(--dark, #e5e5e5) var(--light, #123f56);
     --button-text: var(--dark, #202020) var(--light, #fff);
     --page: var(--dark, #171717) var(--light, #f4f6f8);
-    --glow: var(--dark, #21475f) var(--light, #c6e5fc);
     --banner: var(--dark, #333333) var(--light, #ecf4f7);
     min-height: 100vh;
     background: var(--page);
@@ -967,6 +975,7 @@
     color-scheme: var(--dark, dark) var(--light, light);
     font: 15px/1.45 var(--font-sans);
   }
+  .dashboard:not(.chat) { --link: var(--dark, #9fdbf0) var(--light, #075e80); }
   .dashboard[data-theme='dark'] { --dark: initial; --light: ; }
   @media (prefers-color-scheme: dark) {
     .dashboard[data-theme='system'] { --dark: initial; --light: ; }
@@ -1000,13 +1009,54 @@
   .account-overview[hidden] { display: none; }
   .chat .dashboard-body { overflow: clip; }
   .chat .header-inner {
+    width: min(1200px, calc(100% - 72px));
     height: 100%;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: var(--setup-header-height) minmax(0, 1fr) auto;
+    row-gap: 0;
+    padding-block: 0;
+  }
+  .chat .header-inner::before { inset: 0 -36px auto; height: calc(var(--setup-header-height) + 42px); }
+  .chat .header-inner::after { inset: 0 -36px auto; height: calc(var(--setup-header-height) + 12px); }
+  .chat .header-inner::before, .chat .header-inner::after { z-index: 1; pointer-events: none; }
+  .chat .header-inner .brand, .chat .header-actions {
+    z-index: 2;
+    align-self: center;
+    margin-top: 0;
+  }
+  .chat .brand :global(svg) { width: 110px; height: 40px; }
+  .chat .header-actions { gap: 16px; color: var(--ink); }
+  .chat .theme-toggle, .chat-exit {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: transparent;
+  }
+  .chat-exit { color: var(--muted); }
+  .chat-exit:hover, .chat .theme-toggle:hover { background: var(--surface); }
+  .chat-exit svg { width: 20px; height: 20px; }
+  .dashboard.chat {
+    min-height: var(--chat-viewport-height, 100dvh);
+    font: 15px/1.65 var(--font-sans);
+  }
+  .dashboard.chat::before { content: none; }
+  .chat .composer-area {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    position: relative;
+    z-index: 2;
+    justify-self: center;
+    width: min(800px, calc(100% + 72px));
     padding-bottom: var(--composer-bottom-padding);
   }
-  .chat .composer-area { grid-row: 3; width: 100%; }
   .chat-results {
-    grid-column: 2;
+    grid-column: 1 / -1;
+    width: min(800px, calc(100% + 72px));
+    justify-self: center;
     grid-row: 2;
     align-self: stretch;
     min-height: 0;
@@ -1030,7 +1080,7 @@
     font-weight: 650;
     white-space: nowrap;
   }
-  .header-actions {
+  .dashboard:not(.chat) .header-actions {
     --page: var(--dark, #10191f) var(--light, #f4f6f8);
     --surface: var(--dark, #18252d) var(--light, #fff);
     --border: var(--dark, #31444f) var(--light, #dae3e8);
@@ -1070,28 +1120,21 @@
   .chat .wallet-band {
     height: var(--chat-viewport-height, 100dvh);
     transform: translateY(var(--chat-viewport-offset, 0px));
-    --composer-bottom-padding: max(24px, env(safe-area-inset-bottom));
+    --composer-bottom-padding: var(--composer-bottom-space);
   }
   .chat.keyboard-open .wallet-band { --composer-bottom-padding: 12px; }
   .wallet-gradient {
-    --page: var(--dark, #10191f) var(--light, #f4f6f8);
-    --border: var(--dark, #31444f) var(--light, #dae3e8);
+    --composer-gradient-center: calc(100% - var(--composer-bottom-padding) - var(--composer-half-height));
     position: absolute;
     inset: 0 0 auto;
     height: 100%;
     box-sizing: border-box;
     pointer-events: none;
-    background:
-      radial-gradient(
-        ellipse min(52vw, 42rem) clamp(12rem, 42dvh, 24rem) at 50% calc(100% - var(--composer-bottom-padding) - var(--composer-half-height) + 1px),
-        color-mix(in srgb, var(--glow) 74%, transparent),
-        color-mix(in srgb, var(--glow) 25%, transparent) 48%,
-        transparent 100%
-      ),
-      var(--page);
     border-bottom: 1px solid var(--border);
   }
-  .composer { position: relative; z-index: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 8px 24px #102b421c; }
+  .chat .wallet-gradient { border-color: transparent; }
+  .composer { position: relative; z-index: 1; }
+  .composer:not(.message-composer) { background: var(--surface); border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 8px 24px #102b421c; }
   .composer-field {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -1120,8 +1163,13 @@
     background: transparent;
     color: inherit;
   }
-  .composer textarea::placeholder { color: var(--muted); }
-  .composer .send { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; padding: 0; }
+  .composer:not(.message-composer) textarea::placeholder { color: var(--muted); }
+  .composer:not(.message-composer) .send { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; padding: 0; }
+  .chat .composer-field { flex: 1; min-width: 0; margin-right: 0; }
+  .chat .composer-field::after, .chat .composer textarea {
+    padding: 9px 0;
+    font-size: 16px;
+  }
   .send:disabled { opacity: .55; cursor: default; }
   .link { display: inline-flex; align-items: center; gap: 5px; color: var(--link); font-weight: 650; text-align: left; }
   .link :global(svg) { width: 15px; height: 15px; }
@@ -1195,17 +1243,15 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     column-gap: 20px;
-    padding: 18px 20px 16px;
+    padding: 17px 20px;
     border-radius: 15px;
     color: var(--product-ink, #fff);
-    background:
-      url('/images/hero-grain.png') 0 0 / 128px 128px repeat,
-      var(--product-gradient, linear-gradient(115deg, #252525, #484848));
+    background: var(--product-gradient, linear-gradient(115deg, #252525, #484848));
     scroll-margin-top: 18px;
   }
   .account-top h3 { margin: 0; font-size: 21px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
   .account-top h3 span { color: currentColor; font-size: 12px; margin-left: 4px; white-space: nowrap; }
-  .account-balance { display: grid; gap: 4px; text-align: right; }
+  .account-balance { align-self: center; display: grid; gap: 4px; text-align: right; }
   .balance-label { display: flex; align-items: center; justify-content: flex-end; gap: 6px; color: currentColor; font-size: 12px; }
   .account :is(a, button):focus-visible { outline-color: currentColor; }
   .balance { font-size: clamp(26px, 4vw, 36px); line-height: 1; font-weight: 550; font-variant-numeric: tabular-nums; letter-spacing: -.045em; }
@@ -1278,19 +1324,21 @@
     }
     .dashboard:not(.chat) .header-inner { row-gap: 0; }
     .dashboard:not(.chat) .composer-area { margin-top: 28px; }
-    .composer-area, .chat .composer-area, .chat-results { width: min(720px, 100%); justify-self: center; }
+    .dashboard:not(.chat) .composer-area { width: min(720px, 100%); justify-self: center; }
     .content { grid-template-columns: minmax(0, 1fr); }
+  }
+  @container (max-width: 600px) {
+    .chat .header-inner { width: calc(100% - 36px); }
+    .chat .header-inner::before, .chat .header-inner::after { inset-inline: -18px; }
+    .chat .header-actions { gap: 10px; }
+    .chat .brand :global(svg) { width: 94px; height: 34px; }
+    .chat .chat-results, .chat .composer-area { width: calc(100% + 36px); }
+  }
+  @container (max-width: 380px) {
+    .chat .profile-name { display: none; }
   }
   @container (max-width: 570px) {
     .container { width: calc(100% - 28px); }
-    /* The header keeps the standard page gutter; the chat log and composer use the narrow width. */
-    .chat .chat-results,
-    .chat .composer-area {
-      width: calc(100% + 12px);
-      margin-left: -10px;
-      margin-right: -2px;
-      justify-self: start;
-    }
     .wallet-band { --composer-bottom-padding: 20px; }
     .header-inner { padding-block: 20px; }
     .dashboard:not(.chat) .composer-area { margin-top: 20px; }

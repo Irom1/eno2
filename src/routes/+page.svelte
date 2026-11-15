@@ -24,7 +24,6 @@
     },
     {
       id: 'climate',
-      icon: '↗',
       title: 'ClimateWise™',
       description: 'A concept for seeing the environmental impact of everyday purchases.'
     },
@@ -174,7 +173,12 @@
   <header>
     <nav aria-label="Main navigation">
       <details bind:this={products}>
-        <summary>Explore products <span class="chevron" aria-hidden="true"></span></summary>
+        <summary>
+          Explore products
+          <svg class="chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m4 6 4 4 4-4" />
+          </svg>
+        </summary>
         <ul>
           {#each productsList as product (product.href)}
             <li>
@@ -183,7 +187,12 @@
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={product.label + ' (opens in a new tab)'}
-              >{product.label} <span aria-hidden="true">↗</span></a>
+              >
+                {product.label}
+                <svg class="external-link-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M13 5H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7M15 4h5v5m0-5-9 9" />
+                </svg>
+              </a>
             </li>
           {/each}
         </ul>
@@ -227,6 +236,11 @@
                   <path d="M20 8V6a2 2 0 0 0-2-2H6a3 3 0 0 0 0 6h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a3 3 0 0 1-3-3V7" />
                   <path d="M21 13h-4a2 2 0 0 0 0 4h4m-4-2h.01" />
                 </svg>
+              {:else if feature.id === 'climate'}
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 4c0 8-3 13-9 13a5 5 0 0 1-5-5c0-6 6-8 14-8Z" />
+                  <path d="M4 20c2-4 6-7 10-10" />
+                </svg>
               {:else}
                 {feature.icon}
               {/if}
@@ -240,7 +254,7 @@
       <div class="foreground">
         <div class="hills" aria-hidden="true"></div>
         <a class="account-link message-composer" href="/setup" onclick={sendAccountPrompt} aria-disabled={sendingAccountPrompt}>
-          {firstAccountPrompt} <span class="message-send" aria-hidden="true">↑</span>
+          {firstAccountPrompt} <span class="message-send message-send-raised" aria-hidden="true">↑</span>
         </a>
         <span class="send-status" role="status">{sendingAccountPrompt ? 'Sending message…' : ''}</span>
         <div class="sign-in-area" bind:this={signInArea}>
@@ -326,14 +340,8 @@
     font-weight: 550;
   }
   summary::-webkit-details-marker { display: none; }
-  .chevron {
-    width: 6px;
-    height: 6px;
-    border-right: 1.5px solid;
-    border-bottom: 1.5px solid;
-    transform: translateY(-2px) rotate(45deg);
-  }
-  details[open] .chevron { transform: translateY(2px) rotate(225deg); }
+  .chevron, .external-link-icon { flex-shrink: 0; }
+  details[open] .chevron { rotate: 180deg; }
   details ul {
     position: absolute;
     top: calc(100% + 14px);
@@ -347,7 +355,9 @@
     border-radius: 14px;
     box-shadow: 0 10px 28px #1637461f;
   }
-  details li a { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 8px; }
+  details li a { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 8px; }
+  .external-link-icon { opacity: 0.72; }
+  details li a:is(:hover, :focus-visible) .external-link-icon { opacity: 1; }
   details li a:hover { background: var(--hover); }
 
   .brand { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--brand); font-size: 1.15rem; font-weight: 750; }
@@ -502,8 +512,15 @@
   article p { margin: 0; color: #36515a; font-size: 0.95rem; line-height: 1.5; }
 
   .account-link {
+    --dark: ;
+    --light: initial;
     width: min(100%, 360px);
+    background: linear-gradient(to bottom, #001c24 30%, color-mix(in srgb, var(--message-accent) 40%, #001c24) 100%);
     color: white;
+  }
+  .dark .account-link {
+    --dark: initial;
+    --light: ;
   }
   .send-status {
     position: absolute;

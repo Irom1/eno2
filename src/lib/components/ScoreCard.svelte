@@ -94,15 +94,16 @@
 		box-sizing: border-box;
 		width: 100%;
 		height: 100%;
-		/* Center the score and rating within the visible arc. */
+		/* Lift the score slightly to account for the open bottom of the arc. */
 		padding-block-end: 12px;
-		place-content: center;
+		grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+		justify-items: center;
 		text-align: center;
 		border-radius: 50%;
 		background: var(--surface);
 	}
-	.gauge strong { font-size: 24px; line-height: 1; }
-	.gauge small { font-size: 10px; color: var(--muted); }
+	.gauge strong { grid-row: 2; font-size: 24px; line-height: 1; }
+	.gauge small { grid-row: 3; align-self: start; font-size: 10px; color: var(--muted); }
 	a {
 		margin-top: auto;
 		display: inline-flex;

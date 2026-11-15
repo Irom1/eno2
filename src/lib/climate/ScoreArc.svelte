@@ -57,7 +57,7 @@
 	width={size}
 	height={(size * 150) / 220}
 	role="img"
-	aria-label="ClimateWise score {score} out of {SCORE_MAX}, {tier}"
+	aria-label="LORAXⓇ Score {score} out of {SCORE_MAX}, {tier}"
 >
 	{#each dots as d}
 		<circle cx={d.x} cy={d.y} r="4.2" class:on={d.t <= scoreFraction(shown)} />

@@ -138,7 +138,7 @@ export const TOOL_LABELS: Readonly<Record<string, string>> = Object.freeze({
   insight_recurring_charges: "Finding subscriptions",
   insight_anomalies: "Looking for odd charges",
   insight_goal_projection: "Projecting a savings goal",
-  insight_climatewise: "Checking your ClimateWise score",
+  insight_climatewise: "Checking your LORAXⓇ Score",
   find_nearby_atms: "Finding nearby ATMs",
   find_nearby_branches: "Finding nearby branches"
 });
@@ -274,7 +274,7 @@ export function summarizeToolResult(name: string, data: unknown): string {
         typeof payload.totalKg === "number" && Number.isFinite(payload.totalKg)
           ? payload.totalKg
           : null;
-      if (score === null && totalKg === null) return "ClimateWise report ready";
+      if (score === null && totalKg === null) return "Your emissions report is ready";
       const scoreText = score === null ? "" : tier ? `${score} ${tier}` : `${score}`;
       return [scoreText, totalKg === null ? "" : `${totalKg} kg`].filter(Boolean).join(" · ");
     }

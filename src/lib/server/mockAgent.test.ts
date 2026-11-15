@@ -876,10 +876,10 @@ describe("mockAgent", () => {
       return ok(climatePayload);
     });
 
-    expect(text).toContain("Here is your ClimateWise snapshot:");
+    expect(text).toContain("Here’s what goes into your LORAXⓇ Score:");
     expect(text).toContain("small habit changes can bring it down");
     expect(text).toContain("swap two drives a week for the T or a bike");
-    expect(text).toContain("You can open ClimateWise for the full breakdown.");
+    expect(text).toContain("You can open the full report for a breakdown of your emissions.");
     expect(text).not.toContain("Travel & transport");
     expect(text).not.toContain("biggest driver");
     expect(text).not.toContain("712");
@@ -912,6 +912,6 @@ describe("mockAgent", () => {
   });
 
   it("uses a friendly ClimateWise intro", () => {
-    expect(composeIntro("insight_climatewise")).toBe("Here is your ClimateWise snapshot:");
+    expect(composeIntro("insight_climatewise")).toBe("Here’s what goes into your LORAXⓇ Score:");
   });
 });

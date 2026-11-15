@@ -1,5 +1,7 @@
 <script lang="ts">
   import '$lib/assets/message-composer.css';
+  import { readAloud, supportsReadAloud } from '$lib/chat/readAloud';
+  import ReadAloudButton from '$lib/components/ReadAloudButton.svelte';
   import { createConversationPacer } from '$lib/conversationPacing';
   import { asksToConfirmAddress, isAffirmative, reviewFingerprint as profileFingerprint } from '$lib/signupConfirmation';
   import { goto } from '$app/navigation';
@@ -71,13 +73,7 @@
     if (!speechSupported) return;
     stopSpeech();
     speechNotice = '';
-    const utterance = new SpeechSynthesisUtterance(text);
-    const voices = speechSynthesis.getVoices();
-    const voice = voices.find((item) => item.lang === 'en-US' && /Samantha|Aria|Google US English/i.test(item.name)) ?? voices.find((item) => item.lang.startsWith('en'));
-    if (voice) utterance.voice = voice;
-    utterance.lang = 'en-US'; utterance.rate = 1; utterance.pitch = 1.03;
-    utterance.onerror = (event) => { if (!['interrupted', 'canceled'].includes(event.error)) speechNotice = 'Voice couldn’t start. You can keep chatting here.'; };
-    try { speechSynthesis.speak(utterance); } catch { speechNotice = 'Voice isn’t available right now. You can keep chatting here.'; }
+    readAloud(text, (notice) => { speechNotice = notice; });
   }
 
 
@@ -86,7 +82,7 @@
     const media = matchMedia('(prefers-color-scheme: dark)');
     systemDark = media.matches;
     reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    speechSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    speechSupported = supportsReadAloud();
     try { const saved = localStorage.getItem('dashboard-theme'); if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved; } catch { /* Use the system theme. */ }
     attemptKey = crypto.randomUUID();
     try {
@@ -279,7 +275,6 @@
   }
 </script>
 
-{#snippet speaker()}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Z" /><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" /></svg>{/snippet}
 
 <div class="signup-chat setup-composer-background" data-theme={theme}>
   <header>
@@ -320,7 +315,7 @@
               {#if message.recovery}<a class="setup-action" href="/">Go to Sign in <span aria-hidden="true">→</span></a>{/if}
               {#if message.dashboard}<a class="setup-action" href={message.dashboard}>Open my dashboard <span aria-hidden="true">→</span></a>{/if}
             </div>
-            <span class="sender">{message.role === 'eno' ? 'Eno' : 'You'}{#if message.role === 'eno' && speechSupported}<button class="read-aloud" aria-label="Read Eno message aloud" title="Read aloud" onclick={() => speak(message.text)}>{@render speaker()}</button>{/if}</span>
+            <span class="sender">{message.role === 'eno' ? 'Eno' : 'You'}{#if message.role === 'eno' && speechSupported}<ReadAloudButton onclick={() => speak(message.text)} />{/if}</span>
           </div>
         {/each}
         {#if busy}<div class="message typing" role="status" aria-label={submitting ? 'Eno is creating your profile' : 'Eno is typing'}><span class="message-avatar"><EnoThinking active={busy} variant={isDark ? 'dark' : 'light'} size={40} /></span><span class="typing-dots"><i></i><i></i><i></i></span><span class="sender">Eno</span></div>{/if}
@@ -358,8 +353,6 @@
   .exit:hover { background: var(--surface); }
   .header-actions { display: flex; align-items: center; gap: 16px; }
   .speech-notice { margin: 0 22px 12px; color: var(--muted); font-size: 11px; text-align: center; }
-  .read-aloud { display: grid; place-items: center; padding: 1px; border: 0; background: transparent; color: var(--muted); }
-  .read-aloud:hover { color: var(--link); }.read-aloud svg { width: 13px; height: 13px; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .messages { display: flex; flex-direction: column; gap: 28px; padding: 30px 22px 36px; }
   .message { display: grid; align-self: flex-start; grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; max-width: 92%; }

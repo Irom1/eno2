@@ -34,24 +34,26 @@
 <style>
   .follow-ups {
     display: grid;
-    gap: 0;
+    gap: 4px;
     margin: 0;
   }
   .follow-up {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 8px;
+    gap: 12px;
     width: 100%;
-    padding: 7px 6px;
+    min-height: 48px;
+    padding: 12px 18px;
     box-sizing: border-box;
     border: 0;
-    border-radius: 8px;
+    border-radius: 24px;
     background: transparent;
     color: var(--ink);
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.3;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.4;
     text-align: left;
     text-decoration: none;
     cursor: pointer;
@@ -61,13 +63,11 @@
   }
   .follow-up-label {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .follow-up-elbow {
-    width: 15px;
-    height: 15px;
+    width: 18px;
+    height: 18px;
     flex: none;
     color: var(--link);
   }
