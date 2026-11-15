@@ -21,6 +21,7 @@
     type WalletTransaction
   } from '$lib/wallet';
   import AccountDetailView from './AccountDetailView.svelte';
+  import ScheduledPaymentInfo from './ScheduledPaymentInfo.svelte';
   import ViewShell from './ViewShell.svelte';
   import ChatPanel from './ChatPanel.svelte';
   import CapitalOneLogo from './CapitalOneLogo.svelte';
@@ -684,15 +685,17 @@
                       <button class="pill" onclick={() => openAccountView(account.id, 'activity')}>{@render arrowIcon()} View activity</button>
                       <button class="pill" onclick={() => openAccountView(account.id, 'details')}>{@render cardIcon()} Account settings</button>
                     </div>
-                    {#if account.scheduled}
-                      <p class="account-note">{account.scheduled}</p>
-                    {/if}
                   </div>
                   <div class="account-balance">
                     <div class="balance" aria-live="polite">
                       ${dollars}<span class="cents">.{cents}</span>
                     </div>
-                    <div class="balance-label">{account.kind}</div>
+                    <div class="balance-label">
+                      {account.kind}
+                      {#if account.scheduled}
+                        <ScheduledPaymentInfo text={account.scheduled} />
+                      {/if}
+                    </div>
                   </div>
                 </article>
               {/each}
@@ -1104,7 +1107,7 @@
   .account-top h3 { margin: 0; font-size: 21px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
   .account-top h3 span { color: currentColor; font-size: 12px; margin-left: 4px; white-space: nowrap; }
   .account-balance { display: grid; gap: 4px; text-align: right; }
-  .balance-label { color: currentColor; font-size: 12px; }
+  .balance-label { display: flex; align-items: center; justify-content: flex-end; gap: 6px; color: currentColor; font-size: 12px; }
   .account :is(a, button):focus-visible { outline-color: currentColor; }
   .balance { font-size: clamp(26px, 4vw, 36px); line-height: 1; font-weight: 550; font-variant-numeric: tabular-nums; letter-spacing: -.045em; }
   .cents { color: currentColor; font-size: .69em; letter-spacing: -.03em; }
@@ -1122,7 +1125,6 @@
   .primary { background: var(--button); border: 1px solid transparent; color: var(--button-text); border-radius: 10px; text-align: center; }
   .primary:hover { opacity: .88; }
   .primary:disabled { opacity: .55; cursor: default; }
-  .account-note { margin-top: 4px; color: currentColor; font-size: 12px; }
 
   .panel { background: var(--surface); border-radius: 16px; overflow: hidden; }
   .feature { display: flex; flex-direction: column; }
