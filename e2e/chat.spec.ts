@@ -531,6 +531,12 @@ test.describe('chat prompts', () => {
     await expect(card.locator('.ring svg')).toBeVisible();
     await expect(card.locator('.list')).toBeVisible();
 
+    // The category title now lives in the purchases panel, not the chart head.
+    await expect(card.locator('#chart-title')).toHaveCount(1);
+    await expect(card.locator('.list .chart-title')).toHaveText('Carbon emissions by category');
+    await expect(card.locator('.chart .chart-title')).toHaveCount(0);
+    await expect(card.locator('.chart-head')).not.toContainText('Carbon emissions by category');
+
     // Layout: footprint on the left below the logo, ring top-right, purchases below both.
     await expect(card.locator('article.card')).not.toHaveAttribute('data-mode', 'compact');
     const layout = await card.locator('article.card').evaluate((element) => {

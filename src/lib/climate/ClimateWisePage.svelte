@@ -212,7 +212,6 @@
 
 				<section class="chart" aria-labelledby="chart-title">
 					<div class="chart-head">
-						<h2 class="chart-title" id="chart-title">Carbon emissions by category</h2>
 						<button class="info" aria-expanded={showInfo} aria-controls="score-info" aria-label="How your score is estimated"
 							onclick={() => (showInfo = !showInfo)}>i</button>
 						{#if showInfo}
@@ -234,6 +233,8 @@
 				</section>
 
 				<section class="list panel" aria-labelledby="list-title" aria-live="polite">
+					<!-- Always present in both states, so it never changes the card's height. -->
+					<h2 class="chart-title list-title" id="chart-title">Carbon emissions by category</h2>
 					{#if selectedCat}
 						<div class="list-head">
 							<div>
@@ -473,6 +474,8 @@
 	}
 
 	.list { grid-area: list; align-self: stretch; display: flex; flex-direction: column; min-height: 0; padding: 14px 14px 10px; }
+	/* Title lives here in both the pick and selected states, outside the pick/items height math. */
+	.list-title { flex: none; margin-bottom: 8px; overflow-wrap: anywhere; }
 	/*
 	 * The list head and CTA stay put; only the rows themselves scroll, so hovering
 	 * between categories never changes the card's size or shifts the ring.
@@ -543,6 +546,7 @@
 	.card[data-density='short'] .foot-value small { font-size: 11px; }
 	.card[data-density='short'] .foot-sub { font-size: 10px; }
 	.card[data-density='short'] .list { padding: 8px 10px 6px; }
+	.card[data-density='short'] .list-title { margin-bottom: 5px; }
 	.card[data-density='short'] .list-head { height: auto; min-height: 30px; margin-bottom: 3px; }
 	.card[data-density='short'] .list-head h2 { font-size: 14px; }
 	.card[data-density='short'] .list-head p { margin-top: 1px; font-size: 11.5px; }

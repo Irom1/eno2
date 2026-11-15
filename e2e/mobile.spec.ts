@@ -268,6 +268,11 @@ test.describe('360x640 keyboard viewport', () => {
     await expect(card.locator('.list')).toBeVisible();
     await expect(card.locator('.ring .seg').first()).toBeVisible();
 
+    // The category title sits in the purchases panel, not inside the chart.
+    await expect(card.locator('#chart-title')).toHaveCount(1);
+    await expect(card.locator('.list .chart-title')).toHaveText('Carbon emissions by category');
+    await expect(card.locator('.chart .chart-title')).toHaveCount(0);
+
     // Standalone: never folded into the prose bubble.
     expect(
       await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
