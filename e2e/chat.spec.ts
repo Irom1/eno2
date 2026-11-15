@@ -692,6 +692,24 @@ test.describe('chat prompts', () => {
     ).toBe(false);
     await expect(page.locator('.bubble.assistant .climatewise-chat-card')).toHaveCount(0);
 
+    // Standalone card, so there is no bubble tail: the bottom-left corner is
+    // rounded like the other corners and never collapses to 0.
+    const cardRadius = await card.locator('article.card').evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        topLeft: style.borderTopLeftRadius,
+        bottomLeft: style.borderBottomLeftRadius
+      };
+    });
+    expect(
+      parseFloat(cardRadius.bottomLeft),
+      'the card bottom-left corner stays rounded'
+    ).toBeGreaterThan(0);
+    expect(
+      Math.abs(parseFloat(cardRadius.bottomLeft) - parseFloat(cardRadius.topLeft)),
+      'the card bottom-left radius matches the top-left radius'
+    ).toBeLessThanOrEqual(1);
+
     // The card keeps the same bounding box in the empty pick state, on hover, after
     // selecting, and after clearing. Only the list body's contents may change.
     const measureCard = async () => {

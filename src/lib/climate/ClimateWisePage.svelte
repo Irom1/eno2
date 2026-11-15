@@ -332,6 +332,8 @@
 		box-sizing: border-box;
 		border: var(--chat-bubble-border);
 		border-radius: var(--assistant-bubble-radius);
+		/* Standalone chat card has no bubble tail: keep the bottom-left corner rounded. */
+		border-bottom-left-radius: var(--bubble-radius);
 		box-shadow: none;
 	}
 	/* With no fixed card height, let the grid size to its content and pin the
