@@ -210,7 +210,7 @@
 					<p class="foot-sub">{report.annualizedTonnes} t a year · US avg {report.benchmarkTonnes} t</p>
 				</section>
 
-				<section class="chart" aria-labelledby="chart-title">
+				<section class="chart" aria-label="Carbon emissions by category">
 					<div class="chart-head">
 						<button class="info" aria-expanded={showInfo} aria-controls="score-info" aria-label="How your score is estimated"
 							onclick={() => (showInfo = !showInfo)}>i</button>
@@ -233,8 +233,9 @@
 				</section>
 
 				<section class="list panel" aria-labelledby="list-title" aria-live="polite">
-					<!-- Always present in both states, so it never changes the card's height. -->
-					<h2 class="chart-title list-title" id="chart-title">Carbon emissions by category</h2>
+					<!-- Always present in both states, so it never changes the card's height.
+					     Only the text is hidden once a category is active. -->
+					<h2 class="chart-title list-title" class:is-hidden={selectedCat} id="chart-title">Carbon emissions by category</h2>
 					{#if selectedCat}
 						<div class="list-head">
 							<div>
@@ -437,7 +438,7 @@
 	}
 	/* Leave a clean strip for the theme control in fill mode. */
 	.cw.fill .card .grid { padding-top: 52px; }
-	.logo { grid-area: logo; display: grid; width: 140px; margin-top: 4px; }
+	.logo { grid-area: logo; display: grid; width: 140px; margin-top: 4px; padding: 8px 0 0 8px; box-sizing: border-box; }
 	.logo img { grid-area: 1 / 1; width: 100%; height: auto; }
 	.logo-light { opacity: var(--dark, 0) var(--light, 1); }
 	.logo-dark { opacity: var(--dark, 1) var(--light, 0); }
@@ -459,12 +460,15 @@
 	.foot-sub { font-size: 11px; color: var(--muted); }
 
 	.chart { grid-area: chart; align-self: start; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-	.chart-head { position: relative; z-index: 4; display: flex; align-items: center; gap: 6px; }
+	/* Info control owns the card's top-right corner, above the ring. */
+	.chart-head { position: relative; z-index: 4; display: flex; justify-content: flex-end; align-items: center; gap: 6px; width: 100%; }
 	.chart-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
 	.info { width: 17px; height: 17px; padding: 0; border: 1.3px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font-family: Georgia, serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; }
 	.info:hover, .info[aria-expanded='true'] { border-color: var(--link); color: var(--link); }
 	.info-text {
-		position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: min(240px, calc(100vw - 48px));
+		/* Right-anchored to the icon so the popover opens below/left and cannot
+		   be clipped by the card's right edge. */
+		position: absolute; top: calc(100% + 8px); right: 0; left: auto; width: min(240px, calc(100vw - 48px));
 		padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-edge);
 		background: var(--glass-strong); backdrop-filter: blur(18px); box-shadow: 0 10px 28px #0b1a2a33;
 		font-size: 12px; line-height: 1.4; color: var(--muted); text-align: center;
@@ -495,6 +499,8 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	/* Hidden text still reserves the fixed title row, keeping card height stable. */
+	.list-title.is-hidden { visibility: hidden; }
 	/*
 	 * The list head and CTA stay put; only the rows themselves scroll, so hovering
 	 * between categories never changes the card's size or shifts the ring.

@@ -534,8 +534,46 @@ test.describe('chat prompts', () => {
     // The category title now lives in the purchases panel, not the chart head.
     await expect(card.locator('#chart-title')).toHaveCount(1);
     await expect(card.locator('.list .chart-title')).toHaveText('Carbon emissions by category');
+    await expect(card.locator('.list .chart-title')).toBeVisible();
     await expect(card.locator('.chart .chart-title')).toHaveCount(0);
     await expect(card.locator('.chart-head')).not.toContainText('Carbon emissions by category');
+
+    // The info control sits at the chart/card top-right, not centered above the ring.
+    const info = card.locator('.chart .info');
+    await expect(info).toBeVisible();
+    const infoBox = await info.boundingBox();
+    const chartBox = await card.locator('.chart').boundingBox();
+    expect(infoBox, 'the info control renders').not.toBeNull();
+    expect(chartBox, 'the chart renders').not.toBeNull();
+    if (!infoBox || !chartBox) return;
+    expect(
+      chartBox.right - (infoBox.x + infoBox.width),
+      'the info control is right-aligned in the chart'
+    ).toBeLessThanOrEqual(2);
+    expect(infoBox.y - chartBox.y, 'the info control starts at the chart top').toBeLessThanOrEqual(2);
+
+    // Clicking opens a popover that stays inside the card.
+    const infoCardBox = await card.locator('article.card').boundingBox();
+    expect(infoCardBox, 'the card has a measurable box').not.toBeNull();
+    if (!infoCardBox) return;
+    await info.click();
+    const infoText = card.locator('#score-info');
+    await expect(infoText).toBeVisible();
+    const infoTextBox = await infoText.boundingBox();
+    expect(infoTextBox, 'the info text renders').not.toBeNull();
+    if (!infoTextBox) return;
+    expect(infoTextBox.x, 'the info popover is not clipped on the left').toBeGreaterThanOrEqual(
+      infoCardBox.x - 1
+    );
+    expect(
+      infoTextBox.x + infoTextBox.width,
+      'the info popover is not clipped on the right'
+    ).toBeLessThanOrEqual(infoCardBox.x + infoCardBox.width + 1);
+    expect(infoTextBox.y, 'the info popover opens below the icon').toBeGreaterThanOrEqual(
+      infoBox.y + infoBox.height
+    );
+    await info.click();
+    await expect(infoText).toHaveCount(0);
 
     // Layout: footprint on the left below the logo, ring top-right, purchases below both.
     await expect(card.locator('article.card')).not.toHaveAttribute('data-mode', 'compact');
@@ -628,17 +666,20 @@ test.describe('chat prompts', () => {
 
     await card.locator('.ring .seg[aria-label^="Travel & transport:"]').hover();
     await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
+    await expect(card.locator('.list .chart-title')).toBeHidden();
     await expectSameBox(emptyBox, 'hovering a ring slice');
 
     // Clicking another category also leaves the card the same size.
     await card.getByRole('button', { name: /Food & dining:/ }).click();
     await expect(card.locator('.list-head h2')).toHaveText('Food & dining');
+    await expect(card.locator('.list .chart-title')).toBeHidden();
     await expectSameBox(emptyBox, 'selecting a category');
 
     // Clearing the category returns to the pick state without resizing the card.
     await page.mouse.move(0, 0);
     await card.locator('.list-head .clear').click();
     await expect(card.locator('.pick')).toBeVisible();
+    await expect(card.locator('.list .chart-title')).toBeVisible();
     await expectSameBox(emptyBox, 'clearing the selected category');
 
     // Selecting a ring slice reveals that category's purchases.
@@ -751,6 +792,8 @@ test.describe('chat prompts', () => {
     for (const phrase of ['eno 2.0', 'spending', 'bills', 'balances']) {
       expect(introText, `intro should mention ${phrase}`).toContain(phrase);
     }
+    expect(introText, 'intro should greet with a comma').toContain("hi there, i'm eno 2.0");
+    expect(introText, 'intro should not use an em dash').not.toContain('hi there —');
     expect(chatPosts, 'the intro must not call the chat API').toEqual([]);
 
     // Starters live in the log as follow-ups, not above the composer.

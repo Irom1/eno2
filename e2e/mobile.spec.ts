@@ -271,7 +271,9 @@ test.describe('360x640 keyboard viewport', () => {
     // The category title sits in the purchases panel, not inside the chart.
     await expect(card.locator('#chart-title')).toHaveCount(1);
     await expect(card.locator('.list .chart-title')).toHaveText('Carbon emissions by category');
+    await expect(card.locator('.list .chart-title')).toBeVisible();
     await expect(card.locator('.chart .chart-title')).toHaveCount(0);
+    await expect(card.locator('.chart .info')).toBeVisible();
 
     // Standalone: never folded into the prose bubble.
     expect(
@@ -308,6 +310,7 @@ test.describe('360x640 keyboard viewport', () => {
     // segment with the keyboard (same toggle handler as a tap).
     await card.getByRole('button', { name: /Travel & transport:/ }).press('Enter');
     await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
+    await expect(card.locator('.list .chart-title')).toBeHidden();
     await expect(card.locator('.items .item')).toHaveCount(1);
     await expect(card.locator('.items .item')).toContainText(/shell/i);
     await expectNoHorizontalOverflow(page);

@@ -89,7 +89,7 @@
   let sessionCustomerId = $state('');
 
   const INTRO =
-    "Hi there — I'm Eno 2.0. I can help with spending, bills, balances, loans, and rewards. Ask me anything, or pick a question to get started.";
+    "Hi there, I'm Eno 2.0. I can help with spending, bills, balances, loans, and rewards. Ask me anything, or pick a question to get started.";
 
   let messageSeq = 0;
 
