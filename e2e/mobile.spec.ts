@@ -430,10 +430,12 @@ test.describe('320x568 narrow phone viewport', () => {
     console.log('[320x568 composer]', JSON.stringify({ mirror, bounds, ...overflow }));
 
     expect(bounds.bottom).toBeLessThanOrEqual(320);
-    // The chat container is width: calc(100% - 8px), so the composer spans nearly
-    // the full narrow viewport with at most ~4px of side inset.
+    // The chat container is width: calc(100% - 8px) with an 8px right padding, so
+    // the composer keeps a minimal left inset and backs off the right edge.
     expect(bounds.left).toBeLessThanOrEqual(8);
-    expect(bounds.right).toBeGreaterThanOrEqual(bounds.innerWidth - 8);
+    const rightInset = bounds.innerWidth - bounds.right;
+    expect(rightInset, 'the chat backs off the right edge while keeping the left minimal').toBeGreaterThanOrEqual(10);
+    expect(rightInset).toBeLessThanOrEqual(16);
     await expectNoHorizontalOverflow(page);
     expectNoErrors(errors);
   });
