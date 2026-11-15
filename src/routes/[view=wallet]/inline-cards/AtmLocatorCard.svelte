@@ -122,7 +122,10 @@
   .atm-map {
     display: block;
     width: 100%;
-    height: 150px;
+    height: auto;
+    aspect-ratio: 640 / 280;
+    object-fit: cover;
+    object-position: center;
     margin-top: 8px;
     border: 1px solid var(--border);
     border-radius: 8px;
