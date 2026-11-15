@@ -3,6 +3,7 @@
  * Pure functions only: no server or DOM imports.
  */
 import { asItems, isRecord } from './payloads.js';
+import type { ClimateReport } from '$lib/climate/emissions.js';
 
 export interface TransactionCardPayload {
   description: string;
@@ -241,14 +242,11 @@ export interface ProfileEntityCard {
 }
 
 export interface ClimateWiseCardPayload {
-  score: number;
-  tier: string;
-  totalKg: number;
-  days: number;
-  annualizedTonnes?: number;
-  benchmarkTonnes?: number;
-  topCategory?: string;
+  /** The full ClimateWise report from the insight tool. */
+  report: ClimateReport;
   customerId?: string;
+  /** Derived from the highest-kg category, for follow-up prompts. */
+  topCategory?: string;
 }
 
 export interface ClimateWiseEntityCard {
@@ -1535,10 +1533,12 @@ export function profileCard(
 }
 
 /**
- * Build one primitive ClimateWise card from the report (or `{ report }`).
- * The card shows the score, tier, total kg, and window; malformed data returns
- * null. `topCategory` is derived from the highest-kg category so follow-ups can
- * name it without trusting an unvalidated label.
+ * Build one ClimateWise card from the full insight report (or `{ report }`).
+ * The chat renders the same adaptive card as `/climatewise`, so the payload
+ * carries the whole report rather than a reduced score summary. Malformed
+ * reports return null so a broken card never renders. `topCategory` is derived
+ * from the highest-kg category so follow-ups can name it without trusting an
+ * unvalidated label.
  */
 export function climateWiseCard(
   payload: unknown,
@@ -1560,36 +1560,46 @@ export function climateWiseCard(
     const totalKg = finiteNumberOrNull(source.totalKg);
     if (totalKg === null || totalKg < 0) return null;
 
+    if (!Array.isArray(source.categories)) return null;
+    const categories = source.categories.filter(
+      (entry): entry is Record<string, unknown> =>
+        isRecord(entry) && typeof entry.id === 'string' && finiteNumberOrNull(entry.kg) !== null
+    );
+
     const rawDays = finiteNumberOrNull(source.days);
     const days = rawDays !== null && rawDays > 0 ? Math.round(rawDays) : 90;
 
     let topCategory: string | undefined;
     let topKg = 0;
-    if (Array.isArray(source.categories)) {
-      for (const entry of source.categories) {
-        if (!isRecord(entry)) continue;
-        const kg = finiteNumberOrNull(entry.kg);
-        if (kg === null || kg <= 0) continue;
-        const label = trimmedString(entry.label) || trimmedString(entry.id);
-        if (!label) continue;
-        if (kg > topKg) {
-          topKg = kg;
-          topCategory = label;
-        }
+    for (const entry of categories) {
+      const kg = finiteNumberOrNull(entry.kg);
+      if (kg === null || kg <= 0) continue;
+      const label = trimmedString(entry.label) || trimmedString(entry.id);
+      if (!label) continue;
+      if (kg > topKg) {
+        topKg = kg;
+        topCategory = label;
       }
     }
 
     const customerId = optionalTrimmed(context?.customerId);
-    const annualizedTonnes = finiteNumberOrNull(source.annualizedTonnes);
-    const benchmarkTonnes = finiteNumberOrNull(source.benchmarkTonnes);
 
-    const payloadOut: ClimateWiseCardPayload = {
+    // Keep the full report for the adaptive card, but guarantee the arrays it
+    // iterates over exist so a sparse payload cannot crash the render.
+    const report = {
+      ...(source as unknown as ClimateReport),
       score,
       tier,
       totalKg,
       days,
-      ...(annualizedTonnes !== null ? { annualizedTonnes } : {}),
-      ...(benchmarkTonnes !== null ? { benchmarkTonnes } : {}),
+      categories: categories as unknown as ClimateReport['categories'],
+      topPurchases: Array.isArray(source.topPurchases)
+        ? (source.topPurchases as unknown as ClimateReport['topPurchases'])
+        : []
+    };
+
+    const payloadOut: ClimateWiseCardPayload = {
+      report,
       ...(topCategory ? { topCategory } : {}),
       ...(customerId ? { customerId } : {})
     };

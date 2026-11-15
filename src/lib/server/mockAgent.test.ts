@@ -869,7 +869,7 @@ describe("mockAgent", () => {
     }
   });
 
-  it("explains the biggest climate driver and nudge without restating card values", async () => {
+  it("adds climate interpretation and a nudge without restating card values", async () => {
     const { events, text } = await run("What's my ClimateWise score?", async (name, args) => {
       expect(name).toBe("insight_climatewise");
       expect(args).toEqual({ customerId: "cust-1", days: 90 });
@@ -877,9 +877,11 @@ describe("mockAgent", () => {
     });
 
     expect(text).toContain("Here is your ClimateWise snapshot:");
-    expect(text).toContain("Travel & transport is the biggest driver of your purchase emissions.");
+    expect(text).toContain("small habit changes can bring it down");
     expect(text).toContain("swap two drives a week for the T or a bike");
     expect(text).toContain("You can open ClimateWise for the full breakdown.");
+    expect(text).not.toContain("Travel & transport");
+    expect(text).not.toContain("biggest driver");
     expect(text).not.toContain("712");
     expect(text).not.toContain("412.35");
     expect(text).not.toContain("Good");

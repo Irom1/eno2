@@ -2283,7 +2283,7 @@ describe('climateWiseCard', () => {
     topPurchases: [{ id: 'tx-1', kind: 'withdrawal', amount: 62, description: 'SHELL', date: '2026-10-01', kg: 180.2 }]
   };
 
-  it('parses a direct report payload into one primitive climatewise card', () => {
+  it('parses a direct report payload into one full climatewise card', () => {
     const card = climateWiseCard(report, 42, 7, { customerId: 'cust-1' }) as ClimateWiseEntityCard;
 
     expect(card).toMatchObject({
@@ -2292,26 +2292,30 @@ describe('climateWiseCard', () => {
       kind: 'climatewise',
       afterText: 42,
       payload: {
-        score: 712,
-        tier: 'Good',
-        totalKg: 412.35,
-        days: 90,
-        annualizedTonnes: 1.67,
-        benchmarkTonnes: 16,
+        report: {
+          score: 712,
+          tier: 'Good',
+          totalKg: 412.35,
+          days: 90,
+          annualizedTonnes: 1.67,
+          benchmarkTonnes: 16
+        },
         topCategory: 'Travel & transport',
         customerId: 'cust-1'
       }
     });
-    expect(card.payload).not.toHaveProperty('categories');
-    expect(card.payload).not.toHaveProperty('nudges');
-    expect(card.payload).not.toHaveProperty('topPurchases');
+    // The full report is retained for the adaptive card.
+    expect(card.payload.report.categories).toHaveLength(3);
+    expect(card.payload.report.topPurchases).toHaveLength(1);
+    expect(card.payload).not.toHaveProperty('score');
+    expect(card.payload).not.toHaveProperty('totalKg');
   });
 
   it('accepts a { report } wrapper from the API route', () => {
     const card = climateWiseCard({ report }, 0, 1);
     expect(card?.kind).toBe('climatewise');
-    expect(card?.payload.score).toBe(712);
-    expect(card?.payload.totalKg).toBe(412.35);
+    expect(card?.payload.report.score).toBe(712);
+    expect(card?.payload.report.totalKg).toBe(412.35);
     expect(card?.payload).not.toHaveProperty('customerId');
   });
 
@@ -2350,5 +2354,7 @@ describe('climateWiseCard', () => {
     expect(climateWiseCard({ ...report, tier: '' }, 0, 1)).toBeNull();
     expect(climateWiseCard({ ...report, totalKg: undefined }, 0, 1)).toBeNull();
     expect(climateWiseCard({ ...report, totalKg: -1 }, 0, 1)).toBeNull();
+    expect(climateWiseCard({ ...report, categories: undefined }, 0, 1)).toBeNull();
+    expect(climateWiseCard({ ...report, categories: 'none' }, 0, 1)).toBeNull();
   });
 });

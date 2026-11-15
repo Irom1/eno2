@@ -2,10 +2,10 @@
  * Client-safe grouping of inline chat blocks for rendering.
  *
  * Single-entity cards render inline inside the assistant prose bubble; the
- * multi/series cards (`transaction-list`, `spending-pie`) and ATM location
- * cards render as standalone framed cards. This helper only rearranges blocks,
- * preserving order and card identity, so the panel can interleave the two
- * presentations.
+ * multi/series cards (`transaction-list`, `spending-pie`), ATM location cards,
+ * and the full ClimateWise card (`climatewise`) render as standalone framed
+ * cards. This helper only rearranges blocks, preserving order and card
+ * identity, so the panel can interleave the two presentations.
  *
  * Pure functions only: no server or DOM imports.
  */
@@ -19,7 +19,8 @@ export type InlineRenderGroup =
 /** Kinds that stay standalone rather than folding into the prose bubble. */
 const STANDALONE_KINDS: ReadonlySet<EntityCard['kind']> = new Set([
   'transaction-list',
-  'spending-pie'
+  'spending-pie',
+  'climatewise'
 ]);
 
 export function isInlineCardKind(kind: EntityCard['kind']): boolean {

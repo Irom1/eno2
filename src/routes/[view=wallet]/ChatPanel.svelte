@@ -522,7 +522,8 @@
               if (incoming) replaceInlineCard(message, incoming);
             }
             if (data.kind === 'insight_climatewise') {
-              // One primitive ClimateWise card per turn; a later report replaces it.
+              // One full ClimateWise card per turn; a later report replaces it.
+              // The grouping layer renders it standalone, outside the prose bubble.
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const incoming = climateWiseCard(payload, anchor, cardSeq + 1, { customerId });

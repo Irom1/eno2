@@ -14,7 +14,7 @@
   import CashflowPointCard from './CashflowPointCard.svelte';
   import MerchantCard from './MerchantCard.svelte';
   import ProfileCard from './ProfileCard.svelte';
-  import ClimateWiseCard from './ClimateWiseCard.svelte';
+  import ClimateWiseChatCard from './ClimateWiseChatCard.svelte';
 
   interface Props {
     card: EntityCard;
@@ -56,5 +56,5 @@
 {:else if card.kind === 'profile'}
   <ProfileCard {card} />
 {:else if card.kind === 'climatewise'}
-  <ClimateWiseCard {card} />
+  <ClimateWiseChatCard {card} />
 {/if}
