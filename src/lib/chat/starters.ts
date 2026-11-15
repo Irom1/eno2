@@ -4,5 +4,6 @@ export const STARTER_PROMPTS: readonly string[] = [
   CLIMATE_SCORE_PROMPT,
   "What's due in the next 30 days?",
   'Anything weird in my transactions?',
-  'Find an ATM near Arlington, VA'
+  'Find an ATM near Arlington, VA',
+  'What were my top spending categories last month?'
 ];
