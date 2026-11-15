@@ -2,10 +2,12 @@
 	import RingChart, { type RingItem } from './RingChart.svelte';
 	import CategoryIcon from './CategoryIcon.svelte';
 	import logoLight from '$lib/assets/climatewise-logo-light.png';
-	import logoDark from '$lib/assets/climatewise-logo-dark.png';
 	import { CATEGORIES, CATEGORY_BY_ID, type ClimateReport } from './emissions';
 	import { classifyClimateSize } from './layout';
 	import { climateReportCache } from './reportCache';
+
+	// Served from static/ so the updated white colorway is used in dark mode.
+	const logoDark = '/climatewise/climatewise_logo_compact_dark.png';
 
 	type Theme = 'light' | 'dark' | 'system';
 
