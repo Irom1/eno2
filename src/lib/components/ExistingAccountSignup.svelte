@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { keyboardComposer } from '$lib/mobileViewport';
   import ActionIcon from '$lib/components/ActionIcon.svelte';
   import { createSentMessageMotion } from '$lib/sentMessageMotion';
   import '$lib/assets/message-composer.css';
@@ -213,7 +214,7 @@
         {/if}
       </div>
     </div>
-    <div class="composer-area">
+    <div class="composer-area" use:keyboardComposer>
       <form class="message-composer" onsubmit={send}>
         <input bind:value={reply} aria-label="Message Eno" placeholder="Message Eno…" disabled={busy || locked || failed || !available.length} maxlength="2000" autocomplete="off" />
         <button type="submit" class="message-send" aria-label="Send message" disabled={busy || locked || failed || !available.length || !reply.trim()}><ActionIcon name="up" size={22} /></button>

@@ -40,7 +40,7 @@
   import ScoreCard from '$lib/components/ScoreCard.svelte';
   import creditWiseLogoLight from '$lib/assets/creditwise-card-logo-light.png';
   import creditWiseLogoDark from '$lib/assets/creditwise-card-logo-dark.png';
-  import { chatViewportMetrics } from '$lib/mobileViewport';
+  import { keyboardComposer } from '$lib/mobileViewport';
 
   type ChatPanelApi = { ask: (text: string) => Promise<void> };
 
@@ -464,7 +464,6 @@
   const composerPlaceholder = $derived(
     hasUserMessage ? 'Message Eno…' : compactComposer ? COMPACT_COMPOSER_PLACEHOLDER : FULL_COMPOSER_PLACEHOLDER
   );
-  let keyboardOpen = $state(false);
   let chatPrompt = $state<{ text: string; id: number } | null>(null);
   let promptSeq = 0;
   let canSend = $state(false);
@@ -636,44 +635,9 @@
     };
     composerMedia.addEventListener('change', onComposerMediaChange);
 
-    // Use the visual viewport insets so the sticky composer stays
-    // above the on-screen keyboard. `interactive-widget=resizes-content` in
-    // app.html is the progressive enhancement; visualViewport is the fallback.
-    const root = document.documentElement;
-    const viewport = window.visualViewport;
-    let lastHeight = -1;
-    let lastOffset = -1;
-    let lastKeyboardOpen: boolean | null = null;
-    const applyViewport = () => {
-      const metrics = chatViewportMetrics(
-        window.innerHeight,
-        viewport?.height ?? window.innerHeight,
-        viewport?.offsetTop ?? 0
-      );
-      if (metrics.height !== lastHeight) {
-        lastHeight = metrics.height;
-        root.style.setProperty('--chat-viewport-height', `${metrics.height}px`);
-      }
-      if (metrics.offsetTop !== lastOffset) {
-        lastOffset = metrics.offsetTop;
-        root.style.setProperty('--chat-viewport-offset', `${metrics.offsetTop}px`);
-      }
-      if (metrics.keyboardOpen !== lastKeyboardOpen) {
-        lastKeyboardOpen = metrics.keyboardOpen;
-        keyboardOpen = metrics.keyboardOpen;
-      }
-    };
-    applyViewport();
-    viewport?.addEventListener('resize', applyViewport);
-    viewport?.addEventListener('scroll', applyViewport);
-    window.addEventListener('resize', applyViewport);
-
     return () => {
       media.removeEventListener('change', onMediaChange);
       composerMedia.removeEventListener('change', onComposerMediaChange);
-      viewport?.removeEventListener('resize', applyViewport);
-      viewport?.removeEventListener('scroll', applyViewport);
-      window.removeEventListener('resize', applyViewport);
     };
   });
 
@@ -703,7 +667,7 @@
 
 <svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
 
-<div class="dashboard" class:chat={inChat} class:setup-composer-background={inChat} class:keyboard-open={keyboardOpen} class:view-open={walletView !== null} data-theme={theme}>
+<div class="dashboard" class:chat={inChat} class:setup-composer-background={inChat} class:view-open={walletView !== null} data-theme={theme}>
   <div class="dashboard-body" inert={walletView !== null}>
     <div class="wallet-band" style:--composer-half-height={`${composerHeight / 2}px`}>
       <div class="wallet-gradient" bind:this={gradient} aria-hidden="true"></div>
@@ -764,7 +728,7 @@
             onClose={() => void goto(dashboardHref)}
           />
         </main>
-        <div class="composer-area">
+        <div class="composer-area" use:keyboardComposer={inChat}>
           {#if inChat && !accountOpen && signOutError}<p role="alert">{signOutError}</p>{/if}
           <form class="composer message-composer" bind:this={composer} bind:offsetHeight={composerHeight} onsubmit={search}>
             <div class="composer-field" data-value={query || composerPlaceholder}>
@@ -1029,13 +993,13 @@
     flex-direction: column;
     align-items: stretch;
     width: 100%;
-    min-height: calc(var(--chat-viewport-height, 100dvh) + var(--chat-viewport-offset, 0px) + var(--chat-viewport-inset));
+    min-height: 100dvh;
     row-gap: 0;
-    padding-block: var(--chat-viewport-offset, 0px) var(--chat-viewport-inset);
+    padding-block: 0;
   }
   .chat .wallet-header {
     position: sticky;
-    top: var(--chat-viewport-offset, 0px);
+    top: 0;
     z-index: 3;
     display: flex;
     min-height: var(--setup-header-height);
@@ -1065,13 +1029,11 @@
   .chat-exit:hover, .chat .theme-toggle:hover { background: var(--surface); }
   .chat-exit svg { width: 20px; height: 20px; }
   .dashboard.chat {
-    --chat-viewport-inset: max(0px, calc(100dvh - var(--chat-viewport-height, 100dvh) - var(--chat-viewport-offset, 0px)));
     min-height: 100dvh;
     font: 15px/1.65 var(--font-sans);
   }
   .dashboard.chat::before { content: none; }
-  .chat .composer-area {
-    bottom: var(--chat-viewport-inset);
+  .chat .composer-area:not(:global(.keyboard-composer)) {
     padding-bottom: var(--composer-bottom-padding);
   }
   .chat-results {
@@ -1138,7 +1100,6 @@
   .chat .wallet-band {
     --composer-bottom-padding: var(--composer-bottom-space);
   }
-  .chat.keyboard-open .wallet-band { --composer-bottom-padding: 12px; }
   .wallet-gradient {
     --composer-gradient-center: calc(100% - var(--composer-bottom-padding) - var(--composer-half-height));
     position: absolute;
@@ -1150,8 +1111,8 @@
   }
   .chat .wallet-gradient {
     position: fixed;
-    top: var(--chat-viewport-offset, 0px);
-    height: var(--chat-viewport-height, 100dvh);
+    top: 0;
+    height: 100dvh;
     border-color: transparent;
   }
   .composer { position: relative; z-index: 1; }

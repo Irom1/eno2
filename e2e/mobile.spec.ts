@@ -148,11 +148,13 @@ test.describe('360x640 keyboard viewport', () => {
     expect(mirror).toContain('Ask about your money');
 
     // Simulate the on-screen keyboard shrinking the visual viewport to 360px.
+    await field.focus();
     await page.evaluate(() => {
-      document.documentElement.style.setProperty('--chat-viewport-height', '360px');
-      document.documentElement.style.setProperty('--chat-viewport-offset', '0px');
-      document.querySelector('.dashboard')?.classList.add('keyboard-open');
+      Object.defineProperty(window.visualViewport, 'height', { configurable: true, value: 360 });
+      Object.defineProperty(window.visualViewport, 'offsetTop', { configurable: true, value: 0 });
+      window.visualViewport?.dispatchEvent(new Event('resize'));
     });
+    await expect(page.locator('.composer-area')).toHaveClass(/keyboard-composer/);
 
     const bottom = await page
       .locator('.composer')
@@ -427,11 +429,13 @@ test.describe('320x568 narrow phone viewport', () => {
     expect(mirror).toContain('Ask about your money');
 
     // Simulate the on-screen keyboard shrinking the visual viewport to 320px.
+    await field.focus();
     await page.evaluate(() => {
-      document.documentElement.style.setProperty('--chat-viewport-height', '320px');
-      document.documentElement.style.setProperty('--chat-viewport-offset', '0px');
-      document.querySelector('.dashboard')?.classList.add('keyboard-open');
+      Object.defineProperty(window.visualViewport, 'height', { configurable: true, value: 320 });
+      Object.defineProperty(window.visualViewport, 'offsetTop', { configurable: true, value: 0 });
+      window.visualViewport?.dispatchEvent(new Event('resize'));
     });
+    await expect(page.locator('.composer-area')).toHaveClass(/keyboard-composer/);
 
     const bounds = await page.locator('.composer').evaluate((element) => {
       const rect = element.getBoundingClientRect();

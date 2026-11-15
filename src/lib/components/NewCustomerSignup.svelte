@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { signupInputHints } from '$lib/signupInput';
+  import { keyboardComposer } from '$lib/mobileViewport';
   import ActionIcon from '$lib/components/ActionIcon.svelte';
   import { createSentMessageMotion } from '$lib/sentMessageMotion';
   import '$lib/assets/message-composer.css';
@@ -59,6 +61,10 @@
   let isDark = $derived(theme === 'dark' || (theme === 'system' && systemDark));
   let busy = $derived(waiting || submitting);
   let input = $state<HTMLInputElement>();
+  const inputHints = $derived(signupInputHints(
+    ready && !busy && !recovery && !createdCustomerId && currentStage === 'details' && messages.at(-1)?.role === 'eno'
+      ? messages.at(-1)!.text : ''
+  ));
   let disposed = false;
   let turnController: AbortController | undefined;
   let speechSupported = $state(false);
@@ -334,10 +340,10 @@
         {#if busy}<div class="message typing" role="status" aria-label={submitting ? 'Eno is creating your profile' : 'Eno is typing'}><span class="message-avatar"><EnoThinking active={busy} variant={isDark ? 'dark' : 'light'} size={40} /></span><span class="typing-dots"><i></i><i></i><i></i></span><span class="sender">Eno</span></div>{/if}
       </div>
     </div>
-    <div class="composer-area">
+    <div class="composer-area" use:keyboardComposer>
       <form class="composer message-composer" onsubmit={send}>
         <AddressAutocomplete bind:this={autocomplete} query={reply} context={{ city: answers.city, state: answers.state, zip: answers.zip }} disabled={!ready || busy || recovery || !!createdCustomerId} bind:open={suggestionsOpen} bind:activeId={activeAddressId} onselect={selectAddress} />
-        <input bind:this={input} bind:value={reply} aria-label="Message Eno" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen} aria-controls={suggestionsOpen ? 'address-suggestions' : undefined} aria-activedescendant={activeAddressId} onkeydown={(event) => autocomplete?.handleKeydown(event)} placeholder={recovery ? 'Find your profile through Sign in' : 'Message Eno…'} disabled={!ready || submitting || recovery || !!createdCustomerId} maxlength="2000" autocomplete="off" />
+        <input bind:this={input} bind:value={reply} aria-label="Message Eno" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen} aria-controls={suggestionsOpen ? 'address-suggestions' : undefined} aria-activedescendant={activeAddressId} onkeydown={(event) => autocomplete?.handleKeydown(event)} placeholder={recovery ? 'Find your profile through Sign in' : 'Message Eno…'} disabled={!ready || submitting || recovery || !!createdCustomerId} maxlength="2000" {...inputHints} />
         <button class="message-send" type="submit" aria-label="Send message" disabled={!ready || busy || !reply.trim() || recovery}><ActionIcon name="up" size={22} /></button>
       </form>
     </div>
