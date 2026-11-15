@@ -3,6 +3,26 @@ function themedGradient(light: string, dark: string): string {
   return `var(--dark, linear-gradient(115deg, ${dark})) var(--light, linear-gradient(115deg, ${light}))`;
 }
 
+const discoverGrain = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E")`;
+
+const discoverGradient = [
+  discoverGrain,
+  'radial-gradient(at 15% 20%, #84d2f6 0px, transparent 55%)',
+  'radial-gradient(at 78% 8%, #f3d9c6 0px, transparent 40%)',
+  'radial-gradient(at 95% 15%, #cf89bc 0px, transparent 45%)',
+  'radial-gradient(at 48% 82%, #d5f0ea 0px, transparent 50%)',
+  'radial-gradient(at 8% 88%, #c7a4d6 0px, transparent 45%)',
+  'radial-gradient(at 85% 75%, #776eb5 0px, transparent 60%)',
+  '#96b8e8'
+].join(', ');
+
+// The Discover personal loan keeps the original metallic treatment.
+const discoverLoanGradient = themedGradient(
+  '#b7b9bc, #eff0f1 62%, #f2b88a',
+  '#2b2928, #41403f 62%, #65432d'
+);
+const discoverLoanInk = 'light-dark(#24201c, #f7f7f7)';
+
 export const products = {
   checking: {
     name: '360 Checking',
@@ -37,8 +57,8 @@ export const products = {
   discover: {
     name: 'Discover it Cash Back',
     url: 'https://www.discover.com/credit-cards/cash-back/it-card/',
-    gradient: themedGradient('#b7b9bc, #eff0f1 62%, #f2b88a', '#2b2928, #41403f 62%, #65432d'),
-    ink: 'light-dark(#24201c, #f7f7f7)'
+    gradient: discoverGradient,
+    ink: '#1c2633'
   }
 } as const;
 
@@ -60,7 +80,7 @@ export function accountProduct(type: unknown, nickname: unknown) {
 
 const loanProducts = {
   auto: { name: 'Capital One Auto Finance', gradient: products.savings.gradient, ink: '#fff' },
-  personal: { name: 'Discover Personal Loan', gradient: products.discover.gradient, ink: products.discover.ink }
+  personal: { name: 'Discover Personal Loan', gradient: discoverLoanGradient, ink: discoverLoanInk }
 } as const;
 
 export function loanProduct(type: unknown) {
