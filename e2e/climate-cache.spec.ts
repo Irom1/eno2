@@ -34,6 +34,29 @@ async function fixtures(page: Page, delayed = false) {
 }
 const score = (page: Page, value = 720) => page.getByRole('img', { name: new RegExp(`^ClimateWise score: ${value} out of 850`) });
 
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`closing chat keeps the same loaded score after a complete transition (${reducedMotion})`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion });
+    const state = await fixtures(page);
+    await page.goto('/dashboard?customer=ada');
+    await expect(score(page)).toBeVisible();
+    const originalGauge = await score(page).elementHandle();
+    expect(originalGauge).not.toBeNull();
+    for (let turn = 0; turn < 3; turn++) {
+      await page.getByRole('textbox', { name: 'Ask Capital One' }).focus();
+      await expect(page).toHaveURL(/\/chat\?customer=ada$/);
+      // Wait until the dashboard's closing animation really finishes.
+      await expect(page.locator('.account-overview')).toBeHidden();
+      expect(await originalGauge!.evaluate((gauge) => gauge.isConnected)).toBe(true);
+      await page.getByRole('link', { name: 'Return to dashboard' }).click();
+      await expect(page).toHaveURL(/\/dashboard\?customer=ada$/);
+      await expect(score(page)).toBeVisible();
+      expect(await originalGauge!.evaluate((gauge) => gauge.isConnected)).toBe(true);
+      expect(state.calls).toEqual(['ada']);
+    }
+  });
+}
+
 test('cached LORAX score survives closing chat, browser refresh, and the full report page', async ({ page }) => {
   const state = await fixtures(page);
   await page.goto('/dashboard?customer=ada');

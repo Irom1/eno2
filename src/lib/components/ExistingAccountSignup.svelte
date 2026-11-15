@@ -160,7 +160,7 @@
   }
 </script>
 
-{#snippet speaker(muted = false)}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Z" />{#if muted}<path class="speaker-slash" d="m3 3 18 18" />{:else}<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />{/if}</svg>{/snippet}
+{#snippet speaker(muted = false)}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Z" />{#if muted}<path class="speaker-slash" d="m1 6 12 12" />{:else}<path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />{/if}</svg>{/snippet}
 <div class="existing-signup" data-theme={theme}>
   <header>
     <a class="brand" href="/" aria-label="Capital One home"><CapitalOneLogo label="Capital One" /></a>

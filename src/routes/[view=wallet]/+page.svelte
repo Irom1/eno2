@@ -647,8 +647,8 @@
       </div>
     </div>
 
-    {#if !inChat || coveringDashboard}
-      <main class="account-overview" aria-label="Account overview" inert={inChat}
+    {#if !guestChat}
+      <main class="account-overview" aria-label="Account overview" inert={inChat} hidden={inChat && !coveringDashboard}
         style:--dashboard-header-height={`${dashboardHeaderHeight}px`}>
         <div class="container content">
           <section class="stack" aria-labelledby="accounts-title">
@@ -906,6 +906,7 @@
     position: absolute;
     inset: var(--dashboard-header-height) 0 auto;
   }
+  .account-overview[hidden] { display: none; }
   .chat .dashboard-body { overflow: clip; }
   .chat .header-inner {
     height: 100dvh;
