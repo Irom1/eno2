@@ -10,6 +10,7 @@
     completeAnomalyContext,
     billCard,
     cashflowCard,
+    climateWiseCard,
     goalCard,
     loanCard,
     locationCard,
@@ -225,7 +226,8 @@
     'goal',
     'cashflow',
     'merchant',
-    'profile'
+    'profile',
+    'climatewise'
   ]);
 
   /** Ignore unknown future card kinds instead of rendering a broken card. */
@@ -512,6 +514,13 @@
               const anchor =
                 message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
               const incoming = goalCard(payload, anchor, cardSeq + 1, { customerId });
+              if (incoming) replaceInlineCard(message, incoming);
+            }
+            if (data.kind === 'insight_climatewise') {
+              // One primitive ClimateWise card per turn; a later report replaces it.
+              const anchor =
+                message.text.trim().length > 0 ? message.text.length : Number.MAX_SAFE_INTEGER;
+              const incoming = climateWiseCard(payload, anchor, cardSeq + 1, { customerId });
               if (incoming) replaceInlineCard(message, incoming);
             }
             if (

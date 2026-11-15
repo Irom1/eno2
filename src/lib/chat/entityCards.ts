@@ -240,6 +240,25 @@ export interface ProfileEntityCard {
   afterText?: number;
 }
 
+export interface ClimateWiseCardPayload {
+  score: number;
+  tier: string;
+  totalKg: number;
+  days: number;
+  annualizedTonnes?: number;
+  benchmarkTonnes?: number;
+  topCategory?: string;
+  customerId?: string;
+}
+
+export interface ClimateWiseEntityCard {
+  id: number;
+  entityId: 'climatewise';
+  kind: 'climatewise';
+  payload: ClimateWiseCardPayload;
+  afterText?: number;
+}
+
 export type EntityCard =
   | TransactionEntityCard
   | TransactionListEntityCard
@@ -253,7 +272,8 @@ export type EntityCard =
   | GoalEntityCard
   | CashflowPointEntityCard
   | MerchantEntityCard
-  | ProfileEntityCard;
+  | ProfileEntityCard
+  | ClimateWiseEntityCard;
 
 export const TRANSACTION_LIST_ENTITY_ID = 'transaction-list';
 export const SPENDING_PIE_ENTITY_ID = 'spending-pie';
@@ -1503,6 +1523,81 @@ export function profileCard(
       id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
       entityId: `profile:${customerId}`,
       kind: 'profile',
+      payload: payloadOut
+    };
+    if (typeof afterText === 'number' && Number.isFinite(afterText)) {
+      card.afterText = afterText;
+    }
+    return card;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build one primitive ClimateWise card from the report (or `{ report }`).
+ * The card shows the score, tier, total kg, and window; malformed data returns
+ * null. `topCategory` is derived from the highest-kg category so follow-ups can
+ * name it without trusting an unvalidated label.
+ */
+export function climateWiseCard(
+  payload: unknown,
+  afterText: number,
+  startId: number,
+  context?: { customerId?: string }
+): ClimateWiseEntityCard | null {
+  try {
+    const source =
+      isRecord(payload) && isRecord(payload.report) ? payload.report : payload;
+    if (!isRecord(source)) return null;
+
+    const score = finiteNumberOrNull(source.score);
+    if (score === null) return null;
+
+    const tier = trimmedString(source.tier);
+    if (!tier) return null;
+
+    const totalKg = finiteNumberOrNull(source.totalKg);
+    if (totalKg === null || totalKg < 0) return null;
+
+    const rawDays = finiteNumberOrNull(source.days);
+    const days = rawDays !== null && rawDays > 0 ? Math.round(rawDays) : 90;
+
+    let topCategory: string | undefined;
+    let topKg = 0;
+    if (Array.isArray(source.categories)) {
+      for (const entry of source.categories) {
+        if (!isRecord(entry)) continue;
+        const kg = finiteNumberOrNull(entry.kg);
+        if (kg === null || kg <= 0) continue;
+        const label = trimmedString(entry.label) || trimmedString(entry.id);
+        if (!label) continue;
+        if (kg > topKg) {
+          topKg = kg;
+          topCategory = label;
+        }
+      }
+    }
+
+    const customerId = optionalTrimmed(context?.customerId);
+    const annualizedTonnes = finiteNumberOrNull(source.annualizedTonnes);
+    const benchmarkTonnes = finiteNumberOrNull(source.benchmarkTonnes);
+
+    const payloadOut: ClimateWiseCardPayload = {
+      score,
+      tier,
+      totalKg,
+      days,
+      ...(annualizedTonnes !== null ? { annualizedTonnes } : {}),
+      ...(benchmarkTonnes !== null ? { benchmarkTonnes } : {}),
+      ...(topCategory ? { topCategory } : {}),
+      ...(customerId ? { customerId } : {})
+    };
+
+    const card: ClimateWiseEntityCard = {
+      id: typeof startId === 'number' && Number.isFinite(startId) ? startId : 1,
+      entityId: 'climatewise',
+      kind: 'climatewise',
       payload: payloadOut
     };
     if (typeof afterText === 'number' && Number.isFinite(afterText)) {

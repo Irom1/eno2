@@ -146,6 +146,37 @@ describe('followUpsFor', () => {
     expect(suggestions).toContain('Show my grocery transactions');
   });
 
+  it('suggests climate follow-ups from the top emitting category', () => {
+    const suggestions = followUpsFor(
+      [
+        card('climatewise', {
+          score: 712,
+          tier: 'Good',
+          totalKg: 412.35,
+          days: 90,
+          topCategory: 'Travel & transport'
+        })
+      ],
+      "What's my ClimateWise score?"
+    );
+
+    expect(suggestions).toContain('How can I lower my Travel & transport emissions?');
+    expect(suggestions).toContain('Show my top emitting purchases');
+    expect(suggestions).toContain('Where did my emissions come from?');
+    expect(suggestions).toContain('Show my spending');
+    expect(lowercase(suggestions)).not.toContain("what's my climatewise score?");
+  });
+
+  it('falls back to climate suggestions without a top category', () => {
+    const suggestions = followUpsFor(
+      [card('climatewise', { score: 712, tier: 'Good', totalKg: 412.35, days: 90 })],
+      'Tell me about my footprint'
+    );
+
+    expect(suggestions).toContain('Show my top emitting purchases');
+    expect(suggestions).toContain('Where did my emissions come from?');
+  });
+
   it('asks whether the rendered subscription is still active', () => {
     const suggestions = followUpsFor(
       [

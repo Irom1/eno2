@@ -18,7 +18,8 @@ export type Intent =
   | 'locations'
   | 'goal'
   | 'customer'
-  | 'merchants';
+  | 'merchants'
+  | 'climate';
 
 const INTENT_KEYWORDS: ReadonlyArray<readonly [Intent, readonly string[]]> = [
   ['overview', ['overview', 'snapshot', 'summary', 'finances', 'financial picture', 'everything', 'how am i doing', 'net worth']],
@@ -35,7 +36,8 @@ const INTENT_KEYWORDS: ReadonlyArray<readonly [Intent, readonly string[]]> = [
   ['locations', ['atm', 'atms', 'branch', 'branches', 'near me', 'location', 'locations']],
   ['goal', ['goal', 'save for', 'saving for', 'target']],
   ['customer', ['profile', 'who am i', 'address', 'account holder']],
-  ['merchants', ['merchant', 'merchants', 'shop most', 'where do i shop', 'top merchant', 'favorite merchant', 'most frequent merchant']]
+  ['merchants', ['merchant', 'merchants', 'shop most', 'where do i shop', 'top merchant', 'favorite merchant', 'most frequent merchant']],
+  ['climate', ['climatewise', 'climate', 'lorax', 'carbon', 'emissions', 'emission', 'footprint', 'co2']]
 ];
 
 const escapeRegExp = (value: string): string =>

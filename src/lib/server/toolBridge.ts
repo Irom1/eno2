@@ -138,6 +138,7 @@ export const TOOL_LABELS: Readonly<Record<string, string>> = Object.freeze({
   insight_recurring_charges: "Finding subscriptions",
   insight_anomalies: "Looking for odd charges",
   insight_goal_projection: "Projecting a savings goal",
+  insight_climatewise: "Checking your ClimateWise score",
   find_nearby_atms: "Finding nearby ATMs",
   find_nearby_branches: "Finding nearby branches"
 });
@@ -262,6 +263,20 @@ export function summarizeToolResult(name: string, data: unknown): string {
     case "insight_goal_projection": {
       const months = payload.monthsToTarget;
       return typeof months === "number" ? `${months} months to target` : "Goal projection ready";
+    }
+    case "insight_climatewise": {
+      const score =
+        typeof payload.score === "number" && Number.isFinite(payload.score)
+          ? payload.score
+          : null;
+      const tier = typeof payload.tier === "string" ? payload.tier.trim() : "";
+      const totalKg =
+        typeof payload.totalKg === "number" && Number.isFinite(payload.totalKg)
+          ? payload.totalKg
+          : null;
+      if (score === null && totalKg === null) return "ClimateWise report ready";
+      const scoreText = score === null ? "" : tier ? `${score} ${tier}` : `${score}`;
+      return [scoreText, totalKg === null ? "" : `${totalKg} kg`].filter(Boolean).join(" · ");
     }
     case "find_nearby_atms": {
       return `${num(payload.count)} ATMs`;

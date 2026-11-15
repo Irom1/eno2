@@ -6,6 +6,11 @@ import { accountProduct } from '../../../products';
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import {
+  buildReport,
+  type AppTransaction,
+  type ClimateReport,
+} from "../../../climate/emissions";
 import { geocodePlace, haversineMiles } from "../../geo";
 import { maskAccountNumber, type NessieClient } from "../client";
 import {
@@ -867,6 +872,33 @@ const accountBalance = (account: AnyRecord): number => num(account.balance);
 const accountType = (account: AnyRecord): string =>
   String(account.type ?? "").toLowerCase();
 
+/**
+ * Build the shared ClimateWise report from every account's normalized
+ * transactions. The dashboard widget, the /climatewise page, the HTTP route,
+ * and the chat tool all read this one function so their scores agree.
+ */
+export async function buildClimateReport(
+  client: NessieClient,
+  customerId: string,
+  days = 90,
+): Promise<ClimateReport> {
+  const accounts = await fetchCustomerAccounts(client, customerId);
+  const accountIds = accounts
+    .map((account) => String(account._id ?? ""))
+    .filter((id) => id.length > 0);
+  const transactions = (
+    await Promise.all(accountIds.map((id) => fetchTransactions(client, id)))
+  ).flat();
+  const rows: AppTransaction[] = transactions.map((tx) => ({
+    id: tx.id,
+    kind: tx.kind,
+    amount: tx.amount,
+    description: tx.description,
+    date: toISODate(tx.date),
+  }));
+  return buildReport(rows, { days, asOf: todayUTC() });
+}
+
 /* ------------------------------------------------------------------ */
 /* Tool registration                                                   */
 /* ------------------------------------------------------------------ */
@@ -1301,6 +1333,27 @@ export function registerInsightTools(server: McpServer, client: NessieClient): v
     },
   );
 
+  server.registerTool(
+    "insight_climatewise",
+    {
+      description:
+        "ClimateWise/LORAX score, purchase emissions, category breakdown, top emitting purchases, and reduction nudges over the last N days.",
+      annotations: READ_ONLY_ANNOTATIONS,
+      inputSchema: {
+        customerId: idParam,
+        days: z
+          .number()
+          .int()
+          .min(7)
+          .max(365)
+          .optional()
+          .describe("Lookback window in days (default 90)"),
+      },
+    },
+    async ({ customerId, days }) =>
+      ok(await buildClimateReport(client, customerId, days ?? 90)),
+  );
+
   const registerLocationTool = (
     name: string,
     path: string,
@@ -1487,6 +1540,7 @@ export const INSIGHT_TOOL_NAMES = [
   "insight_recurring_charges",
   "insight_anomalies",
   "insight_goal_projection",
+  "insight_climatewise",
   "find_nearby_atms",
   "find_nearby_branches",
 ] as const;

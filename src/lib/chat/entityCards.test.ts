@@ -9,6 +9,7 @@ import {
   anomalyTransactionCards,
   billCard,
   cashflowCard,
+  climateWiseCard,
   goalCard,
   loanCard,
   locationCard,
@@ -27,6 +28,7 @@ import {
   type AccountEntityCard,
   type BillEntityCard,
   type CashflowPointEntityCard,
+  type ClimateWiseEntityCard,
   type EntityCard,
   type GoalEntityCard,
   type LoanEntityCard,
@@ -2254,5 +2256,99 @@ describe('anchorEntityCards', () => {
     expect(lists.map((entry) => entry.kind)).toEqual(['bill', 'account', 'transaction']);
     expect(lists[0]).toBe(billCardValue);
     expect(lists[1]).toBe(accountCardValue);
+  });
+});
+
+describe('climateWiseCard', () => {
+  const report = {
+    asOf: '2026-11-14',
+    days: 90,
+    totalKg: 412.35,
+    totalSpend: 3000,
+    purchaseCount: 42,
+    kgPerDollar: 0.14,
+    annualizedTonnes: 1.67,
+    benchmarkTonnes: 16,
+    targetTonnes: 2.5,
+    score: 712,
+    tier: 'Good',
+    categories: [
+      { id: 'transport', label: 'Travel & transport', kg: 180.2, spend: 62, count: 3, share: 0.43 },
+      { id: 'food', label: 'Food & dining', kg: 120.5, spend: 400, count: 20, share: 0.29 },
+      { id: 'housing', label: 'Housing', kg: 0, spend: 900, count: 1, share: 0 }
+    ],
+    nudges: [
+      { category: 'transport', title: 'Swap two drives a week for the T or a bike', body: '', savingKgPerMonth: 6, prompt: '' }
+    ],
+    topPurchases: [{ id: 'tx-1', kind: 'withdrawal', amount: 62, description: 'SHELL', date: '2026-10-01', kg: 180.2 }]
+  };
+
+  it('parses a direct report payload into one primitive climatewise card', () => {
+    const card = climateWiseCard(report, 42, 7, { customerId: 'cust-1' }) as ClimateWiseEntityCard;
+
+    expect(card).toMatchObject({
+      id: 7,
+      entityId: 'climatewise',
+      kind: 'climatewise',
+      afterText: 42,
+      payload: {
+        score: 712,
+        tier: 'Good',
+        totalKg: 412.35,
+        days: 90,
+        annualizedTonnes: 1.67,
+        benchmarkTonnes: 16,
+        topCategory: 'Travel & transport',
+        customerId: 'cust-1'
+      }
+    });
+    expect(card.payload).not.toHaveProperty('categories');
+    expect(card.payload).not.toHaveProperty('nudges');
+    expect(card.payload).not.toHaveProperty('topPurchases');
+  });
+
+  it('accepts a { report } wrapper from the API route', () => {
+    const card = climateWiseCard({ report }, 0, 1);
+    expect(card?.kind).toBe('climatewise');
+    expect(card?.payload.score).toBe(712);
+    expect(card?.payload.totalKg).toBe(412.35);
+    expect(card?.payload).not.toHaveProperty('customerId');
+  });
+
+  it('derives the top category from the highest positive kg value', () => {
+    const card = climateWiseCard(
+      {
+        ...report,
+        categories: [
+          { id: 'food', label: 'Food & dining', kg: 90 },
+          { id: 'transport', label: 'Travel & transport', kg: 240 },
+          { id: 'energy', label: 'Home energy', kg: 120 }
+        ]
+      },
+      0,
+      1
+    );
+    expect(card?.payload.topCategory).toBe('Travel & transport');
+  });
+
+  it('omits topCategory when every category is empty', () => {
+    const card = climateWiseCard(
+      { ...report, categories: [{ id: 'food', label: 'Food & dining', kg: 0 }] },
+      0,
+      1
+    );
+    expect(card?.payload).not.toHaveProperty('topCategory');
+  });
+
+  it('rejects malformed payloads instead of throwing', () => {
+    expect(climateWiseCard(null, 0, 1)).toBeNull();
+    expect(climateWiseCard(undefined, 0, 1)).toBeNull();
+    expect(climateWiseCard('climate', 0, 1)).toBeNull();
+    expect(climateWiseCard({}, 0, 1)).toBeNull();
+    expect(climateWiseCard({ ...report, score: undefined }, 0, 1)).toBeNull();
+    expect(climateWiseCard({ ...report, score: 'high' }, 0, 1)).toBeNull();
+    expect(climateWiseCard({ ...report, tier: '' }, 0, 1)).toBeNull();
+    expect(climateWiseCard({ ...report, totalKg: undefined }, 0, 1)).toBeNull();
+    expect(climateWiseCard({ ...report, totalKg: -1 }, 0, 1)).toBeNull();
   });
 });

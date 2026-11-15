@@ -82,6 +82,7 @@ const INTENT_NEXT_STEPS: Record<string, string> = {
   nessie_get_account: "Switch accounts to compare balances.",
   find_nearby_atms: "Open the map on OpenStreetMap for directions.",
   find_nearby_branches: "Open the map on OpenStreetMap for directions.",
+  insight_climatewise: "You can open ClimateWise for the full breakdown.",
   insight_financial_overview:
     "Review bills and spending together when you plan the month."
 };
@@ -180,6 +181,12 @@ export function routeIntent(message: string): {
     return {
       tool: "nessie_list_account_loans",
       args: (session) => ({ accountId: checkingAccountId(session) })
+    };
+  }
+  if (/\b(?:climatewise|climate|lorax|carbon|emissions?|co2|footprint)\b/.test(text)) {
+    return {
+      tool: "insight_climatewise",
+      args: (session) => ({ customerId: session.customer.id, days: 90 })
     };
   }
   const ranked = /\b(?:biggest|largest|top|highest|most expensive)\b/.test(text);
@@ -531,6 +538,30 @@ function topMerchantsAnswer(data: unknown): string {
   return `Your most frequent merchant is ${name}, with more visits than any other merchant in the last ${months} months. That makes it the clearest picture of your everyday spending.`;
 }
 
+/**
+ * ClimateWise prose. The card already shows the score, tier, total kg, and
+ * window, so the answer explains the biggest driver and the top nudge instead
+ * of restating those values.
+ */
+function climateAnswer(data: unknown): string {
+  const payload = rec(data);
+  const categories = (Array.isArray(payload.categories) ? payload.categories : []).map(rec);
+  const hasEmissions = categories.some((category) => num(category.kg) > 0);
+  if (num(payload.purchaseCount) === 0 || !hasEmissions) {
+    return "I don't see enough purchase data in this window to estimate your carbon footprint yet.";
+  }
+
+  const top = [...categories].sort((a, b) => num(b.kg) - num(a.kg))[0] ?? {};
+  const label = String(top.label ?? "").trim() || "Day-to-day purchases";
+  const nudges = (Array.isArray(payload.nudges) ? payload.nudges : []).map(rec);
+  const tip = String(nudges[0]?.title ?? "").trim();
+  const opportunity = tip
+    ? ` You can ${tip.charAt(0).toLowerCase()}${tip.slice(1)} to make the biggest dent.`
+    : "";
+
+  return `${label} is the biggest driver of your purchase emissions.${opportunity}`;
+}
+
 function cashflowAnswer(data: unknown, now: Date): string {
   const payload = rec(data);
   const buckets = (Array.isArray(payload.monthlyCashflow) ? payload.monthlyCashflow : [])
@@ -592,6 +623,8 @@ export function composeAnswer(name: string, data: unknown, now: Date, message: s
       return anomaliesAnswer(data);
     case "insight_top_merchants":
       return topMerchantsAnswer(data);
+    case "insight_climatewise":
+      return climateAnswer(data);
     case "nessie_list_account_loans":
       return loansAnswer(data);
     case "nessie_list_account_deposits":
@@ -660,6 +693,8 @@ export function composeIntro(name: string): string {
       return "Here are the subscriptions I found:";
     case "insight_top_merchants":
       return "Here is where you shop most:";
+    case "insight_climatewise":
+      return "Here is your ClimateWise snapshot:";
     case "nessie_list_account_deposits":
     case "nessie_list_account_withdrawals":
     case "nessie_list_account_transactions":

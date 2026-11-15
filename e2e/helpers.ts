@@ -157,7 +157,8 @@ export const PRIMITIVE_CARD_SELECTOR = [
   '.goal-card',
   '.cashflow-card',
   '.merchant-card',
-  '.profile-card'
+  '.profile-card',
+  '.climatewise-card'
 ].join(', ');
 
 /** Count of rendered primitive card shells. */

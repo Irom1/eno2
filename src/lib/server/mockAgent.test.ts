@@ -91,6 +91,28 @@ async function run(
   return { events, text };
 }
 
+const climatePayload = {
+  asOf: "2026-11-14",
+  days: 90,
+  totalKg: 412.35,
+  totalSpend: 3000,
+  purchaseCount: 42,
+  score: 712,
+  tier: "Good",
+  categories: [
+    { id: "transport", label: "Travel & transport", kg: 180.2, share: 0.43 },
+    { id: "food", label: "Food & dining", kg: 120.5, share: 0.29 }
+  ],
+  nudges: [
+    {
+      category: "transport",
+      title: "Swap two drives a week for the T or a bike",
+      body: "Travel & transport: 44% of your purchase footprint.",
+      savingKgPerMonth: 6
+    }
+  ]
+};
+
 describe("mockAgent", () => {
   it("routes bills questions and emits ordered events with exact figures", async () => {
     const { events, text } = await run("What's due before my next paycheck and can I cover it?", async (name) => {
@@ -830,5 +852,64 @@ describe("mockAgent", () => {
       "I couldn’t find any merchant activity in the last three months."
     );
     expect(text).toContain("You can review merchant activity in the app.");
+  });
+
+  it("routes ClimateWise questions to the climatewise insight tool", () => {
+    const session = createSession(customer, accounts);
+    for (const message of [
+      "What's my ClimateWise score?",
+      "How can I lower my emissions?",
+      "What is my carbon footprint?",
+      "Tell me about my LORAX score",
+      "How much CO2 do I produce?"
+    ]) {
+      const route = routeIntent(message);
+      expect(route.tool, message).toBe("insight_climatewise");
+      expect(route.args(session), message).toEqual({ customerId: "cust-1", days: 90 });
+    }
+  });
+
+  it("explains the biggest climate driver and nudge without restating card values", async () => {
+    const { events, text } = await run("What's my ClimateWise score?", async (name, args) => {
+      expect(name).toBe("insight_climatewise");
+      expect(args).toEqual({ customerId: "cust-1", days: 90 });
+      return ok(climatePayload);
+    });
+
+    expect(text).toContain("Here is your ClimateWise snapshot:");
+    expect(text).toContain("Travel & transport is the biggest driver of your purchase emissions.");
+    expect(text).toContain("swap two drives a week for the T or a bike");
+    expect(text).toContain("You can open ClimateWise for the full breakdown.");
+    expect(text).not.toContain("712");
+    expect(text).not.toContain("412.35");
+    expect(text).not.toContain("Good");
+    expect(text).not.toContain("90 days");
+    expect(text).not.toContain("kg");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
+
+    const insight = events.find(
+      (event): event is Extract<AgentEvent, { type: "insight" }> => event.type === "insight"
+    );
+    expect(insight?.kind).toBe("insight_climatewise");
+  });
+
+  it("gives an honest no-data climate answer", () => {
+    const text = composeFastAnswer(
+      "insight_climatewise",
+      { ...climatePayload, purchaseCount: 0, totalKg: 0, categories: [] },
+      new Date("2026-11-14T12:00:00Z"),
+      "What's my ClimateWise score?"
+    );
+    expect(text).toContain(
+      "I don't see enough purchase data in this window to estimate your carbon footprint yet."
+    );
+    expect(text).not.toContain("biggest driver");
+    expect(text).not.toContain("Tip:");
+    expect(text).not.toContain("Insight:");
+  });
+
+  it("uses a friendly ClimateWise intro", () => {
+    expect(composeIntro("insight_climatewise")).toBe("Here is your ClimateWise snapshot:");
   });
 });

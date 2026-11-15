@@ -31,7 +31,8 @@ type Topic =
   | 'locations'
   | 'customer'
   | 'goal'
-  | 'merchants';
+  | 'merchants'
+  | 'climatewise';
 
 const SUGGESTIONS: Readonly<Record<Topic, readonly string[]>> = {
   loans: [
@@ -115,6 +116,12 @@ const SUGGESTIONS: Readonly<Record<Topic, readonly string[]>> = {
     'Show my recent transactions',
     'Where did my money go last month?',
     'Show my accounts'
+  ],
+  climatewise: [
+    'Show my top emitting purchases',
+    'Where did my emissions come from?',
+    'Show my spending',
+    'Show my account balances'
   ]
 };
 
@@ -140,7 +147,8 @@ const PRIORITY: readonly Topic[] = [
   'locations',
   'customer',
   'goal',
-  'merchants'
+  'merchants',
+  'climatewise'
 ];
 
 const KIND_TOPIC: Readonly<Record<EntityCard['kind'], Topic>> = {
@@ -156,7 +164,8 @@ const KIND_TOPIC: Readonly<Record<EntityCard['kind'], Topic>> = {
   goal: 'goal',
   cashflow: 'cashflow',
   merchant: 'merchants',
-  profile: 'customer'
+  profile: 'customer',
+  climatewise: 'climatewise'
 };
 
 /** Single-entity cards are more specific than aggregate/period cards. */
@@ -173,7 +182,8 @@ const CARD_PRIORITY: readonly EntityCard['kind'][] = [
   'goal',
   'cashflow',
   'merchant',
-  'profile'
+  'profile',
+  'climatewise'
 ];
 
 const INTENT_TOPIC: Readonly<Record<Intent, Topic>> = {
@@ -191,7 +201,8 @@ const INTENT_TOPIC: Readonly<Record<Intent, Topic>> = {
   locations: 'locations',
   goal: 'goal',
   customer: 'customer',
-  merchants: 'merchants'
+  merchants: 'merchants',
+  climate: 'climatewise'
 };
 
 const MAX = 4;
@@ -243,6 +254,8 @@ function labelForCard(card: EntityCard | null | undefined): string {
       return textField(payload, 'name');
     case 'profile':
       return textField(payload, 'name');
+    case 'climatewise':
+      return textField(payload, 'topCategory');
     default:
       return '';
   }
@@ -317,6 +330,14 @@ function dynamicCandidates(card: EntityCard | null | undefined): string[] {
       break;
     case 'profile':
       out.push('Show my accounts', 'Show my rewards', "What's due in the next 30 days?");
+      break;
+    case 'climatewise':
+      if (label) out.push(`How can I lower my ${categoryLabel(label)} emissions?`);
+      out.push(
+        'Show my top emitting purchases',
+        'Where did my emissions come from?',
+        'Show my spending'
+      );
       break;
     default:
       break;

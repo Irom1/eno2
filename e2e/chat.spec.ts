@@ -451,6 +451,88 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
+  test('a ClimateWise question renders one primitive climatewise card', async ({ page }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is your ClimateWise snapshot: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: {
+          asOf: '2026-11-14',
+          days: 90,
+          totalKg: 412.4,
+          totalSpend: 3000,
+          purchaseCount: 42,
+          annualizedTonnes: 1.67,
+          benchmarkTonnes: 16,
+          score: 712,
+          tier: 'Good',
+          categories: [
+            { id: 'transport', label: 'Travel & transport', kg: 180.2, share: 0.43 },
+            { id: 'food', label: 'Food & dining', kg: 120.5, share: 0.29 }
+          ],
+          nudges: [
+            {
+              category: 'transport',
+              title: 'Swap two drives a week for the T or a bike',
+              savingKgPerMonth: 6
+            }
+          ],
+          extra: 'do not leak'
+        }
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta:
+          'Travel & transport is the biggest driver of your purchase emissions. You can swap two drives a week for the T or a bike to make the biggest dent.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, "What's my ClimateWise score?");
+
+    const card = page.locator('.climatewise-card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute('data-kind', 'climatewise');
+
+    const text = await card.innerText();
+    expect(text).toContain('712');
+    expect(text).toContain('Good');
+    expect(text).toContain('412.4');
+    expect(text).toContain('90 days');
+    expect(text).not.toContain('do not leak');
+
+    const link = card.getByRole('link', { name: 'View ClimateWise details' });
+    await expect(link).toHaveAttribute('href', /\/climatewise\?customer=/);
+    await expect(link).toHaveAttribute('target', '_blank');
+
+    await expect(page.locator('.chat-card')).toHaveCount(0);
+    await expect(page.locator('.entity-card .climatewise-card')).toHaveCount(1);
+    expect(
+      await card.evaluate((element) => Boolean(element.closest('.bubble.assistant'))),
+      'the climatewise card renders inline inside the prose bubble'
+    ).toBe(true);
+
+    await expectNoCardValueDuplicate(page, ['712', 'Good', '412.4', '90 days']);
+    await expectCardStyle(page);
+    expectNoErrors(errors);
+  });
+
   test('an overview prompt renders one primitive cashflow month', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);

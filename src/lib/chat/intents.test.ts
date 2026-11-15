@@ -31,6 +31,18 @@ describe('classifyIntents', () => {
     expect(classifyIntents('What is my favorite merchant?').has('merchants')).toBe(true);
   });
 
+  it('classifies climate and emissions questions', () => {
+    for (const prompt of [
+      "What's my ClimateWise score?",
+      'Tell me about my LORAX score',
+      'How can I lower my emissions?',
+      'What is my carbon footprint?',
+      'How much CO2 do I produce?'
+    ]) {
+      expect(classifyIntents(prompt).has('climate'), prompt).toBe(true);
+    }
+  });
+
   it('returns an empty set for empty or malformed input', () => {
     expect(classifyIntents('').size).toBe(0);
     expect(classifyIntents('   ').size).toBe(0);

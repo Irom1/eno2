@@ -2,7 +2,7 @@
 
 Canonical inventory and plan for every chat card and inline primitive in Eno 2.0.
 
-Status: Phase 0 shipped (legacy cards archived, chat is prose-first). Phase 1 (`present_card`) is shipped. Phase 2 and the Phase 3 primitive cards are largely shipped: inline single-transaction cards, a merged transaction-list card, the spending-by-category pie chart, single Bill/Account cards, single Loan/Location/RecurringCharge cards, and the Reward/Goal/CashflowPoint cards are live, along with the shared `EntityKeyValue` primitive and the shared primitives library (`primitives.ts` plus `inline-cards/primitives/`). Merchant and profile cards are now shipped too. The server-side `present_card` pipeline, ownership validation, normalized `card` SSE event, and `CARDS_MODE=off|v2` flag are live; client-side builders remain the fallback.
+Status: Phase 0 shipped (legacy cards archived, chat is prose-first). Phase 1 (`present_card`) is shipped. Phase 2 and the Phase 3 primitive cards are largely shipped: inline single-transaction cards, a merged transaction-list card, the spending-by-category pie chart, single Bill/Account cards, single Loan/Location/RecurringCharge cards, and the Reward/Goal/CashflowPoint cards are live, along with the shared `EntityKeyValue` primitive and the shared primitives library (`primitives.ts` plus `inline-cards/primitives/`). Merchant and profile cards are now shipped too, along with the ClimateWise snapshot card. The server-side `present_card` pipeline, ownership validation, normalized `card` SSE event, and `CARDS_MODE=off|v2` flag are live; client-side builders remain the fallback.
 
 See `GOAL_PLAN.md` for the active implementation checklist; this document remains the canonical detail and design reference.
 
@@ -28,6 +28,7 @@ Shipped:
 - Phase 2 third slice: `LoanCard` (one loan), `LocationCard` (one ATM or branch), and `RecurringChargeCard` (one recurring charge), each a single-entity primitive.
 - Phase 3 first slice: `RewardCard` (highest credit-account reward or overview total), `GoalCard` (target/current/months/projected date), `CashflowPointCard` (latest complete month), plus the shared `EntityKeyValue` primitive.
 - Phase 3 second slice: `MerchantCard` (one merchant, first valid row) and `ProfileCard` (one customer from a single-row payload, name plus city/state only).
+- ClimateWise: `ClimateWiseCard` (score, tier, total kg over the window) plus the `insight_climatewise` MCP tool. The dashboard widget, `/climatewise` page, and chat all read the same MCP report through `/api/climate`.
 - Phase 1: `present_card`, server-side ownership validation, the normalized `card` SSE event, and the `CARDS_MODE=off|v2` flag. Model-declared cards are additive; client-side inference still runs and remains the fallback.
 
 Next:
@@ -105,6 +106,7 @@ Buffering details:
 | `src/routes/[view=wallet]/inline-cards/CashflowPointCard.svelte` | `card: CashflowPointEntityCard` | Shipped | One month: `EntityKeyValue` rows for period, inflow, outflow, and signed net. No interpretation. |
 | `src/routes/[view=wallet]/inline-cards/MerchantCard.svelte` | `card: MerchantEntityCard` | Shipped | One merchant: name, title-cased category when present, address when present. No amount, count, recommendation, or link. |
 | `src/routes/[view=wallet]/inline-cards/ProfileCard.svelte` | `card: ProfileEntityCard` | Shipped | One customer: initials avatar, name, and city/state when present. No street, zip, contact, or identifier fields; no action copy. |
+| `src/routes/[view=wallet]/inline-cards/ClimateWiseCard.svelte` | `card: ClimateWiseEntityCard` | Shipped | One ClimateWise snapshot: score and tier with a gauge, total kg CO₂e over the window, and a “View ClimateWise details” link to `/climatewise?customer=…`. No title, logo, eyebrow, reason chip, or duplicated value. |
 | `src/routes/[view=wallet]/inline-cards/ChatCardView.svelte` | `card: EntityCard`, `inline?: boolean` | Shipped | Shared card switch: routes each `kind` to its component (ATM locations to `AtmLocatorCard`, branches to `LocationCard`) and passes the inline flag to `TransactionCard`. Non-transaction inline styling comes from the bubble-scoped CSS. |
 | `src/routes/[view=wallet]/ChatPanel.svelte` | `open`, `customerId`, `initialPrompt`, `onClose`, `canSend`, `variant` | Shipped | Bubbles, streaming text, grouped inline/standalone cards, thinking checklist, loading line, follow-ups, send/abort lifecycle. |
 | `src/lib/chat/thinking.ts` | `initialThinking`, `pushThinkingStep`, `friendlyToolLabel`, `THINKING_COMPOSING` | Shipped | Pure, non-technical thinking-step state machine. |
@@ -113,7 +115,7 @@ Buffering details:
 | `src/lib/components/Eno.svelte` | `variant?`, `size?`, `alt?`, `class?` | Shipped | Static Eno image used by layout/empty states. |
 | `src/lib/chat/inline.ts` | `revealInlineCards`, `inlineBlocks` | Shipped | Pending buffer, markdown-safe anchors, text/card block split. |
 | `src/lib/chat/cardGroups.ts` | `groupInlineCards`, `isInlineCard`, `isInlineCardKind`, `InlineRenderGroup` | Shipped | Pure client-safe grouping: text plus single-entity cards into one inline group; standalone cards (`transaction-list`, `spending-pie`, and the ATM `location` exception) flush and emit separately; order preserved. |
-| `src/lib/chat/entityCards.ts` | types plus `anomalyTransactionCards`, `transactionListCard`, `mergeTransactionListCard`, `spendingPieCard`, `billCard`, `accountCard`, `loanCard`, `locationCard`, `recurringCard`, `rewardCard`, `goalCard`, `cashflowCard`, `merchantCard`, `profileCard`, `anchorEntityCards`, `mergeEntityCards`, `transactionHref`, `accountHref` | Shipped | Pure, client-safe normalization and placement helpers. |
+| `src/lib/chat/entityCards.ts` | types plus `anomalyTransactionCards`, `transactionListCard`, `mergeTransactionListCard`, `spendingPieCard`, `billCard`, `accountCard`, `loanCard`, `locationCard`, `recurringCard`, `rewardCard`, `goalCard`, `cashflowCard`, `merchantCard`, `profileCard`, `climateWiseCard`, `anchorEntityCards`, `mergeEntityCards`, `transactionHref`, `accountHref` | Shipped | Pure, client-safe normalization and placement helpers. |
 
 Avatar/layout note: the assistant turn uses `EnoThinking` to the left of `.assistant-content`, aligned to the **bottom** of the message (not the top); the flex row and 10px gap are unchanged, and the avatar keeps its pulse/active state, size, and theme variant. Single-entity cards render inside the assistant prose bubble, so their width is capped by the bubble; the bubble-scoped rule removes the standalone lift shadow and keeps the 1px border with no accent. Standalone cards are siblings in the content column, left-aligned and capped at the bubble max width (88% of the column); `CardFrame` provides surface, border, and lift shadow with no accent strip. The pie and list cards are intentionally standalone `CardFrame` cards, never pulled into the prose bubble. The ATM locator is the one single-entity exception: because it pairs a wide map with external actions, it is grouped standalone too. Its map card contains no buttons; `.atm-actions` sits below the card, outside both the card surface and the prose bubble, as a two-column grid at the same 88% width with two equal half-width buttons. Those buttons are text-only (no icons), at least 44px tall, and signal hover/focus with a link-tinted background/border/shadow highlight rather than an underline.
 
@@ -142,6 +144,7 @@ Nessie ATM data limitation: the raw Nessie ATM dataset contains 13 ATMs, all in 
 | `CashflowPointCard` | `cashflow` | `period`, `inflow`, `outflow`, `net` | `insight_financial_overview.monthlyCashflow` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/CashflowPointCard.svelte`; `cashflowCard` | One month: the latest complete month, falling back to the last entry. Net uses the provided value or inflow minus outflow, signed in display. No interpretation. |
 | `MerchantCard` | `merchant` | `merchantId`, `name`, `category?`, `address?`, `customerId?` | `nessie_list_merchants`, `nessie_get_merchant` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/MerchantCard.svelte`; `merchantCard` | One merchant: the first valid row, anchored after its name mention. Address composes `street, city, state`. The source has no spend amount or transaction count, so neither is shown; no recommendation or link. |
 | `ProfileCard` | `profile` | `customerId`, `name`, `location?` (`City, State`) | `nessie_get_customer`, single-customer payloads | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/ProfileCard.svelte`; `profileCard` | One customer only; a customer list returns null and stays in prose. Name plus city/state only: never street, zip, phone, email, or account/customer identifiers in the payload or DOM. |
+| `ClimateWiseCard` | `climatewise` | `score`, `tier`, `totalKg`, `days`, `annualizedTonnes?`, `benchmarkTonnes?`, `topCategory?`, `customerId?` | `insight_climatewise` | Inline inside `.bubble.assistant` | Shipped in this pass | `inline-cards/ClimateWiseCard.svelte`; `climateWiseCard` | One ClimateWise snapshot: score, tier, total kg CO₂e over the window, and a link to the full `/climatewise` page. `topCategory` is derived from the highest-kg category for follow-ups; the card itself shows no interpretation. |
 
 Explicitly omitted:
 
@@ -202,11 +205,12 @@ type EntityCard =
   | (EntityCardBase & { kind: 'recurring'; payload: RecurringChargeCardPayload })
   | (EntityCardBase & { kind: 'reward'; payload: RewardCardPayload })
   | (EntityCardBase & { kind: 'goal'; payload: GoalCardPayload })
-  | (EntityCardBase & { kind: 'cashflow'; payload: CashflowPointCardPayload });
+  | (EntityCardBase & { kind: 'cashflow'; payload: CashflowPointCardPayload })
+  | (EntityCardBase & { kind: 'climatewise'; payload: ClimateWiseCardPayload });
 ```
 
 - Payloads are whitelisted view models. Raw tool records never pass through.
-- `entityId` identifies the entity within a turn: a transaction id or stable key, the single `transaction-list`, `spending-pie`, the bill id (or a stable `bill|payee|dueDate|amount` key), `account:<id>`, `loan:<id>`, `location:<id>`, `description|amount` for a recurring charge, `reward:<accountId|total>`, `goal:<accountId>:<target>`, or `cashflow:<month>`.
+- `entityId` identifies the entity within a turn: a transaction id or stable key, the single `transaction-list`, `spending-pie`, the bill id (or a stable `bill|payee|dueDate|amount` key), `account:<id>`, `loan:<id>`, `location:<id>`, `description|amount` for a recurring charge, `reward:<accountId|total>`, `goal:<accountId>:<target>`, `cashflow:<month>`, or the single `climatewise`.
 - `afterText` is the pending buffer/anchor contract; missing offsets render at end-of-text.
 - Anomaly cards dedupe by `entityId`, render one card per finding, and cap at 8. The previous 1–2 cap was a layout budget, not a limit on flagged findings. A turn keeps one transaction list, one pie, one bill, one account, one loan, one location, one recurring charge, one reward, one goal, and one cashflow month, replacing rather than stacking duplicates.
 - Bill, account, loan, location, recurring, reward, goal, and cashflow cards are single-entity by construction: one largest bill, only a payload whose `asItems` resolves to exactly one account, one largest loan, the first location result, one largest recurring charge, one highest credit-account reward (or one overview total), one goal projection, and one complete cashflow month. Lists render no entity card and stay in prose.
@@ -255,6 +259,7 @@ Phase 2 slice refinements already shipped:
 - Bill and account cards are single-entity primitives: one largest bill, one account only. `insight_upcoming_bills` never renders a bills list; an all-accounts payload renders no card. Totals, coverage, and comparisons stay in the prose.
 - Loan, location, and recurring cards are single-entity primitives: one loan (largest balance), the first location result, and one recurring charge (largest average). Cadence, next date, distance, and ATM street addresses are absent from the source data and therefore absent from the cards.
 - Reward, goal, and cashflow cards are single-value primitives: one reward balance (highest credit-account rewards or overview total), one goal projection (target/current/months/projected date), and one cashflow month (latest complete, with a signed net). Comparisons, progress narratives, and advice stay in the prose, and points are never converted into an invented dollar value.
+- The ClimateWise card is one inline snapshot: score and tier with a gauge, total kg CO₂e over the window, and a link to the full `/climatewise` page. The MCP `insight_climatewise` tool returns the shared report, `/api/climate` delegates to it, and prose explains the score’s meaning plus the biggest category and nudge without restating card values.
 
 ## 9. Tests and verification
 
@@ -273,7 +278,8 @@ Unit (`vitest`):
 - Cashflow: latest complete month, last-entry fallback, net fallback from inflow minus outflow, malformed rows, empty payloads, period formatting, period anchoring.
 - Merchant: first-valid selection from a list or single record, id/name requirements, address composition (`street, city, state`, no zip), optional category/address, malformed payloads, name anchoring.
 - Profile: single-row vs list (list returns null), name join, city/state-only location, street/zip/contact/identifier field whitelist, missing id/name, malformed payloads, name and first-name fallback anchoring.
-- Prompt: primitive-card language, the single-bill/single-account rule, the single-loan/location/recurring-charge/reward/goal/cashflow/merchant/profile rule, the spending intro/takeaway rule, and rule 14 for `present_card`.
+- ClimateWise: direct report and `{ report }` payloads, score/tier/totalKg validation, days fallback, derived `topCategory`, optional annualized/benchmark values, context customer id, and malformed payloads.
+- Prompt: primitive-card language, the single-bill/single-account rule, the single-loan/location/recurring-charge/reward/goal/cashflow/merchant/profile/climatewise rule, the spending intro/takeaway rule, and rule 14 for `present_card`.
 - `present_card`: candidate collection per tool, duplicate collapsing, ownership acceptance/rejection (cross-customer and missing account), unknown id, kind mismatch, profile/customer id, whitelist normalization, and the agent integration (normalized `card` event with `afterText`, no MCP call for `present_card`, rejected declarations).
 - Payload helpers (`payloads.test.ts`): `asItems` list shapes, single-record wrapping, wrapper-only payloads, non-record filtering; `asRecord` fallbacks.
 - Intents (`intents.test.ts`): union of mentioned intents, empty/unknown/malformed prompts.
@@ -294,6 +300,7 @@ E2E (`e2e/chat.spec.ts`, Playwright; current policy forbids running it):
 - Cashflow or overview prompts render one `.cashflow-card` with period, inflow, outflow, and signed net; no interpretation.
 - Merchant prompts render one `.merchant-card` with one name, optional category, and optional address; no legacy `.chat-card`, merchant list, amount, or count.
 - Profile prompts render one `.profile-card` with name and city/state only; no street, zip, contact, or identifier fields.
+- ClimateWise prompts render one inline `.climatewise-card` with score, tier, total kg, window, and a `/climatewise?customer=…` link; the prose does not repeat the card values.
 - Merchant cards render inline inside the assistant bubble and stay buffered until the prose reaches the merchant name.
 - Buffered cards appear only after the prose reaches their anchor.
 - Theme contrast, reduced motion, accessibility names, and deep-link navigation.

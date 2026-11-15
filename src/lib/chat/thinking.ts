@@ -28,6 +28,7 @@ interface Rule {
  * loans, locations) are classified before broader ones (accounts, overview).
  */
 const RULES: readonly Rule[] = [
+  { match: ['climatewise', 'climate', 'lorax'], label: 'Checking your ClimateWise score' },
   { match: ['atm', 'branch', 'nearby'], label: 'Finding nearby locations' },
   { match: ['loan'], label: 'Checking your loans' },
   { match: ['bill'], label: 'Checking upcoming bills' },
