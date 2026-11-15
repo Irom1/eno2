@@ -745,7 +745,7 @@
                     {/each}
                   </div>
                 {:else}
-                  <ChatCardView card={group.card} />
+                  <ChatCardView card={group.card} {variant} />
                 {/if}
               {/each}
               {#if message.pending && hasBlocks}

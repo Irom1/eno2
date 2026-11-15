@@ -6,8 +6,7 @@
  * from client code.
  */
 
-const MAPBOX_STATIC_BASE =
-  'https://api.mapbox.com/styles/v1/mapbox/streets-v12/static';
+const MAPBOX_STATIC_BASE = 'https://api.mapbox.com/styles/v1/mapbox';
 
 /**
  * True when lat/lng are finite and inside the WGS84 bounds.
@@ -38,16 +37,18 @@ export function mapboxStaticUrl(
   token: string | null | undefined,
   lat: number,
   lng: number,
-  zoom = 15
+  zoom = 15,
+  theme: 'light' | 'dark' = 'dark'
 ): string | null {
   const accessToken = typeof token === 'string' ? token.trim() : '';
   if (!accessToken) return null;
   if (!validCoordinates(lat, lng)) return null;
   if (!validZoom(zoom)) return null;
 
+  const pinColor = theme === 'light' ? '087ea4' : '9fdbf0';
   return (
-    `${MAPBOX_STATIC_BASE}/pin-s(${lng},${lat})/` +
-    `${lng},${lat},${zoom},0/640x280@2x` +
+    `${MAPBOX_STATIC_BASE}/${theme}-v11/static/pin-l+${pinColor}(${lng},${lat})/` +
+    `${lng},${lat},${zoom},0/640x360@2x` +
     `?access_token=${encodeURIComponent(accessToken)}`
   );
 }

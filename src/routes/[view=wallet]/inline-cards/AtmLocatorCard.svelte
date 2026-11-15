@@ -1,13 +1,15 @@
 <script lang="ts">
   import type { LocationEntityCard } from '$lib/chat/entityCards.js';
   import { appleMapsUrl, googleMapsUrl } from '$lib/chat/maps.js';
+  import type { EnoVariant } from '$lib/eno.js';
   import CardFrame from './CardFrame.svelte';
 
   interface Props {
     card: LocationEntityCard;
+    variant: EnoVariant;
   }
 
-  let { card }: Props = $props();
+  let { card, variant }: Props = $props();
 
   const payload = $derived(card.payload);
   const lat = $derived(
@@ -18,9 +20,9 @@
   );
   const hasCoords = $derived(lat !== null && lng !== null);
   const mapSrc = $derived(
-    hasCoords ? `/api/mapbox/static?lat=${lat}&lng=${lng}&zoom=15` : null
+    hasCoords ? `/api/mapbox/static?lat=${lat}&lng=${lng}&zoom=15&theme=${variant}` : null
   );
-  let mapFailed = $state(false);
+  let failedMapSrc = $state<string | null>(null);
   const appleUrl = $derived(lat !== null && lng !== null ? appleMapsUrl(lat, lng, payload.name) : null);
   const googleUrl = $derived(
     lat !== null && lng !== null ? googleMapsUrl(lat, lng, payload.name) : null
@@ -48,13 +50,15 @@
       {#if payload.hours}
         <div class="hours">{payload.hours}</div>
       {/if}
-      {#if mapSrc && !mapFailed}
+      {#if mapSrc && mapSrc !== failedMapSrc}
         <img
           class="atm-map"
           src={mapSrc}
           alt={`Map showing ${payload.name}`}
+          width="640"
+          height="360"
           loading="lazy"
-          onerror={() => (mapFailed = true)}
+          onerror={(event) => (failedMapSrc = event.currentTarget.getAttribute('src'))}
         />
       {:else}
         <div class="map-fallback" role="status">Map preview unavailable</div>
@@ -122,7 +126,8 @@
   .atm-map {
     display: block;
     width: 100%;
-    height: 150px;
+    height: auto;
+    box-sizing: border-box;
     margin-top: 8px;
     border: 1px solid var(--border);
     border-radius: 8px;
