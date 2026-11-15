@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ActionIcon from '$lib/components/ActionIcon.svelte';
+  import { createSentMessageMotion } from '$lib/sentMessageMotion';
   import '$lib/assets/message-composer.css';
   import { createConversationPacer } from '$lib/conversationPacing';
   import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
@@ -16,6 +18,7 @@
 
   let { customerId = '' }: { customerId?: string } = $props();
   const pacing = createConversationPacer();
+  const sentMotion = createSentMessageMotion();
   let profileId = $state('');
   let available = $state<OpeningProduct[]>([]);
   let selected = $state<AccountProductId[]>([]);
@@ -141,6 +144,7 @@
     event.preventDefault();
     const text = reply.trim();
     if (!text || busy || locked || failed) return;
+    sentMotion.capture();
     reply = '';
     pacing.userSent();
     stopReadAloud();
@@ -181,7 +185,7 @@
         {#each messages as message, index}
           <div class="message" class:from-you={message.role === 'you'}>
             {#if message.role === 'eno'}<span class="avatar"><Eno variant={isDark ? 'dark' : 'light'} size={40} alt="Eno" /></span>{/if}
-            <div class="bubble"><p>{message.text}</p>
+            <div class="bubble" use:sentMotion.bubble={message.role === 'you'}><p>{message.text}</p>
               {#if index === 0 && !failed && available.length}
                 <details open>
                   <summary>Choose accounts <span>{selected.length} selected</span></summary>
@@ -196,7 +200,7 @@
                   </fieldset>
                 </details>
                 <p class="hint">Only products you don’t already have are shown. Each new account includes 100 sample transactions, bills, and a loan.</p>
-                <button class="setup-action" disabled={busy || locked || !selected.length} onclick={openSelected}>Open selected accounts <span aria-hidden="true">→</span></button>
+                <button class="setup-action" disabled={busy || locked || !selected.length} onclick={openSelected}>Open selected accounts <ActionIcon /></button>
               {/if}
             </div>
             <span class="sender">{message.role === 'eno' ? 'Eno' : 'You'}{#if message.role === 'eno' && speechSupported}<button class="read" aria-label="Read Eno message aloud" onclick={() => speak(message.text)}>{@render speaker()}</button>{/if}</span>
@@ -205,14 +209,14 @@
         {#if submitting}<p class="progress" role="status">Setting up your accounts and sample activity…</p>{/if}
         {#if replying}<p class="progress" role="status">Eno is typing…</p>{/if}
         {#if !loading && (locked || failed || !available.length)}
-          <a class="setup-action" href={failed ? '/' : dashboard}>{failed ? 'Go to Sign in' : 'Open my dashboard'} <span aria-hidden="true">→</span></a>
+          <a class="setup-action" href={failed ? '/' : dashboard}>{failed ? 'Go to Sign in' : 'Open my dashboard'} <ActionIcon /></a>
         {/if}
       </div>
     </div>
     <div class="composer-area">
       <form class="message-composer" onsubmit={send}>
         <input bind:value={reply} aria-label="Message Eno" placeholder="Message Eno…" disabled={busy || locked || failed || !available.length} maxlength="2000" autocomplete="off" />
-        <button type="submit" class="message-send" aria-label="Send message" disabled={busy || locked || failed || !available.length || !reply.trim()}>↑</button>
+        <button type="submit" class="message-send" aria-label="Send message" disabled={busy || locked || failed || !available.length || !reply.trim()}><ActionIcon name="up" size={22} /></button>
       </form>
     </div>
   </main>

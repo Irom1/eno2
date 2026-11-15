@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionIcon from '$lib/components/ActionIcon.svelte';
   import '$lib/assets/message-composer.css';
   import { accountProduct } from '$lib/products';
   import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
@@ -770,7 +771,7 @@
               <textarea bind:value={query} onfocus={openChat} onkeydown={handleComposerKeydown} rows="1" aria-label="Ask Capital One" placeholder={composerPlaceholder}></textarea>
             </div>
             <button class="send message-send" aria-label="Ask" disabled={!query.trim() || signingOut || (inChat && !canSend)}>
-              <span aria-hidden="true">↑</span>
+              <ActionIcon name="up" size={22} />
             </button>
           </form>
         </div>

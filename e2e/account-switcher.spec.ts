@@ -24,7 +24,7 @@ test('sign-in and switcher share account rows and styling, with sign out in the 
   // Old removal notices must not add page-specific content to the dropdown.
   await page.addInitScript(() => localStorage.setItem('eno-removed-customers', JSON.stringify([{ id: 'removed', name: 'Removed Person' }])));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Already have an account? Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Already have an account? Sign in to demo', exact: true }).click();
   const signIn = page.locator('.customer-dropdown');
   await expect(signIn.locator('.account-name strong')).toHaveText(['Maya Chen', 'Demo Tester', 'Future Person']);
   await expect(signIn.getByRole('button', { name: /^Delete / })).toHaveCount(0);

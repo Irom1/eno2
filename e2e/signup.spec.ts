@@ -21,7 +21,7 @@ test('the landing prompt sends the first setup chat turn', async ({ page }) => {
   await expect(page.getByRole('log')).toContainText('What should I call you?');
   await page.waitForFunction(() => sessionStorage.getItem('eno-signup-conversation-v2') !== null);
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Already have an account? Sign in', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Already have an account? Sign in to demo', exact: true })).toBeEnabled();
 
   const firstTurn = page.waitForRequest('**/api/signup/chat');
   await page.getByRole('link', { name: firstAccountPrompt, exact: true }).click();
