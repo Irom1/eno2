@@ -2,9 +2,10 @@
 	import logoLight from '$lib/assets/climatewise-card-logo-light.png';
 	import logoDark from '$lib/assets/climatewise-card-logo-dark.png';
 	import ScoreCard from '$lib/components/ScoreCard.svelte';
+	import { fetchWithSession } from '$lib/sessionRecovery';
 	import { SCORE_MAX, scoreFraction, type ClimateReport } from './emissions';
 
-	let { href = '/climatewise', refresh = 0 }: { href?: string; /** Change to refetch, e.g. after switching customers. */ refresh?: number } = $props();
+	let { href = '/climatewise', refresh = 0, customerId = '' }: { href?: string; /** Change to refetch, e.g. after switching customers. */ refresh?: number; customerId?: string } = $props();
 	let report = $state<ClimateReport | null>(null);
 	let loading = $state(true);
 
@@ -14,7 +15,7 @@
 		report = null;
 		loading = true;
 		// same 90-day window as the ClimateWise card, so both show the same score
-		fetch('/api/climate?days=90')
+		fetchWithSession('/api/climate?days=90', undefined, customerId)
 			.then((r) => (r.ok ? r.json() : null))
 			.then((d) => !cancelled && (report = d?.report ?? null))
 			.catch(() => {})

@@ -7,6 +7,7 @@
  */
 
 import { GUEST_CUSTOMER_ID } from './chat/guest';
+import { fetchWithSession } from './sessionRecovery';
 
 export const FRESH_MS = 15_000;
 export const STALE_MS = 120_000;
@@ -77,15 +78,15 @@ export const accountCacheKey = (accountId: string): string =>
 
 const inFlight = new Map<string, Promise<void>>();
 
-async function fetchJson(url: string): Promise<unknown> {
+async function fetchJson(url: string, customerId?: string): Promise<unknown> {
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = controller ? setTimeout(() => controller.abort(), 4_000) : null;
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithSession(url, {
       credentials: 'same-origin',
       headers: { accept: 'application/json' },
       ...(controller ? { signal: controller.signal } : {})
-    });
+    }, customerId);
     if (!response.ok) return null;
     return await response.json();
   } finally {
@@ -93,13 +94,18 @@ async function fetchJson(url: string): Promise<unknown> {
   }
 }
 
-async function prefetch(key: string, url: string, onData: (data: unknown) => void): Promise<void> {
+async function prefetch(
+  key: string,
+  url: string,
+  onData: (data: unknown) => void,
+  customerId?: string
+): Promise<void> {
   if (inFlight.has(key)) return inFlight.get(key);
   if (readWalletCache(key, FRESH_MS) !== null) return;
 
   const task = (async () => {
     try {
-      const data = await fetchJson(url);
+      const data = await fetchJson(url, customerId);
       if (data === null || data === undefined) return;
       onData(data);
     } catch {
@@ -119,7 +125,7 @@ const isGuest = (customerId: string): boolean =>
 export function prefetchSnapshot(customerId: string): Promise<void> {
   if (isGuest(customerId)) return Promise.resolve();
   const key = snapshotCacheKey(customerId);
-  return prefetch(key, '/api/accounts', (data) => writeWalletCache(key, data));
+  return prefetch(key, '/api/accounts', (data) => writeWalletCache(key, data), customerId);
 }
 
 /** Warm one account detail (`GET /api/accounts/{id}`) used by the deep link. */

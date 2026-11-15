@@ -37,8 +37,11 @@ export interface Session {
   updatedAt: number;
 }
 
-export const SESSION_TTL_MS = 30 * 60 * 1000;
-export const MAX_SESSIONS = 50;
+// Demo sessions must survive an idle judge's deliberation. The client can also
+// recover a lost session from the customer id, but a long TTL keeps the common
+// case (nobody touched the demo for an hour) working without a round trip.
+export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+export const MAX_SESSIONS = 500;
 export const MAX_CONTENT_ENTRIES = 40;
 
 interface SessionGlobal {
