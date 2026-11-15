@@ -13,7 +13,6 @@
   let position = $state(0);
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
   onDestroy(() => clearTimeout(settleTimer));
-  let touchStartY: number | null = null;
   const index = $derived(Math.max(0, Math.min(ordered.length - 1, Math.round(position))));
   const selected = $derived(ordered[index]);
   const name = (customer: Customer) => `${customer.firstName} ${customer.lastName}`.trim() || 'Account';
@@ -33,7 +32,7 @@
     }
   }
   function scrollAccounts(event: WheelEvent) {
-    if (!ordered.length || !wheel || event.ctrlKey) return;
+    if (!ordered.length || !wheel || event.ctrlKey || matchMedia('(max-width: 690px), (pointer: coarse)').matches) return;
     event.preventDefault();
     const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 228 : 1);
     clearTimeout(settleTimer);
@@ -43,16 +42,6 @@
     position = top / 76;
     settleTimer = setTimeout(() => select(Math.round(position)), 160);
   }
-  function touchstart(event: TouchEvent) {
-    touchStartY = event.touches[0]?.clientY ?? null;
-  }
-  function touchmove(event: TouchEvent) {
-    if (touchStartY === null || !ordered.length) return;
-    const y = event.touches[0]?.clientY;
-    if (y === undefined) return;
-    const delta = touchStartY - y;
-    if (Math.abs(delta) >= 36) { select(index + Math.sign(delta)); touchStartY = y; }
-  }
   function keydown(event: KeyboardEvent) {
     const next = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: ordered.length - 1 }[event.key];
     if (next !== undefined) { event.preventDefault(); event.stopPropagation(); select(next); }
@@ -61,9 +50,9 @@
 
 <svelte:window onkeydown={stageKeydown} />
 
-<!-- The whole stage is the wheel's gesture surface; the listbox exposes keyboard semantics. -->
+<!-- Desktop wheel gestures use the whole stage; touch scrolling stays native to the listbox. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="account-stage" id="account-list" onwheel={scrollAccounts} ontouchstart={touchstart} ontouchmove={touchmove} ontouchend={() => { touchStartY = null; }} ontouchcancel={() => { touchStartY = null; }}>
+<div class="account-stage" id="account-list" onwheel={scrollAccounts}>
   <button class="back" onclick={onclose}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg> Back</button>
   <div class="picker-content">
     <h2>Hey, who’s there?</h2>
@@ -101,7 +90,7 @@
 </div>
 
 <style>
-  .account-stage { position: absolute; inset: 0; z-index: 3; color: #f7ffe8; display: grid; place-items: center; padding: 76px 24px; touch-action: pan-x; box-sizing: border-box; animation: arrive 650ms 220ms both; }
+  .account-stage { position: absolute; inset: 0; z-index: 3; color: #f7ffe8; display: grid; place-items: center; padding: 76px 24px; box-sizing: border-box; animation: arrive 650ms 220ms both; }
   .back { position: absolute; top: 28px; left: 32px; display: flex; gap: 12px; align-items: center; padding: 10px 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
   .picker-content { width: min(100%, 560px); }
   h2 { font-size: clamp(36px, 5vw, 60px); line-height: 1.06; letter-spacing: -.055em; font-weight: 650; margin: 0 0 12px; }
@@ -119,6 +108,7 @@
   .retry { padding: 12px 24px; border: 1px solid currentColor; border-radius: 30px; color: inherit; background: transparent; cursor: pointer; font: inherit; }
   a:focus-visible, button:focus-visible, .wheel:focus-visible { outline: 2px solid #fffce8; outline-offset: 5px; }
   @keyframes arrive { from { opacity: 0; translate: 0 22px; } to { opacity: 1; translate: 0 0; } }
+  @media (max-width: 690px), (pointer: coarse) { .wheel { scroll-snap-type: y mandatory; } }
   @media (max-width: 690px) { .account-stage { padding: 76px 20px; } .back { left: 24px; top: 18px; } }
   @media (prefers-reduced-motion: reduce) { .account-stage { animation: none; } .continue { transition: none; } }
 </style>
