@@ -11,14 +11,12 @@
 
 	let {
 		customerId = null,
-		backHref = '/dashboard',
 		fill = false,
 		embedded = false,
 		reportOverride = null,
 		theme = $bindable<Theme>(readTheme())
 	}: {
 		customerId?: string | null;
-		backHref?: string;
 		/** Fill the parent box (used by the resizable preview) instead of the viewport. */
 		fill?: boolean;
 		/**
@@ -268,7 +266,6 @@
 							<p>Hover over or tap a slice of the chart to see its biggest purchases.</p>
 						</div>
 					{/if}
-					<a class="cta" href={backHref}>View all activity <CategoryIcon id="chevron" size={14} /></a>
 				</section>
 			{/if}
 		</div>
@@ -329,14 +326,24 @@
 	   instead of collapsing a `flex: 1` child to zero. The list body keeps a
 	   fixed minimum so picking a category does not resize the card. */
 	.cw.embedded .card > .grid { flex: none; }
-	.cw.embedded .items,
-	.cw.embedded .pick {
+	.cw.embedded .items {
 		flex: none;
 		min-height: 198px;
 	}
-	.cw.embedded .card[data-density='short'] .items,
-	.cw.embedded .card[data-density='short'] .pick {
+	/* The empty pick panel reserves the same height as the populated panel:
+	   44px list head + 8px margin + 198px items = 250px. */
+	.cw.embedded .pick {
+		flex: none;
+		min-height: 250px;
+	}
+	.cw.embedded .card[data-density='short'] .items {
+		flex: none;
 		min-height: 124px;
+	}
+	/* Short density: 30px list head + 3px margin + 124px items = 157px. */
+	.cw.embedded .card[data-density='short'] .pick {
+		flex: none;
+		min-height: 157px;
 	}
 	.cw[data-theme='dark'] { --dark: initial; --light: ; }
 	@media (prefers-color-scheme: dark) { .cw[data-theme='system'] { --dark: initial; --light: ; } }
@@ -501,8 +508,6 @@
 	.item-text small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.item-val { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 	.empty { padding: 10px 6px; color: var(--muted); font-size: 13px; }
-	.cta { flex: none; display: inline-flex; align-items: center; gap: 2px; margin-top: 6px; color: var(--link); font-size: 13px; font-weight: 650; text-decoration: none; }
-	.cta:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 	.state { position: absolute; inset: 0; z-index: 2; display: grid; gap: 12px; place-content: center; justify-items: center; padding: 32px; color: var(--muted); text-align: center; }
 	.solid { min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--link); color: #fff; font-weight: 700; cursor: pointer; }
@@ -520,7 +525,6 @@
 	.card[data-layout='wide'] .chart { align-self: center; }
 	/* purchases run the full height of the right side */
 	.card[data-layout='wide'] .list { align-self: stretch; }
-	.card[data-layout='wide'] .list .cta { margin-top: auto; }
 
 	/* ---- Compact widths: tighter chrome, smaller logo, bigger sky ---- */
 	.card[data-mode='compact'] .grid { gap: 12px 10px; padding-left: 12px; padding-right: 12px; padding-bottom: 14px; }
@@ -550,5 +554,4 @@
 	.card[data-density='short'] .pick-icon { width: 28px; height: 28px; margin-bottom: 0; }
 	.card[data-density='short'] .pick h2 { font-size: 13.5px; }
 	.card[data-density='short'] .pick p { font-size: 11.5px; }
-	.card[data-density='short'] .cta { margin-top: 2px; font-size: 12px; }
 </style>

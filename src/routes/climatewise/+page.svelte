@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { customerHref } from '$lib/customerSelection';
 	import ClimateWisePage from '$lib/climate/ClimateWisePage.svelte';
 	import { classifyClimateSize } from '$lib/climate/layout';
 
 	let customerId = $derived(page.url.searchParams.get('customer'));
-	let dashboardHref = $derived(customerHref('/dashboard', customerId));
 
 	const MIN_W = 320;
 	const MIN_H = 420;
@@ -105,7 +103,7 @@
 
 	<div class="stage-shell">
 		<div class="stage" style="width:{width}px;height:{height}px">
-			<ClimateWisePage fill {customerId} backHref={dashboardHref} />
+			<ClimateWisePage fill {customerId} />
 			<!-- A two-axis resize handle: separator semantics plus pointer/keyboard handling. -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

@@ -538,14 +538,36 @@ test.describe('chat prompts', () => {
     ).toBe(false);
     await expect(page.locator('.bubble.assistant .climatewise-chat-card')).toHaveCount(0);
 
+    // The card keeps the same height in the empty pick state, on hover, and after
+    // selecting/deselecting a category. Only the list body's contents may change.
+    const emptyHeight = (await card.boundingBox())?.height ?? 0;
+    expect(emptyHeight, 'the card has a measurable height').toBeGreaterThan(0);
+
+    await card.locator('.ring .seg[aria-label^="Travel & transport:"]').hover();
+    await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
+    const hoverHeight = (await card.boundingBox())?.height ?? 0;
+    expect(
+      Math.abs(hoverHeight - emptyHeight),
+      'hovering a ring slice does not resize the card'
+    ).toBeLessThanOrEqual(1);
+
+    // Clicking another category also leaves the card the same size.
+    await card.getByRole('button', { name: /Food & dining:/ }).click();
+    await expect(card.locator('.list-head h2')).toHaveText('Food & dining');
+    const selectedHeight = (await card.boundingBox())?.height ?? 0;
+    expect(
+      Math.abs(selectedHeight - emptyHeight),
+      'selecting a category does not resize the card'
+    ).toBeLessThanOrEqual(1);
+
     // Selecting a ring slice reveals that category's purchases.
     await card.getByRole('button', { name: /Travel & transport:/ }).click();
     await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
     await expect(card.locator('.items .item')).toHaveCount(1);
     await expect(card.locator('.items .item')).toContainText('SHELL');
 
-    const cta = card.getByRole('link', { name: 'View all activity' });
-    await expect(cta).toHaveAttribute('href', /\/dashboard\?customer=/);
+    // The card no longer carries a "View all activity" call to action.
+    await expect(card.getByRole('link', { name: 'View all activity' })).toHaveCount(0);
 
     // The card reuses the insight report and never refetches /api/climate.
     expect(climateRequests, 'the chat card must not call /api/climate').toBe(0);
