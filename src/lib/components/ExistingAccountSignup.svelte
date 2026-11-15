@@ -3,6 +3,7 @@
   import { createConversationPacer } from '$lib/conversationPacing';
   import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import { finishAccountSetup } from '$lib/accountSetup';
+  import { accountSetupJoke } from '$lib/accountSetupMessages';
   import { fetchWithSession } from '$lib/sessionRecovery';
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
@@ -107,7 +108,7 @@
     }
     submitting = true;
     const labels = available.filter((option) => selected.includes(option.id)).map((option) => option.label);
-    await addEno(`On it — gotta make a couple hundred demo purchases real quick ;) I’m getting ${labels.join(' and ')} ready, then it’s straight back to your dashboard.`);
+    await addEno(`On it! ${accountSetupJoke()} I’m getting ${labels.join(' and ')} ready, then it’s straight back to your dashboard.`);
     if (disposed) return;
     try {
       const response = await fetchWithSession('/api/accounts/open', {

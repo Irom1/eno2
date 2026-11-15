@@ -141,7 +141,7 @@ describe('anomalyTransactionCards', () => {
     expect(cards.map((card) => card.payload.flag)).toEqual(['unusual', 'unusual', 'unusual']);
   });
 
-  it('shows all findings up to the default cap and honours a custom cap', () => {
+  it('shows every finding by default and honours an explicit custom cap', () => {
     const findings = Array.from({ length: 9 }, (_, index) => ({
       type: 'outlier',
       description: `CHARGE ${index}`,
@@ -149,7 +149,7 @@ describe('anomalyTransactionCards', () => {
       date: '2026-11-01'
     }));
 
-    expect(anomalyTransactionCards(payload(findings), 0, 1)).toHaveLength(8);
+    expect(anomalyTransactionCards(payload(findings), 0, 1)).toHaveLength(9);
     expect(anomalyTransactionCards(payload(findings), 0, 1, { cap: 1 })).toHaveLength(1);
     expect(anomalyTransactionCards(payload(findings), 0, 1, { cap: 0 })).toEqual([]);
   });
@@ -736,7 +736,7 @@ describe('mergeEntityCards', () => {
     };
   }
 
-  it('merges by entityId, preserves first occurrence order, and caps at 8 by default', () => {
+  it('merges by entityId and preserves first occurrence order', () => {
     const merged = mergeEntityCards(
       [card(1, 'a'), card(2, 'b')],
       [card(3, 'a'), card(4, 'c'), card(5, 'd')]
@@ -751,7 +751,7 @@ describe('mergeEntityCards', () => {
     expect(merged.map((entry) => entry.entityId)).toEqual(['a', 'b']);
   });
 
-  it('preserves transaction-list and pie cards while showing up to 8 anomaly cards', () => {
+  it('preserves transaction-list and pie cards alongside anomaly cards', () => {
     const list = transactionListCard(
       { items: [{ _id: 't-1', description: 'Coffee', amount: 4.5 }] },
       10,

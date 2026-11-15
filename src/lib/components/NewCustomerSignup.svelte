@@ -5,6 +5,7 @@
   import ThemeIcon from '$lib/components/ThemeIcon.svelte';
   import { createConversationPacer } from '$lib/conversationPacing';
   import { finishAccountSetup } from '$lib/accountSetup';
+  import { accountSetupJoke } from '$lib/accountSetupMessages';
   import { asksToConfirmAddress, isAffirmative, reviewFingerprint as profileFingerprint } from '$lib/signupConfirmation';
   import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
@@ -248,7 +249,7 @@
 
   async function submit() {
     submitting = true;
-    await addEno(accountChoice === 'none' && !matchingCard ? `You got it, ${answers.first_name}. I’m getting your space ready.` : `You got it, ${answers.first_name}. Gotta make a couple hundred demo purchases real quick ;) Hang tight while I get your accounts ready.`);
+    await addEno(accountChoice === 'none' && !matchingCard ? `You got it, ${answers.first_name}. I’m getting your space ready.` : `You got it, ${answers.first_name}. ${accountSetupJoke()} Hang tight while I get your accounts ready.`);
     if (disposed) return;
     void settle();
     try {

@@ -418,8 +418,8 @@ export function transactionCard(
 
 /**
  * Normalize insight_anomalies findings into single-transaction cards: one card
- * per finding, capped at 8 by default for layout/performance. The old 1–2 card
- * budget was a layout budget, not a limit on flagged findings. Malformed
+ * per finding. An explicit caller cap is honored, but the default never
+ * silently drops findings from a suspicious-activity scan. Malformed
  * payloads and entries are skipped rather than thrown on.
  */
 export function anomalyTransactionCards(
@@ -428,7 +428,7 @@ export function anomalyTransactionCards(
   startId: number,
   context?: TransactionCardContext
 ): TransactionEntityCard[] {
-  const limit = normalizeCap(context?.cap ?? 8);
+  const limit = normalizeCap(context?.cap ?? Number.MAX_SAFE_INTEGER);
   if (limit === 0) return [];
 
   try {
@@ -1968,12 +1968,18 @@ export function completeAnomalyContext(text: string, cards: EntityCard[]): strin
     const token = firstMeaningfulToken(keys);
     const reason = card.payload.flag === 'duplicate'
       ? /same (?:amount|merchant)|charged (?:twice|again)|(?:duplicate|repeat).{0,80}(?:days?|twice|again|amount)/i
-      : /(?:larger|higher|large|high).{0,80}(?:usual|typical|recent|other|normal)|(?:usual|typical|recent|other|normal).{0,80}(?:larger|higher|large|high)/i;
+      : /\b(?:larger|higher|large|high)\b.{0,80}\b(?:usual|typical|recent|other|normal)\b|\b(?:usual|typical|recent|other|normal)\b.{0,80}\b(?:larger|higher|large|high)\b/i;
     const explained = segments.some((segment) => findTokenMatch(tokenize(segment), keys, 0) !== null && reason.test(segment)) ||
       (!!token && segments.some((segment) => findTokenMatch(tokenize(segment), [token], 0) !== null && reason.test(segment)));
     if (!explained) additions.push(anomalyContextSentence(card));
   }
-  return [source.trim(), ...new Set(additions)].filter(Boolean).join('\n\n');
+  if (!additions.length) return source.trim();
+  // Keep the next step after every explanation/card. Otherwise appending a
+  // missing reason can strand the model's closing advice above the last card.
+  const closingAt = source.search(/\b(?:If you don[’']t recognize|You can review|You can check|You can report)\b/i);
+  const before = closingAt < 0 ? source.trim() : source.slice(0, closingAt).trim();
+  const closing = closingAt < 0 ? '' : source.slice(closingAt).trim();
+  return [before, ...new Set(additions), closing].filter(Boolean).join('\n\n');
 }
 
 /**
@@ -1990,8 +1996,7 @@ export function anomalyExplanation(cards: EntityCard[]): string {
           typeof card === 'object' &&
           !Array.isArray(card) &&
           card.kind === 'transaction' && !!card.payload.flag
-      )
-      .slice(0, 8);
+      );
     if (transactions.length === 0) return '';
 
     // Lead with the unusual amount, matching the prose rhythm.
@@ -2007,7 +2012,7 @@ export function anomalyExplanation(cards: EntityCard[]): string {
 
 /**
  * Merge anomaly transaction cards by entityId. Every flagged transaction gets
- * its own inline card, capped at 8 by default for layout/performance; the old
+ * its own inline card without a default cutoff; the old
  * 1–2 budget applied to other cards, not anomaly findings. Non-transaction
  * cards already present (for example a transaction list or a pie) are
  * preserved unchanged and never count toward `cap`. Result order: preserved
@@ -2018,7 +2023,7 @@ export function anomalyExplanation(cards: EntityCard[]): string {
 export function mergeEntityCards(
   existing: EntityCard[],
   incoming: EntityCard[],
-  cap = 8
+  cap = Number.MAX_SAFE_INTEGER
 ): EntityCard[] {
   const limit = normalizeCap(cap);
 

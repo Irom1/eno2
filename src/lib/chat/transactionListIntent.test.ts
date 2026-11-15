@@ -25,4 +25,10 @@ describe('shouldInferTransactionList', () => {
     expect(infer('Where do I shop most?')).toBe(false);
     expect(infer('Show my top merchant transactions')).toBe(false);
   });
+
+  it('does not infer a whole feed for a single transaction or a correction about a previous list', () => {
+    expect(infer('Is this transaction suspicious?')).toBe(false);
+    expect(infer('Why was that transaction missing when I asked for suspicious transactions?')).toBe(false);
+    expect(infer('Show me suspicious transactions')).toBe(false);
+  });
 });
