@@ -58,7 +58,7 @@ export const products = {
     name: 'Discover it Cash Back',
     url: 'https://www.discover.com/credit-cards/cash-back/it-card/',
     gradient: discoverGradient,
-    ink: '#fff'
+    ink: '#1c2633'
   }
 } as const;
 

@@ -14,8 +14,8 @@ describe('products', () => {
     expect(gradient.endsWith('#96b8e8')).toBe(true);
   });
 
-  it('uses white ink on the Discover it card in both themes', () => {
-    expect(products.discover.ink).toBe('#fff');
+  it('uses dark navy ink on the Discover it card in both themes', () => {
+    expect(products.discover.ink).toBe('#1c2633');
     expect(products.discover.ink).not.toContain('light-dark');
   });
 
