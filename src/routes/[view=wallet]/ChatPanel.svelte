@@ -137,6 +137,14 @@
 
   const conversationHasUserMessage = $derived(messages.some((message) => message.role === 'user'));
 
+  let lastCompletedAssistantId = $derived.by(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === 'assistant' && !message.pending) return message.id;
+    }
+    return 0;
+  });
+
   const suggestions = $derived.by(() => {
     if (streaming || customerId === GUEST_CUSTOMER_ID) return [];
     if (!conversationHasUserMessage) return [...STARTER_PROMPTS];
@@ -872,7 +880,7 @@
 >
   <div class="chat-log" role="log" aria-relevant="additions text" aria-live="polite" aria-label="Conversation">
     {#if speechNotice}<p class="speech-notice" role="status">{speechNotice}</p>{/if}
-    {#each messages as message, messageIndex (message.id)}
+    {#each messages as message (message.id)}
       {#if message.role === 'user'}
         <div class="from-you">
           <div class="bubble user">{message.text}</div>
@@ -915,7 +923,7 @@
                   <ChatCardView
                     card={group.card}
                     {variant}
-                    tail={messageIndex === messages.length - 1 &&
+                    tail={message.id === lastCompletedAssistantId &&
                       groupIndex === groups.length - 1 &&
                       !message.pending}
                   />

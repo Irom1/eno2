@@ -980,9 +980,15 @@ test.describe('chat prompts', () => {
       `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
     ].join('\n\n');
 
+    let releaseFollowUp: () => void = () => {};
+    const followUpGate = new Promise<void>((resolve) => {
+      releaseFollowUp = resolve;
+    });
+
     let requests = 0;
     await page.route('**/api/chat', async (route) => {
       requests += 1;
+      if (requests > 1) await followUpGate;
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -1011,9 +1017,26 @@ test.describe('chat prompts', () => {
     );
     expect(parseFloat(tailed.topLeft), 'the tailed card keeps rounded corners').toBeGreaterThan(0);
 
-    // A later assistant message arrives, so the earlier card is no longer the
-    // final content and returns to a fully rounded bubble.
-    await askChat(page, 'Thanks!');
+    // A later user turn starts: while the next assistant turn is pending, the
+    // earlier card is still the last completed bot content, so the tail stays.
+    const composer = page.locator('textarea[aria-label="Ask Capital One"]');
+    await composer.fill('Thanks!');
+    await composer.press('Enter');
+    await expect(page.locator('.from-you')).toHaveCount(2);
+    await expect(page.locator('.thinking-row')).toBeVisible();
+    const throughUserTurn = await readRadius();
+    expect(
+      parseFloat(throughUserTurn.bottomLeft),
+      'the previous card keeps the sharp tail while the next turn is pending'
+    ).toBeLessThanOrEqual(0.1);
+
+    // Once the later assistant message completes, the earlier card is no longer
+    // the final completed bot content and returns to a fully rounded bubble.
+    releaseFollowUp();
+    await expect(
+      page.getByText('Happy to help — ask me anything else about your money.')
+    ).toBeVisible({ timeout: 20_000 });
+    await waitForChatSettled(page);
     await expect(page.locator('.climatewise-chat-card article.card')).toHaveCount(1);
     const earlier = await readRadius();
     expect(
