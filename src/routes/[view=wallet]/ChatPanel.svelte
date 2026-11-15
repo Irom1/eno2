@@ -137,14 +137,6 @@
 
   const conversationHasUserMessage = $derived(messages.some((message) => message.role === 'user'));
 
-  let lastCompletedAssistantId = $derived.by(() => {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message.role === 'assistant' && !message.pending) return message.id;
-    }
-    return 0;
-  });
-
   const suggestions = $derived.by(() => {
     if (streaming || customerId === GUEST_CUSTOMER_ID) return [];
     if (!conversationHasUserMessage) return [...STARTER_PROMPTS];
@@ -923,9 +915,7 @@
                   <ChatCardView
                     card={group.card}
                     {variant}
-                    tail={message.id === lastCompletedAssistantId &&
-                      groupIndex === groups.length - 1 &&
-                      !message.pending}
+                    tail={groupIndex === groups.length - 1 && !message.pending}
                   />
                 {/if}
               {/each}

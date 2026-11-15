@@ -920,7 +920,7 @@ test.describe('chat prompts', () => {
     expectNoErrors(errors);
   });
 
-  test('an earlier ClimateWise card rounds again after a later message', async ({ page }) => {
+  test('an earlier ClimateWise card keeps its sharp tail after a later message', async ({ page }) => {
     const errors = collectErrors(page);
     await loadChat(page);
 
@@ -1018,7 +1018,8 @@ test.describe('chat prompts', () => {
     expect(parseFloat(tailed.topLeft), 'the tailed card keeps rounded corners').toBeGreaterThan(0);
 
     // A later user turn starts: while the next assistant turn is pending, the
-    // earlier card is still the last completed bot content, so the tail stays.
+    // earlier card keeps the tail it earned as the last content of its own
+    // completed bot turn.
     const composer = page.locator('textarea[aria-label="Ask Capital One"]');
     await composer.fill('Thanks!');
     await composer.press('Enter');
@@ -1030,8 +1031,9 @@ test.describe('chat prompts', () => {
       'the previous card keeps the sharp tail while the next turn is pending'
     ).toBeLessThanOrEqual(0.1);
 
-    // Once the later assistant message completes, the earlier card is no longer
-    // the final completed bot content and returns to a fully rounded bubble.
+    // Once the later assistant message completes, the earlier card is still the
+    // last group of its own bot turn, so it keeps the sharp tail instead of
+    // rounding again.
     releaseFollowUp();
     await expect(
       page.getByText('Happy to help — ask me anything else about your money.')
@@ -1041,11 +1043,108 @@ test.describe('chat prompts', () => {
     const earlier = await readRadius();
     expect(
       parseFloat(earlier.bottomLeft),
-      'an earlier card rounds its bottom-left corner again'
+      'the earlier card keeps the sharp tail after a later message'
+    ).toBeLessThanOrEqual(0.1);
+    expect(
+      parseFloat(earlier.topLeft),
+      'the earlier card keeps its rounded top-left corner'
+    ).toBeGreaterThan(0);
+
+    expectNoErrors(errors);
+  });
+
+  test('a ClimateWise card followed by prose in the same bot turn stays rounded', async ({
+    page
+  }) => {
+    const errors = collectErrors(page);
+    await loadChat(page);
+
+    const report = {
+      asOf: '2026-11-14',
+      days: 90,
+      totalKg: 412.4,
+      totalSpend: 3000,
+      purchaseCount: 42,
+      kgPerDollar: 0.14,
+      annualizedTonnes: 1.67,
+      benchmarkTonnes: 16,
+      targetTonnes: 2.5,
+      score: 712,
+      tier: 'Good',
+      categories: [
+        {
+          id: 'transport',
+          label: 'Travel & transport',
+          color: '#c4562e',
+          kg: 180.2,
+          spend: 62,
+          count: 3,
+          share: 0.43,
+          weight: 0.27
+        }
+      ],
+      nudges: [],
+      topPurchases: [
+        {
+          id: 'tx-1',
+          kind: 'withdrawal',
+          amount: 62,
+          description: 'SHELL',
+          date: '2026-10-01',
+          category: 'transport',
+          kg: 120.2
+        }
+      ],
+      greenness: { ratings: [], greenShare: 0.42, flexibleSpend: 3200, fixedSpend: 1620 },
+      equivalents: { milesDriven: 3120, treeSeedlings: 41 }
+    };
+
+    // The card arrives between two prose deltas of the same assistant message,
+    // so it is not the last rendered group of the turn.
+    const events = [
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Here is what goes into your LORAX® Score: '
+      })}`,
+      `event: insight\ndata: ${JSON.stringify({
+        type: 'insight',
+        kind: 'insight_climatewise',
+        payload: report
+      })}`,
+      `event: text\ndata: ${JSON.stringify({
+        type: 'text',
+        delta: 'Ask me about any category to dig into the purchases behind it.'
+      })}`,
+      `event: done\ndata: ${JSON.stringify({ type: 'done', sessionId: 'test-session' })}`
+    ].join('\n\n');
+
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: `${events}\n\n`
+      });
+    });
+
+    await askChat(page, "What's my LORAX® Score?");
+    const card = page.locator('.climatewise-chat-card article.card');
+    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    await waitForChatSettled(page);
+
+    const radius = await card.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        topLeft: style.borderTopLeftRadius,
+        bottomLeft: style.borderBottomLeftRadius
+      };
+    });
+    expect(
+      parseFloat(radius.bottomLeft),
+      'a card followed by prose in the same turn stays fully rounded'
     ).toBeGreaterThan(0);
     expect(
-      Math.abs(parseFloat(earlier.bottomLeft) - parseFloat(earlier.topLeft)),
-      'the earlier card bottom-left radius matches the top-left radius'
+      Math.abs(parseFloat(radius.bottomLeft) - parseFloat(radius.topLeft)),
+      'the rounded card matches its top-left radius'
     ).toBeLessThanOrEqual(1);
 
     expectNoErrors(errors);
