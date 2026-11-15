@@ -273,7 +273,36 @@ test.describe('360x640 keyboard viewport', () => {
     await expect(card.locator('.list .chart-title')).toHaveText('Carbon emissions by category');
     await expect(card.locator('.list .chart-title')).toBeVisible();
     await expect(card.locator('.chart .chart-title')).toHaveCount(0);
-    await expect(card.locator('.chart .info')).toBeVisible();
+
+    // The info control owns the card's top-right corner and opens a popover.
+    const info = card.locator('.chart .info');
+    await expect(info).toBeVisible();
+    const infoPlacement = await card.evaluate((element) => {
+      const chart = element.querySelector('.chart')?.getBoundingClientRect();
+      const button = element.querySelector('.chart .info')?.getBoundingClientRect();
+      if (!chart || !button) return null;
+      return {
+        chartTop: chart.top,
+        chartRight: chart.right,
+        infoTop: button.top,
+        infoRight: button.right
+      };
+    });
+    expect(infoPlacement, 'the info button has a measurable position').not.toBeNull();
+    if (infoPlacement) {
+      expect(Math.abs(infoPlacement.infoTop - infoPlacement.chartTop)).toBeLessThanOrEqual(2);
+      expect(Math.abs(infoPlacement.infoRight - infoPlacement.chartRight)).toBeLessThanOrEqual(2);
+    }
+    await info.click();
+    await expect(card.locator('#score-info')).toBeVisible();
+    await expect(card.locator('#score-info')).toContainText('ClimateWise score estimated');
+    await info.click();
+    await expect(card.locator('#score-info')).toHaveCount(0);
+
+    // The full card keeps fixed dimensions as the category state changes.
+    const cardEl = card.locator('article.card');
+    const pickBox = await cardEl.boundingBox();
+    expect(pickBox, 'the card has a measurable box').not.toBeNull();
 
     // Standalone: never folded into the prose bubble.
     expect(
@@ -305,14 +334,53 @@ test.describe('360x640 keyboard viewport', () => {
     ).toBeLessThanOrEqual(sizes.containerWidth * 0.88 + 1);
     await expectNoHorizontalOverflow(page);
 
+    // Highlighting a ring slice hides the panel title and shows that category.
+    // The SVG donut's centre is not a hit-testable part of the segment, so use
+    // the segment's focus handler (the same `hovered` state a pointer uses).
+    const travelSeg = card.getByRole('button', { name: /Travel & transport:/ });
+    await travelSeg.focus();
+    await expect(card.locator('.list .chart-title')).toBeHidden();
+    await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
+    const hoverBox = await cardEl.boundingBox();
+
     // Ring/category pick reveals the report's purchase rows. The SVG donut's
     // centre is not a hit-testable part of the segment, so activate the
     // segment with the keyboard (same toggle handler as a tap).
-    await card.getByRole('button', { name: /Travel & transport:/ }).press('Enter');
+    await travelSeg.press('Enter');
     await expect(card.locator('.list-head h2')).toHaveText('Travel & transport');
     await expect(card.locator('.list .chart-title')).toBeHidden();
     await expect(card.locator('.items .item')).toHaveCount(1);
     await expect(card.locator('.items .item')).toContainText(/shell/i);
+    const selectedBox = await cardEl.boundingBox();
+    await expectNoHorizontalOverflow(page);
+
+    // Clearing the selection restores the pick state and its visible title.
+    await card.getByRole('button', { name: 'Clear' }).click();
+    await expect(card.locator('.pick')).toBeVisible();
+    await expect(card.locator('.list .chart-title')).toBeVisible();
+    const clearedBox = await cardEl.boundingBox();
+
+    console.log(
+      '[360x640 climatewise states]',
+      JSON.stringify({ infoPlacement, pickBox, hoverBox, selectedBox, clearedBox })
+    );
+
+    for (const [state, box] of [
+      ['hover', hoverBox],
+      ['selected', selectedBox],
+      ['cleared', clearedBox]
+    ] as const) {
+      expect(box, `the card box remains measurable in the ${state} state`).not.toBeNull();
+      if (!pickBox || !box) continue;
+      expect(
+        Math.abs(box.width - pickBox.width),
+        `the card width changes in the ${state} state`
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(box.height - pickBox.height),
+        `the card height changes in the ${state} state`
+      ).toBeLessThanOrEqual(1);
+    }
     await expectNoHorizontalOverflow(page);
 
     expectNoErrors(errors);
