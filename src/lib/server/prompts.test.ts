@@ -177,7 +177,7 @@ describe("buildSystemInstruction", () => {
       "- insight_climatewise for the ClimateWise/LORAX score, purchase emissions, and the biggest emitting categories."
     );
     expect(instruction).toContain(
-      "For a ClimateWise question, call insight_climatewise and show the single climate card; explain what the score means and name the biggest emitting category and one nudge, but do not restate the card's score, tier, kilograms, or days."
+      "For a ClimateWise question, call insight_climatewise and show the single full ClimateWise card; it renders standalone with the score, ring, categories, and purchase rows. Explain what the score means or add a nudge, but do not restate the card's score, tier, kilograms, days, categories, or purchase rows."
     );
     expect(instruction).toContain(
       "For a spending pie, do not restate the period, total, category amounts, shares, or transaction count. Explain what the mix means (fixed vs discretionary) and give one next step."

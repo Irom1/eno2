@@ -158,7 +158,7 @@ export const PRIMITIVE_CARD_SELECTOR = [
   '.cashflow-card',
   '.merchant-card',
   '.profile-card',
-  '.climatewise-card'
+  '.climatewise-chat-card'
 ].join(', ');
 
 /** Count of rendered primitive card shells. */
@@ -190,7 +190,8 @@ export async function assistantText(page: Page): Promise<string> {
  * no lift shadow, no accent strip, and a width capped by the bubble. Multi or
  * series cards (`transaction-list`, `spending-pie`) stay standalone: a framed
  * `.entity-card` surface with lift, a border, left alignment, and the same 88%
- * column cap as the Eno chat bubble.
+ * column cap as the Eno chat bubble. The full ClimateWise card is standalone
+ * without a second `CardFrame`: its own `article.card` surface is the frame.
  */
 export async function expectCardStyle(page: Page): Promise<void> {
   await expect(
@@ -206,9 +207,10 @@ export async function expectCardStyle(page: Page): Promise<void> {
     cards.map((card) => {
       const bubble = card.closest('.bubble.assistant');
       const inline = Boolean(bubble);
+      const fullCard = card.classList.contains('climatewise-chat-card');
       const frame = card.closest('.entity-card');
       const bubbleRect = bubble?.getBoundingClientRect();
-      const target = frame ?? card;
+      const target = frame ?? (fullCard ? card.querySelector('.card') ?? card : card);
       const style = getComputedStyle(target);
       const accent = getComputedStyle(target, '::before');
       const column = target.closest('.assistant-content');
@@ -216,6 +218,7 @@ export async function expectCardStyle(page: Page): Promise<void> {
       const columnRect = column?.getBoundingClientRect();
       return {
         inline,
+        fullCard,
         framed: Boolean(frame),
         shadow: style.boxShadow,
         borderTopWidth: Number.parseFloat(style.borderTopWidth),
@@ -251,6 +254,29 @@ export async function expectCardStyle(page: Page): Promise<void> {
       expect(
         surface.withinInlineBubbleWidth,
         'inline cards must not exceed the assistant bubble width'
+      ).toBe(true);
+      continue;
+    }
+
+    if (surface.fullCard) {
+      // The full ClimateWise card owns its surface; there is no second frame.
+      expect(surface.framed, 'the full ClimateWise card must not be double-framed').toBe(
+        false
+      );
+      expect(surface.shadow, 'the full ClimateWise card lifts off the chat surface').not.toBe(
+        'none'
+      );
+      expect(
+        ['none', 'normal'],
+        'the full ClimateWise card must not render a ::before accent bar'
+      ).toContain(surface.accentContent);
+      expect(
+        surface.leftAligned,
+        'the full ClimateWise card aligns to the assistant content column left edge'
+      ).toBe(true);
+      expect(
+        surface.withinBubbleWidth,
+        'the full ClimateWise card must not exceed the 88% assistant column width'
       ).toBe(true);
       continue;
     }

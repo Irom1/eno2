@@ -123,6 +123,20 @@ describe('groupInlineCards', () => {
     ]);
   });
 
+  it('emits the full climatewise card standalone', () => {
+    const climatewise: EntityCard = {
+      id: 9,
+      entityId: 'climatewise',
+      kind: 'climatewise',
+      payload: { report: { score: 712 } }
+    } as EntityCard;
+    expect(shape(groupInlineCards([text('Your footprint: '), cards(climatewise)]))).toEqual([
+      { inline: [{ text: 'Your footprint: ' }] },
+      { card: 9 }
+    ]);
+    expect(isInlineCard(climatewise)).toBe(false);
+  });
+
   it('emits ATM location cards standalone, leaving the prose as its own inline group', () => {
     expect(shape(groupInlineCards([text('Nearby: '), cards(atm(5))]))).toEqual([
       { inline: [{ text: 'Nearby: ' }] },
@@ -177,6 +191,7 @@ describe('groupInlineCards', () => {
   it('classifies standalone kinds', () => {
     expect(isInlineCardKind('transaction-list')).toBe(false);
     expect(isInlineCardKind('spending-pie')).toBe(false);
+    expect(isInlineCardKind('climatewise')).toBe(false);
     expect(isInlineCardKind('transaction')).toBe(true);
     expect(isInlineCardKind('bill')).toBe(true);
   });

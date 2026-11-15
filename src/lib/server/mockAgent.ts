@@ -539,9 +539,9 @@ function topMerchantsAnswer(data: unknown): string {
 }
 
 /**
- * ClimateWise prose. The card already shows the score, tier, total kg, and
- * window, so the answer explains the biggest driver and the top nudge instead
- * of restating those values.
+ * ClimateWise prose. The full adaptive card already shows the score, tier,
+ * total kg, category ring, and purchase rows, so the answer adds interpretation
+ * and a nudge instead of restating any of those values.
  */
 function climateAnswer(data: unknown): string {
   const payload = rec(data);
@@ -551,15 +551,13 @@ function climateAnswer(data: unknown): string {
     return "I don't see enough purchase data in this window to estimate your carbon footprint yet.";
   }
 
-  const top = [...categories].sort((a, b) => num(b.kg) - num(a.kg))[0] ?? {};
-  const label = String(top.label ?? "").trim() || "Day-to-day purchases";
   const nudges = (Array.isArray(payload.nudges) ? payload.nudges : []).map(rec);
   const tip = String(nudges[0]?.title ?? "").trim();
   const opportunity = tip
     ? ` You can ${tip.charAt(0).toLowerCase()}${tip.slice(1)} to make the biggest dent.`
     : "";
 
-  return `${label} is the biggest driver of your purchase emissions.${opportunity}`;
+  return `Your everyday purchases add up to a meaningful footprint, and small habit changes can bring it down.${opportunity}`;
 }
 
 function cashflowAnswer(data: unknown, now: Date): string {

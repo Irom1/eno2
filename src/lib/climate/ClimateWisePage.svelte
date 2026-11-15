@@ -12,12 +12,21 @@
 		customerId = null,
 		backHref = '/dashboard',
 		fill = false,
+		embedded = false,
+		reportOverride = null,
 		theme = $bindable<Theme>(readTheme())
 	}: {
 		customerId?: string | null;
 		backHref?: string;
 		/** Fill the parent box (used by the resizable preview) instead of the viewport. */
 		fill?: boolean;
+		/**
+		 * Chat mode: drop the page chrome (min-height, padding, background,
+		 * centering, page controls) and let the card size itself naturally.
+		 */
+		embedded?: boolean;
+		/** Use this report (e.g. the chat insight payload) instead of fetching. */
+		reportOverride?: ClimateReport | null;
 		/** Pass the dashboard's theme in (bind:theme) to keep both pages in sync. */
 		theme?: Theme;
 	} = $props();
@@ -67,7 +76,9 @@
 
 	const DAYS = 90;
 	let attempt = $state(0);
-	let report = $state<ClimateReport | null>(null);
+	let fetchedReport = $state<ClimateReport | null>(null);
+	// The chat passes the insight report in, so the card never refetches.
+	let report = $derived(reportOverride ?? fetchedReport);
 	let error = $state('');
 	let selected = $state<string | null>(null);
 	let showInfo = $state(false);
@@ -93,15 +104,24 @@
 
 	$effect(() => {
 		attempt;
+		const override = reportOverride;
+		if (override) {
+			// The chat already has the insight report; never refetch /api/climate.
+			error = '';
+			fetchedReport = null;
+			hovered = null;
+			selected = null;
+			return;
+		}
 		const controller = new AbortController();
 		error = '';
-		report = null;
+		fetchedReport = null;
 		hovered = null;
 		selected = null;
 		loadReport(customerId, controller.signal)
 			.then((data) => {
 				if (controller.signal.aborted) return;
-				report = data.report;
+				fetchedReport = data.report;
 			})
 			.catch(() => {
 				if (!controller.signal.aborted) error = 'We couldn’t load your ClimateWise report.';
@@ -149,7 +169,7 @@
 	);
 </script>
 
-<div class="cw" class:fill data-theme={theme} style={colorVars}>
+<div class="cw" class:fill class:embedded data-theme={theme} style={colorVars}>
 	<!-- Theme control, matching the dashboard's toggle -->
 	<div class="page-controls">
 		<button class="page-btn" onclick={toggleTheme} aria-pressed={isDark}
@@ -288,6 +308,34 @@
 		display: block;
 		padding: 0;
 		background: transparent;
+	}
+	/* Embedded chat mode: no page chrome, and the card sizes to its content. */
+	.cw.embedded {
+		position: relative;
+		min-height: 0;
+		height: auto;
+		display: block;
+		padding: 0;
+		background: transparent;
+	}
+	.cw.embedded .page-controls { display: none; }
+	.cw.embedded .card {
+		width: 100%;
+		max-width: 100%;
+		height: auto;
+	}
+	/* With no fixed card height, let the grid and list size to their content
+	   instead of collapsing a `flex: 1` child to zero. The list body keeps a
+	   fixed minimum so picking a category does not resize the card. */
+	.cw.embedded .card > .grid { flex: none; }
+	.cw.embedded .items,
+	.cw.embedded .pick {
+		flex: none;
+		min-height: 198px;
+	}
+	.cw.embedded .card[data-density='short'] .items,
+	.cw.embedded .card[data-density='short'] .pick {
+		min-height: 124px;
 	}
 	.cw[data-theme='dark'] { --dark: initial; --light: ; }
 	@media (prefers-color-scheme: dark) { .cw[data-theme='system'] { --dark: initial; --light: ; } }
