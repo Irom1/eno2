@@ -48,7 +48,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       // Wait until the dashboard's closing animation really finishes.
       await expect(page.locator('.account-overview')).toBeHidden();
       expect(await originalGauge!.evaluate((gauge) => gauge.isConnected)).toBe(true);
-      await page.getByRole('link', { name: 'Return to dashboard' }).click();
+      await page.getByRole('link', { name: 'Capital One dashboard' }).click();
       await expect(page).toHaveURL(/\/dashboard\?customer=ada$/);
       await expect(score(page)).toBeVisible();
       expect(await originalGauge!.evaluate((gauge) => gauge.isConnected)).toBe(true);
@@ -63,7 +63,7 @@ test('cached LORAX score survives closing chat, browser refresh, and the full re
   await expect(score(page)).toBeVisible();
   await page.getByRole('textbox', { name: 'Ask Capital One' }).focus();
   await expect(page).toHaveURL(/\/chat\?customer=ada$/);
-  await page.getByRole('link', { name: 'Return to dashboard' }).click();
+  await page.getByRole('link', { name: 'Capital One dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=ada$/);
   await expect(score(page)).toBeVisible();
   expect(state.calls).toEqual(['ada']);
@@ -100,7 +100,7 @@ test('an in-flight score request is reused if chat opens and closes before it fi
   await expect.poll(() => state.calls.length).toBe(1);
   await page.getByRole('textbox', { name: 'Ask Capital One' }).focus();
   await expect(page).toHaveURL(/\/chat\?customer=ada$/);
-  await page.getByRole('link', { name: 'Return to dashboard' }).click();
+  await page.getByRole('link', { name: 'Capital One dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=ada$/);
   state.release();
   await expect(score(page)).toBeVisible();

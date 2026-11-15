@@ -2,12 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400..800&amp;display=swap" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <script>
       document.addEventListener('gesturestart', (event) => event.preventDefault(), { passive: false });
       document.addEventListener('gesturechange', (event) => event.preventDefault(), { passive: false });
     </script>
     <style>
+      :root {
+        --font-sans: "DM Sans", Arial, Helvetica, sans-serif;
+        font-family: var(--font-sans);
+      }
       html, body {
         touch-action: pan-x pan-y;
         -webkit-text-size-adjust: 100%;
@@ -15,6 +22,9 @@
       }
       button, a, input, select, textarea {
         touch-action: manipulation;
+      }
+      button, input, select, textarea {
+        font-family: inherit;
       }
       @media (max-width: 900px) {
         input, select, textarea {

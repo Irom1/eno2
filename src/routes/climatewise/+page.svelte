@@ -139,7 +139,7 @@
 			radial-gradient(80% 60% at 100% 100%, rgba(89, 194, 111, 0.16) 0%, transparent 70%),
 			#e8edf2;
 		color: #10273a;
-		font: 14px/1.4 Inter, system-ui, sans-serif;
+		font: 14px/1.4 var(--font-sans);
 	}
 
 	.toolbar {

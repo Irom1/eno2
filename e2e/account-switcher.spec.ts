@@ -10,6 +10,7 @@ async function fixtures(page: Page) {
   let active = maya;
   await page.route('**/api/customers', (route) => route.fulfill({ json: { customers } }));
   await page.route('**/api/session', (route) => {
+    if (route.request().method() === 'DELETE') return route.fulfill({ status: 204 });
     if (route.request().method() === 'POST') active = customers.find((customer) => customer.id === route.request().postDataJSON().customerId)!;
     return route.fulfill({ json: { customer: active, accounts: [] } });
   });
@@ -18,12 +19,12 @@ async function fixtures(page: Page) {
   await page.route('**/api/climate?**', (route) => route.fulfill({ json: {} }));
 }
 
-test('sign-in and switcher display identical dropdown content, row icons and styling', async ({ page }) => {
+test('sign-in and switcher share account rows and styling, with sign out in the switcher', async ({ page }) => {
   await fixtures(page);
   // Old removal notices must not add page-specific content to the dropdown.
   await page.addInitScript(() => localStorage.setItem('eno-removed-customers', JSON.stringify([{ id: 'removed', name: 'Removed Person' }])));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Already have an account? Sign in', exact: true }).click();
   const signIn = page.locator('.customer-dropdown');
   await expect(signIn.locator('.account-name strong')).toHaveText(['Maya Chen', 'Demo Tester', 'Future Person']);
   await expect(signIn.getByRole('button', { name: /^Delete / })).toHaveCount(0);
@@ -33,8 +34,8 @@ test('sign-in and switcher display identical dropdown content, row icons and sty
     return { width: style.width, padding: style.padding, borderRadius: style.borderRadius, font: style.font, background: style.backgroundColor };
   };
   const signInStyle = await signIn.evaluate(appearance);
-  const signInText = await signIn.innerText();
-  const signInIcons = await signIn.locator('.account-choice svg path').evaluateAll((paths) => paths.map((path) => path.getAttribute('d')));
+  const signInText = await signIn.locator('.account-links').innerText();
+  await expect(signIn.locator('.choice-arrow')).toHaveCount(3);
   await expect(signIn.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: /Maya Chen/ }).click();
   await expect(page.locator('.profile-name')).toHaveText('Maya');
@@ -43,13 +44,30 @@ test('sign-in and switcher display identical dropdown content, row icons and sty
   const switcher = page.getByRole('menu', { name: 'Switch account' });
   await expect(switcher.locator('.account-name strong')).toHaveText(['Maya Chen', 'Demo Tester', 'Future Person']);
   expect(await switcher.evaluate(appearance)).toEqual(signInStyle);
-  expect(await switcher.innerText()).toBe(signInText);
-  expect(await switcher.locator('.account-choice svg path').evaluateAll((paths) => paths.map((path) => path.getAttribute('d')))).toEqual(signInIcons);
+  expect(await switcher.locator('.account-links').innerText()).toBe(signInText);
+  const current = switcher.getByRole('menuitemradio', { name: /Maya Chen/, checked: true });
+  await expect(current.locator('.current-indicator')).toBeVisible();
+  await expect(switcher.locator('.choice-arrow')).toHaveCount(2);
+  await expect(switcher.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
   await expect(switcher.getByRole('menuitem', { name: /^Delete / })).toHaveCount(0);
   await expect(switcher.locator('.delete-customer')).toHaveCount(0);
 });
 
 for (const view of ['dashboard', 'chat']) {
+  test(`signing out from ${view} clears the session and returns home`, async ({ page }) => {
+    await fixtures(page);
+    await page.goto(`/${view}?customer=future`);
+    await expect(page.locator('.profile-name')).toHaveText('Future');
+    await page.getByRole('button', { name: /^Switch account/ }).click();
+    const sessionDeleted = page.waitForResponse((response) =>
+      response.url().endsWith('/api/session') && response.request().method() === 'DELETE'
+    );
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
+    expect((await sessionDeleted).status()).toBe(204);
+    await expect(page).toHaveURL(/\/$/);
+    expect(await page.evaluate(() => localStorage.getItem('eno-active-customer'))).toBeNull();
+  });
+
   test(`${view} refresh keeps the switched profile and updates a stale customer URL`, async ({ page }) => {
     await fixtures(page);
     await page.goto(`/${view}?customer=maya`);
@@ -75,6 +93,7 @@ test('an explicit profile link takes precedence over the remembered selection', 
   await fixtures(page);
   await page.goto('/dashboard?customer=future');
   await expect(page.locator('.profile-name')).toHaveText('Future');
+  await expect(page.getByRole('link', { name: 'Capital One dashboard' })).toHaveAttribute('href', '/dashboard?customer=future');
   await page.goto('/dashboard?customer=demo');
   await expect(page.locator('.profile-name')).toHaveText('Demo');
   await page.reload();
@@ -135,7 +154,8 @@ test('wallet navigation keeps the customer and restores card tabs from the URL',
   await expect(page.locator('.profile-name')).toHaveText('Future');
   await page.getByRole('textbox', { name: 'Ask Capital One' }).focus();
   await expect(page).toHaveURL(/\/chat\?customer=future$/);
-  await page.getByRole('link', { name: 'Return to dashboard' }).click();
+  await expect(page.getByRole('link', { name: 'Return to dashboard' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Capital One dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
   const climateLink = page.getByRole('link', { name: 'Check your LORAX® score' });
   await expect(climateLink).toHaveAttribute('href', '/climatewise?customer=future');
@@ -144,7 +164,7 @@ test('wallet navigation keeps the customer and restores card tabs from the URL',
   // remains the fallback for modifier and middle clicks.
   await expect(page).toHaveURL(/\/chat\?customer=future$/);
   await expect(page.locator('.bubble.user')).toContainText('What is my ClimateWise score?');
-  await page.getByRole('link', { name: 'Return to dashboard' }).click();
+  await page.getByRole('link', { name: 'Capital One dashboard' }).click();
   await expect(page).toHaveURL(/\/dashboard\?customer=future$/);
 
   const dashboardCard = page.locator('article.account', { hasText: card.nickname });

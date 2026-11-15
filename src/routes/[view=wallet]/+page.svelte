@@ -2,7 +2,7 @@
   import { accountProduct } from '$lib/products';
   import CustomerDropdown from '$lib/components/CustomerDropdown.svelte';
   import { customerHref, orderCustomers, savedCustomerId, rememberCustomerId } from '$lib/customerSelection';
-  import { fetchWithSession } from '$lib/sessionRecovery';
+  import { fetchWithSession, recoverSession, signOut } from '$lib/sessionRecovery';
   import { demoCreditScore, creditScoreRating } from '$lib/creditWise';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -71,6 +71,8 @@
   );
   let isDark = $derived(effectiveTheme === 'dark');
   let accountOpen = $state(false);
+  let signingOut = $state(false);
+  let signOutError = $state('');
   let accountButton = $state<HTMLButtonElement>();
   let accountMenuEl = $state<HTMLDivElement>();
   let customers = $state<Customer[]>([]);
@@ -162,7 +164,7 @@
       '.account-option[aria-checked="true"]'
     );
     const first = accountMenuEl?.querySelector<HTMLElement>('.account-option');
-    (active ?? first)?.focus();
+    (active ?? first ?? accountMenuEl?.querySelector<HTMLElement>('.sign-out'))?.focus();
   }
 
   async function toggleAccountMenu(): Promise<void> {
@@ -228,11 +230,24 @@
   }
 
   async function selectCustomer(id: string): Promise<void> {
+    if (signingOut) return;
     accountOpen = false;
     if (id !== activeCustomerId) {
       await goto(customerUrl(id), { replaceState: true, noScroll: true, keepFocus: true });
     }
     accountButton?.focus();
+  }
+
+  async function handleSignOut(): Promise<void> {
+    if (signingOut) return;
+    signingOut = true;
+    signOutError = '';
+    try {
+      await signOut();
+    } catch {
+      signOutError = "Couldn't sign out. Try again.";
+      signingOut = false;
+    }
   }
 
   let customersSeq = 0;
@@ -323,13 +338,9 @@
     snapshotLoading = !showingCache;
 
     try {
-      const sessionResponse = await fetch('/api/session', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ customerId })
-      });
+      const sessionReady = await recoverSession(customerId);
       if (seq !== snapshotSeq) return;
-      if (!sessionResponse.ok) throw new Error('Could not start a session.');
+      if (!sessionReady) throw new Error('Could not start a session.');
 
       const accountsResponse = await fetchWithSession('/api/accounts', {}, customerId);
       if (seq !== snapshotSeq) return;
@@ -658,7 +669,7 @@
     <div class="wallet-band" style:--composer-half-height={`${composerHeight / 2}px`}>
       <div class="wallet-gradient" bind:this={gradient} aria-hidden="true"></div>
       <div class="container header-inner">
-        <a class="brand" href={customerHref('/', routeCustomerId)}><CapitalOneLogo label="Capital One home" /></a>
+        <a class="brand" href={dashboardHref}><CapitalOneLogo label="Capital One dashboard" /></a>
         <div class="header-actions">
           {#if guestChat}
             <div class="profile">
@@ -682,7 +693,8 @@
             </button>
             {#if accountOpen}
               <CustomerDropdown id="account-dropdown" {customers} dark={isDark} activeId={activeCustomerId}
-                loading={customersLoading} error={customersError} onretry={loadCustomers} onselect={selectCustomer} />
+                loading={customersLoading} error={customersError} onretry={loadCustomers} onselect={selectCustomer}
+                onsignout={handleSignOut} {signingOut} {signOutError} />
             {/if}
           </div>
           {/if}
@@ -700,15 +712,6 @@
             {/if}
           </button>
         </div>
-        {#if inChat}
-          <a class="return-dashboard" href={dashboardHref}>
-            <span class="avatar" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
-            </span>
-            Return to dashboard
-          </a>
-
-        {/if}
         <main class="chat-results" aria-label="Wallet chat" hidden={!inChat} bind:this={chatResults}>
           <ChatPanel
             bind:this={chatPanel}
@@ -962,7 +965,7 @@
     background: var(--page);
     color: var(--ink);
     color-scheme: var(--dark, dark) var(--light, light);
-    font: 15px/1.45 Inter, system-ui, sans-serif;
+    font: 15px/1.45 var(--font-sans);
   }
   .dashboard[data-theme='dark'] { --dark: initial; --light: ; }
   @media (prefers-color-scheme: dark) {
@@ -989,7 +992,7 @@
     padding-block: 28px;
   }
   .header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-top: 4px; }
-  .composer-area, .return-dashboard { grid-column: 2; grid-row: 1; }
+  .composer-area { grid-column: 2; grid-row: 1; }
   .chat .account-overview {
     position: absolute;
     inset: var(--dashboard-header-height) 0 auto;
@@ -1013,7 +1016,7 @@
   .link { background: transparent; border: 0; padding: 0; }
   footer a:hover { text-decoration: underline; }
   button.link:hover { color: var(--ink); }
-  .profile, .return-dashboard {
+  .profile {
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -1027,7 +1030,7 @@
     font-weight: 650;
     white-space: nowrap;
   }
-  :is(.header-actions, .return-dashboard) {
+  .header-actions {
     --page: var(--dark, #10191f) var(--light, #f4f6f8);
     --surface: var(--dark, #18252d) var(--light, #fff);
     --border: var(--dark, #31444f) var(--light, #dae3e8);
@@ -1045,10 +1048,10 @@
     margin-top: 8px;
   }
   .header-actions .profile { margin-top: 0; }
-  .return-dashboard { justify-self: center; }
-  :is(.profile, .return-dashboard):hover { background: var(--surface); }
+  .profile:hover, .profile[aria-expanded='true'] { background: var(--surface); }
   .avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--banner); color: var(--link); }
   .profile .chevron { width: 13px; height: 13px; color: var(--muted); }
+  .profile[aria-expanded='true'] .chevron { rotate: 180deg; }
   .account-menu { position: relative; }
   .theme-toggle {
     display: grid;
@@ -1195,7 +1198,9 @@
     padding: 18px 20px 16px;
     border-radius: 15px;
     color: var(--product-ink, #fff);
-    background: var(--product-gradient, linear-gradient(115deg, #252525, #484848));
+    background:
+      url('/images/hero-grain.png') 0 0 / 128px 128px repeat,
+      var(--product-gradient, linear-gradient(115deg, #252525, #484848));
     scroll-margin-top: 18px;
   }
   .account-top h3 { margin: 0; font-size: 21px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
@@ -1214,8 +1219,12 @@
   }
   .card-actions .pill { width: 10rem; max-width: 100%; }
   .pill, .primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 13px; min-height: 38px; font-size: 13px; font-weight: 650; }
-  .pill { background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 50%, transparent); border-radius: 8px; }
-  .pill:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+  .pill {
+    background: color-mix(in srgb, currentColor 5%, transparent);
+    backdrop-filter: blur(2px);
+    border: 1px solid color-mix(in srgb, currentColor 50%, transparent);
+    border-radius: 8px;
+  }
   .primary { background: var(--button); border: 1px solid transparent; color: var(--button-text); border-radius: 10px; text-align: center; }
   .primary:hover { opacity: .88; }
   .primary:disabled { opacity: .55; cursor: default; }
@@ -1261,18 +1270,15 @@
       align-items: center;
       gap: 18px 12px;
     }
-    .header-inner .brand, .header-actions, .return-dashboard { margin-top: 0; }
+    .header-inner .brand { margin-top: 0; }
     .header-actions { grid-column: 2; grid-row: 1; justify-self: end; margin-top: 0; }
-    .composer-area, .return-dashboard, .chat-results {
+    .composer-area, .chat-results {
       grid-column: 1 / -1;
       grid-row: 2;
     }
     .dashboard:not(.chat) .header-inner { row-gap: 0; }
     .dashboard:not(.chat) .composer-area { margin-top: 28px; }
     .composer-area, .chat .composer-area, .chat-results { width: min(720px, 100%); justify-self: center; }
-    .chat .header-inner { grid-template-rows: auto auto minmax(0, 1fr) auto; }
-    .chat-results { grid-row: 3; }
-    .chat .composer-area { grid-row: 4; }
     .content { grid-template-columns: minmax(0, 1fr); }
   }
   @container (max-width: 570px) {
@@ -1291,8 +1297,14 @@
     .brand :global(svg) { width: 94px; height: 36px; }
     .content { padding-top: 18px; gap: 12px; }
     .account { padding-inline: 14px; column-gap: 9px; }
+    .account-top { display: contents; }
     .account-top h3 { font-size: 18px; }
-    .card-actions .pill { flex: 1 1 8rem; width: auto; }
+    .card-actions {
+      grid-area: 2 / 1 / 3 / -1;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .card-actions .pill { width: 100%; padding-inline: 8px; }
     .feature-main { padding-inline: 17px; }
   }
 </style>

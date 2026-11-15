@@ -18,7 +18,7 @@ test('the landing prompt sends the first setup chat turn', async ({ page }) => {
     spending: skipSpending, includeCreditCard: null, stage: 'details', ready: false, confirmed: false
   } }));
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Already have an account? Sign in', exact: true })).toBeEnabled();
 
   const firstTurn = page.waitForRequest('**/api/signup/chat');
   await page.getByRole('link', { name: firstAccountPrompt, exact: true }).click();

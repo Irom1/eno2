@@ -15,13 +15,16 @@ test('landing links sign up and opens the chosen customer’s dashboard with the
   await page.route('**/api/overview', (route) => route.fulfill({ json: {} }));
   await page.goto('/');
 
+  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(navigation.getByText('Explore products')).toBeVisible();
+  await expect(navigation.getByRole('button', { name: /sign in/i })).toHaveCount(0);
   await expect(page.getByRole('link', { name: "I'd like to open my first account", exact: true })).toHaveAttribute('href', '/setup');
   await page.getByRole('button', { name: 'Switch to dark mode' }).click();
   await expect(page.locator('.landing')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('.landing')).toHaveAttribute('data-theme', 'dark');
 
-  const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  const signIn = page.getByRole('button', { name: 'Already have an account? Sign in', exact: true });
   await signIn.click();
   await expect(signIn).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByRole('navigation', { name: 'Current accounts' }).getByRole('link')).toHaveCount(2);
@@ -40,7 +43,7 @@ test('account disclosure works with a keyboard and dismisses outside', async ({ 
   const customersLoaded = page.waitForResponse('**/api/customers');
   await page.goto('/');
   await customersLoaded;
-  const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  const signIn = page.getByRole('button', { name: 'Already have an account? Sign in', exact: true });
   await expect(signIn).toBeEnabled();
   await signIn.focus();
   await page.keyboard.press('Enter');
@@ -62,7 +65,7 @@ test('failed account loading can be retried', async ({ page }) => {
       : { json: { customers } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Already have an account? Sign in', exact: true }).click();
   await expect(page.getByText('We couldn’t load your accounts.')).toBeVisible();
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page.getByRole('link', { name: /Jordan Lee/ })).toBeVisible();
@@ -71,7 +74,10 @@ test('failed account loading can be retried', async ({ page }) => {
 test('mobile layout fits and keeps the account list accessible', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(navigation.getByText('Explore products')).toBeHidden();
+  await expect(navigation.getByRole('button', { name: /sign in/i })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Already have an account? Sign in', exact: true }).click();
   await expect(page.getByRole('link', { name: /Jordan Lee/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

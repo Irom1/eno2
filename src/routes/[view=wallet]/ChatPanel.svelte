@@ -31,7 +31,7 @@
   import { followUpsFor } from '$lib/chat/followUps.js';
   import { STARTER_PROMPTS } from '$lib/chat/starters.js';
   import { GUEST_CUSTOMER_ID } from '$lib/chat/guest';
-  import { fetchWithSession } from '$lib/sessionRecovery';
+  import { fetchWithSession, recoverSession } from '$lib/sessionRecovery';
   import {
     prefetchAccountDetail,
     prefetchSnapshot,
@@ -129,12 +129,7 @@
 
   async function openSession(id: string): Promise<boolean> {
     try {
-      const response = await fetch('/api/session', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ customerId: id })
-      });
-      if (!response.ok) throw new Error('Could not start a session.');
+      if (!(await recoverSession(id))) throw new Error('Could not start a session.');
       sessionCustomerId = id;
       ready = true;
       status = '';

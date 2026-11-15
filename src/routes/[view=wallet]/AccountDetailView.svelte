@@ -454,7 +454,9 @@
     row-gap: 24px;
     padding-block: clamp(20px, 4vw, 32px);
     color: var(--product-ink, #fff);
-    background: var(--product-gradient, linear-gradient(115deg, #252525, #484848));
+    background:
+      url('/images/hero-grain.png') 0 0 / 128px 128px repeat,
+      var(--product-gradient, linear-gradient(115deg, #252525, #484848));
     box-shadow: var(--shadow);
   }
   .hero.pending {

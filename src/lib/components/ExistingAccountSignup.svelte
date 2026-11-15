@@ -214,7 +214,7 @@
 
 <style>
   :global(body:has(.existing-signup)) { margin: 0; }
-  .existing-signup { --dark: ; --light: initial; --page: var(--dark, #171717) var(--light, #f4f6f8); --surface: var(--dark, #242424) var(--light, #fff); --ink: var(--dark, #f2f2f2) var(--light, #142632); --muted: var(--dark, #bdbdbd) var(--light, #50636e); --border: var(--dark, #414141) var(--light, #dae3e8); min-height: 100dvh; display: flex; flex-direction: column; color: var(--ink); color-scheme: var(--dark, dark) var(--light, light); font: 15px/1.65 Inter, system-ui, sans-serif; }
+  .existing-signup { --dark: ; --light: initial; --page: var(--dark, #171717) var(--light, #f4f6f8); --surface: var(--dark, #242424) var(--light, #fff); --ink: var(--dark, #f2f2f2) var(--light, #142632); --muted: var(--dark, #bdbdbd) var(--light, #50636e); --border: var(--dark, #414141) var(--light, #dae3e8); min-height: 100dvh; display: flex; flex-direction: column; color: var(--ink); color-scheme: var(--dark, dark) var(--light, light); font: 15px/1.65 var(--font-sans); }
   .existing-signup[data-theme='dark'] { --dark: initial; --light: ; }
   @media (prefers-color-scheme: dark) { .existing-signup[data-theme='system'] { --dark: initial; --light: ; } }
   .existing-signup * { box-sizing: border-box; }

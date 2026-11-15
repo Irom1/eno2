@@ -299,7 +299,7 @@
 		padding: 72px 16px 24px;
 		background: var(--page);
 		color: var(--ink);
-		font: 15px/1.4 Inter, system-ui, sans-serif;
+		font: 15px/1.4 var(--font-sans);
 	}
 	/* Fill mode: the card owns exactly the parent's box (resizable preview). */
 	.cw.fill {

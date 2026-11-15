@@ -78,7 +78,6 @@
   z-index: -1;
   pointer-events: none;
   background:
-    url('/images/hero-grain.png') 0 0 / 128px 128px repeat,
     radial-gradient(
       ellipse min(760px, 90vw) clamp(190px, 35dvh, 340px) at 50% calc(100% - var(--composer-bottom-space) - 29px),
       var(--composer-bloom),
@@ -176,16 +175,9 @@
 }
 
 .setup-composer-background .from-you .bubble {
-  --pastel-message-gradient: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--message-blue) 14%, white),
-    color-mix(in srgb, var(--message-blue) 30%, white)
-  );
-  background: var(--dark, var(--message-blue-gradient)) var(--light, var(--pastel-message-gradient));
-  border-color: var(--dark, var(--message-blue-edge)) var(--light, #a5b9f3);
-  box-shadow:
-    var(--dark, var(--message-blue-shadow))
-    var(--light, inset 0 0 5px #fff9, 0 5px 12px #2f5ad926);
+  background: var(--dark, var(--message-blue))
+    var(--light, color-mix(in srgb, var(--message-blue) 22%, white));
+  border-color: transparent;
   color: var(--dark, #fff) var(--light, #172b5c);
 }
 

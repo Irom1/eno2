@@ -10,10 +10,26 @@
  * Client-only: never import this from server code.
  */
 
-import { savedCustomerId } from '$lib/customerSelection';
+import { forgetCustomerId, savedCustomerId } from '$lib/customerSelection';
 
 /** One shared recovery per customer so N parallel 401s produce one POST. */
 const inFlight = new Map<string, Promise<boolean>>();
+let signingOut = false;
+
+export async function signOut(): Promise<void> {
+  signingOut = true;
+  try {
+    // Let pending session requests finish before clearing their cookie.
+    await Promise.all(inFlight.values());
+    const response = await fetch('/api/session', { method: 'DELETE' });
+    if (!response.ok) throw new Error('Could not sign out.');
+    forgetCustomerId();
+    window.location.replace('/');
+  } catch (error) {
+    signingOut = false;
+    throw error;
+  }
+}
 
 const isBrowser = (): boolean => {
   try {
@@ -72,6 +88,7 @@ function replayableInput(input: RequestInfo | URL): RequestInfo | URL {
  * server refuses; never throws.
  */
 export async function recoverSession(customerId?: string): Promise<boolean> {
+  if (signingOut) return false;
   const customer = resolveCustomer(customerId);
   if (!customer) return false;
 

@@ -67,6 +67,7 @@
 		display: grid;
 		width: min(100%, 108px);
 		aspect-ratio: 1000 / 413;
+		margin-block-end: 10px;
 	}
 	.logo img {
 		grid-area: 1 / 1;
@@ -90,8 +91,11 @@
 	}
 	.gauge div {
 		display: grid;
+		box-sizing: border-box;
 		width: 100%;
 		height: 100%;
+		/* Center the score and rating within the visible arc. */
+		padding-block-end: 12px;
 		place-content: center;
 		text-align: center;
 		border-radius: 50%;

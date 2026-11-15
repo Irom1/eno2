@@ -111,14 +111,6 @@
     }
   }
 
-  function openAccountsFromHero(event: MouseEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    signInButton.scrollIntoView({ block: 'nearest' });
-    signInButton.focus({ preventScroll: true });
-    void setAccountsOpen(true);
-  }
-
   function handleWindowClick(event: MouseEvent): void {
     if (accountsOpen && !event.composedPath().includes(signInArea)) {
       accountsOpen = false;
@@ -171,7 +163,8 @@
 <svelte:head>
   <title>Eno 2.0 | A new day in banking</title>
   <meta name="description" content="Explore conversational banking and get to know your wallet with the Eno 2.0 demo." />
-  <link rel="preload" href="/rolling-hills.svg" as="image" />
+  <link rel="preload" href="/rolling-hills.svg" as="image" media="(width > 690px)" />
+  <link rel="preload" href="/rolling-hills-mobile.svg" as="image" media="(max-width: 690px)" />
 </svelte:head>
 
 
@@ -204,19 +197,6 @@
       </a>
 
       <div class="nav-actions">
-        <div class="sign-in-area" bind:this={signInArea}>
-          <button type="button" id="sign-in" class="sign-in" disabled={!ready} bind:this={signInButton} aria-label="Sign in" aria-expanded={accountsOpen} aria-controls="account-list" onclick={() => setAccountsOpen(!accountsOpen)}>
-            <span class="profile" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M4 21v-2a8 6 0 0 1 16 0v2Z" />
-              </svg>
-            </span>
-            Sign in
-          </button>
-          <CustomerDropdown id="account-list" {customers} dark={isDark} open={accountsOpen}
-            loading={customersLoading} error={customersError} bind:element={accountList} onretry={loadCustomers} />
-        </div>
         <button type="button" class="theme-toggle" disabled={!ready} aria-label={themeLabel} aria-pressed={isDark} title={themeLabel} onclick={toggleTheme}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
             {#if isDark}
@@ -263,9 +243,15 @@
           {firstAccountPrompt} <span class="message-send" aria-hidden="true">↑</span>
         </a>
         <span class="send-status" role="status">{sendingAccountPrompt ? 'Sending message…' : ''}</span>
-        <a class="existing-account-link" href="#sign-in" onclick={openAccountsFromHero}>
-          Already have an account? <strong>Sign in <span aria-hidden="true">→</span></strong>
-        </a>
+        <div class="sign-in-area" bind:this={signInArea}>
+          <button type="button" class="existing-account-link" disabled={!ready} bind:this={signInButton}
+            aria-expanded={accountsOpen} aria-controls="account-list" onclick={() => setAccountsOpen(!accountsOpen)}>
+            Already have an account? <strong>Sign in</strong>
+            <svg class="sign-in-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+          </button>
+          <CustomerDropdown id="account-list" {customers} dark={isDark} open={accountsOpen}
+            loading={customersLoading} error={customersError} bind:element={accountList} onretry={loadCustomers} />
+        </div>
       </div>
     </section>
   </main>
@@ -293,7 +279,7 @@
     --focus: #174b67;
     background: var(--page);
     color: var(--ink);
-    font-family: Inter, system-ui, sans-serif;
+    font-family: var(--font-sans);
   }
 
   .site.dark {
@@ -364,17 +350,13 @@
   details li a { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 8px; }
   details li a:hover { background: var(--hover); }
 
-  .brand, .sign-in { display: inline-flex; align-items: center; }
-  .brand { gap: 8px; white-space: nowrap; color: var(--brand); font-size: 1.15rem; font-weight: 750; }
+  .brand { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--brand); font-size: 1.15rem; font-weight: 750; }
   .brand :global(svg) { width: 108px; height: auto; }
   .divider { width: 1px; height: 29px; margin-inline: 5px; background: var(--border); }
   .nav-actions {
     --control-background: #f4f6f8;
     --control-hover: #fff;
-    --control-border: #dae3e8;
     --control-text: #142632;
-    --avatar-background: #ecf4f7;
-    --avatar-text: #075e80;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -383,18 +365,13 @@
   .dark .nav-actions {
     --control-background: #10191f;
     --control-hover: #18252d;
-    --control-border: #31444f;
     --control-text: #ecf3f6;
-    --avatar-background: #1b313b;
-    --avatar-text: #9fdbf0;
   }
-  .theme-toggle, .sign-in {
+  .theme-toggle {
     box-sizing: border-box;
     color: var(--control-text);
     background: var(--control-background);
-    border: 1px solid var(--control-border);
-  }
-  .theme-toggle {
+    border: 0;
     display: grid;
     place-items: center;
     width: 42px;
@@ -403,25 +380,7 @@
     border-radius: 50%;
     cursor: pointer;
   }
-  .sign-in {
-    gap: 7px;
-    min-height: 42px;
-    padding: 0 12px 0 5px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 650;
-    white-space: nowrap;
-  }
-  .profile {
-    display: grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    background: var(--avatar-background);
-    color: var(--avatar-text);
-    border-radius: 50%;
-  }
-  .theme-toggle:hover, .sign-in:hover { background: var(--control-hover); }
+  .theme-toggle:hover { background: var(--control-hover); }
 
   .hero {
     box-sizing: border-box;
@@ -473,6 +432,7 @@
   }
 
   .hills {
+    --hills-image: url('/rolling-hills.svg');
     position: absolute;
     z-index: -1;
     bottom: 0;
@@ -480,7 +440,7 @@
     width: 100%;
     height: 85%;
     pointer-events: none;
-    background: url('/rolling-hills.svg') 0 0 / 100% 100% no-repeat;
+    background: var(--hills-image) 0 0 / 100% 100% no-repeat;
   }
 
   .hills::after {
@@ -488,7 +448,7 @@
     position: absolute;
     inset: 0;
     background: url('/images/hero-grain.png') 0 0 / 128px 128px repeat;
-    mask: url('/rolling-hills.svg') 0 0 / 100% 100% no-repeat;
+    mask: var(--hills-image) 0 0 / 100% 100% no-repeat;
   }
 
   h1 {
@@ -554,9 +514,25 @@
     white-space: nowrap;
   }
 
+  .sign-in-area { position: relative; }
+  .sign-in-area :global(.customer-dropdown) {
+    top: auto;
+    bottom: calc(100% + 8px);
+    right: 50%;
+    translate: 50% 0;
+  }
   .existing-account-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
     font-size: 0.9rem;
   }
+  .dark .existing-account-link { color: inherit; }
+  .sign-in-chevron { width: 13px; height: 13px; vertical-align: -2px; }
+  .existing-account-link[aria-expanded='true'] .sign-in-chevron { rotate: 180deg; }
   .existing-account-link strong { text-decoration: underline; text-underline-offset: 3px; }
 
   footer {
@@ -574,12 +550,17 @@
   footer a { text-decoration: underline; text-underline-offset: 3px; }
 
   @media (max-width: 690px) {
-    header > nav { grid-template-columns: 1fr auto; gap: 12px; padding-block: 12px; min-height: 0; }
-    .brand { grid-area: 1 / 1; }
-    .nav-actions { grid-area: 1 / 2; }
-    details { grid-column: 1 / -1; padding-block: 5px; font-size: 0.9rem; }
+    header > nav {
+      grid-template-columns: minmax(42px, 1fr) auto minmax(42px, 1fr);
+      gap: 0;
+      padding-block: 12px;
+      min-height: 0;
+    }
+    .brand { grid-area: 1 / 2; }
+    .nav-actions { grid-area: 1 / 3; }
+    details { display: none; }
     .hero { min-height: 0; grid-template-rows: auto auto auto; }
-    .intro { padding-top: 48px; }
+    .intro { padding-block: 16px 44px; }
     .features {
       grid-template-columns: 1fr;
       max-width: 420px;
@@ -588,14 +569,15 @@
     .feature-icon { grid-row: span 2; }
     h2 { margin: 0; }
     article { padding-bottom: 16px; }
-    .foreground { min-height: 175px; }
-  }
-
-  @media (max-width: 390px) {
-    header > nav { grid-template-columns: 1fr auto; }
-    .brand { grid-area: 1 / 1 / 2 / -1; }
-    .nav-actions { grid-area: 2 / 2; }
-    details { grid-area: 2 / 1; }
+    .foreground {
+      padding-bottom: clamp(44px, 7vh, 72px);
+      isolation: auto;
+      z-index: auto;
+    }
+    .hills {
+      --hills-image: url('/rolling-hills-mobile.svg');
+      height: 135%;
+    }
   }
 
   @media (max-width: 440px) {
@@ -604,7 +586,5 @@
     .brand :global(img) { width: 28px; height: 28px; }
   }
 
-  .sign-in-area { position: relative; }
-  button.sign-in { font-family: inherit; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
 </style>
