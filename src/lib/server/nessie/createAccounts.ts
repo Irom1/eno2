@@ -1,6 +1,6 @@
 import type { RuntimeEnv } from '../env';
 import { NessieClient, type FetchLike } from './client';
-import { buildDemoTransactions, demoAccountTotals, type DemoAccountType } from './seedTransactions';
+import { buildDemoTransactions, demoAccountTotals, DEMO_CARD_ANOMALY_LIMITS, DEMO_PROFILE_ANOMALY_LIMITS, type DemoAccountType, type DemoAnomalyLimits } from './seedTransactions';
 import type { DemoCard, SpendingCategory } from '../../spending';
 import { products } from '../../products';
 import { signAccountSetup, type AccountSetupPlan } from './accountSetup';
@@ -11,10 +11,11 @@ export async function createNessieAccounts(
   types: readonly DemoAccountType[],
   runtime: Pick<RuntimeEnv, 'NESSIE_API_KEY' | 'NESSIE_BASE_URL'>,
   fetchImpl: FetchLike = fetch,
-  options: { card?: DemoCard | null; categories?: readonly SpendingCategory[] } = {}
+  options: { card?: DemoCard | null; categories?: readonly SpendingCategory[]; anomalyLimits?: DemoAnomalyLimits } = {}
 ): Promise<{ accountError?: string; setupToken?: string }> {
   const errors: string[] = [];
   const plans: AccountSetupPlan[] = [];
+  const remaining = { ...options.anomalyLimits ?? DEMO_PROFILE_ANOMALY_LIMITS };
   const date = new Date().toISOString();
   const result = async (accountError?: string) => ({
     ...(accountError ? { accountError } : {}),
@@ -24,7 +25,13 @@ export async function createNessieAccounts(
     if (type === 'Credit Card' && !options.card) throw new Error('A matching demo card is required');
     const nickname = type === 'Credit Card' ? options.card!.nickname : type === 'Checking' ? products.checking.name : products.savings.name;
     const seed = type === 'Credit Card' ? `${customerId}:${type}:${options.card!.id}` : `${customerId}:${type}`;
-    const transactions = buildDemoTransactions(type, seed, new Date(date), options.categories);
+    const anomalyLimits = {
+      outliers: Math.max(0, Math.min(DEMO_CARD_ANOMALY_LIMITS.outliers, remaining.outliers)),
+      duplicates: Math.max(0, Math.min(DEMO_CARD_ANOMALY_LIMITS.duplicates, remaining.duplicates))
+    };
+    remaining.outliers -= anomalyLimits.outliers;
+    remaining.duplicates -= anomalyLimits.duplicates;
+    const transactions = buildDemoTransactions(type, seed, new Date(date), options.categories, anomalyLimits);
     const totals = demoAccountTotals(transactions, type);
     const url = new URL(`/customers/${encodeURIComponent(customerId)}/accounts`, runtime.NESSIE_BASE_URL);
     url.searchParams.set('key', runtime.NESSIE_API_KEY);
@@ -47,7 +54,7 @@ export async function createNessieAccounts(
         if (matches.length === 1 && typeof matches[0]._id === 'string') accountId = matches[0]._id;
       }
       if (!accountId) { errors.push(`The ${type.toLowerCase()} account was created, but I couldn’t find it to add its demo activity.`); continue; }
-      plans.push({ accountId, type, seed, date, categories: [...options.categories ?? []] });
+      plans.push({ accountId, type, seed, date, categories: [...options.categories ?? []], anomalyLimits });
     } catch {
       // A write can succeed before a connection fails. Never retry it blindly.
       return result(`Your profile is ready, but I couldn’t confirm the ${type.toLowerCase()} account. Let’s check your dashboard before trying to open another one.`);

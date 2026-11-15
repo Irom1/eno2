@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { openExistingAccounts, readAccountOpeningState } from './openAccounts';
 import { continueAccountSetup } from './accountSetup';
+import { detectDuplicateCharges, detectOutliers, toTransaction } from './tools/insights';
 
 const runtime = { NESSIE_API_KEY: 'test-key', NESSIE_BASE_URL: 'https://nessie.test' };
 function nessie(initial: Record<string, unknown>[] = []) {
@@ -29,6 +30,43 @@ function nessie(initial: Record<string, unknown>[] = []) {
   });
   return { customerId, accounts, saved, transport, loseAcknowledgement: () => { uncertain = true; } };
 }
+
+it.each(['together', 'separately', 'while setup is pending'] as const)('keeps all six products within the shared profile limits when opened %s', async (mode) => {
+  const fake = nessie();
+  const finish = async (token?: string) => {
+    for (let step = 0; token && step < 60; step++) {
+      const result = await continueAccountSetup(token, runtime, fake.transport);
+      expect(result.accountError).toBeUndefined();
+      token = result.setupToken;
+    }
+    expect(token).toBeUndefined();
+  };
+  if (mode === 'together') {
+    const result = await openExistingAccounts(fake.customerId, ['checking', 'savings', 'savor', 'venture', 'quicksilver', 'discover'], crypto.randomUUID(), runtime, fake.transport);
+    await finish(result.setupToken);
+  } else {
+    const first = await openExistingAccounts(fake.customerId, ['checking', 'savings'], crypto.randomUUID(), runtime, fake.transport);
+    if (mode === 'separately') await finish(first.setupToken);
+    const second = await openExistingAccounts(fake.customerId, ['savor', 'venture', 'quicksilver', 'discover'], crypto.randomUUID(), runtime, fake.transport);
+    await finish(second.setupToken);
+    if (mode === 'while setup is pending') await finish(first.setupToken);
+  }
+  expect(fake.accounts).toHaveLength(6);
+  let totalOutliers = 0, totalDuplicates = 0;
+  for (const account of fake.accounts) {
+    const rows = fake.saved.get(`/accounts/${account._id}/withdrawals`)!;
+    expect(rows).toHaveLength(50);
+    const posted = rows.flatMap((row) => toTransaction(row, 'withdrawal') ?? []);
+    const outliers = detectOutliers(posted, new Date());
+    const duplicates = detectDuplicateCharges(posted);
+    expect(outliers.length).toBeLessThanOrEqual(2);
+    expect(duplicates.length).toBeLessThanOrEqual(1);
+    totalOutliers += outliers.length;
+    totalDuplicates += duplicates.length;
+  }
+  expect(totalOutliers).toBe(5);
+  expect(totalDuplicates).toBe(3);
+});
 
 it('adds multiple remaining products to the existing customer with 100 persisted transactions each', async () => {
   const fake = nessie([{ _id: 'existing', type: 'Checking', nickname: 'Everyday Checking', balance: 900 }]);

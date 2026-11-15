@@ -8,7 +8,29 @@ const runtime = { NESSIE_API_KEY: 'secret', NESSIE_BASE_URL: 'https://nessie.tes
 const now = new Date('2026-11-14T12:00:00Z');
 
 describe('sample transaction history', () => {
-  it('caps unusual charges at four and double-charge instances at two across account profiles and dates', () => {
+  it('honors reduced and exhausted profile allowances without losing valid balances', () => {
+    for (const type of ['Checking', 'Savings', 'Credit Card'] as const) {
+      for (const outliers of [0, 1, 2]) {
+        for (const duplicates of [0, 1]) {
+          for (let index = 0; index < 100; index++) {
+            const history = buildDemoTransactions(type, `remaining-budget-${index}`, now, ['dining', 'travel', 'shopping'], { outliers, duplicates });
+            const posted = history.filter((item) => item.kind === 'withdrawal')
+              .flatMap((item, id) => toTransaction({ ...item, _id: String(id) }, 'withdrawal') ?? []);
+            const context = `${type} account ${index}, allowance ${outliers}/${duplicates}`;
+            expect(detectOutliers(posted, now), context).toHaveLength(outliers);
+            expect(detectDuplicateCharges(posted), context).toHaveLength(duplicates);
+            let balance = 0;
+            for (const item of history) {
+              expect(item.amount, context).toBeGreaterThan(0);
+              if (item.status === 'completed') balance += (item.kind === 'withdrawal' ? -1 : 1) * item.amount * (type === 'Credit Card' ? -1 : 1);
+              expect(balance, context).toBeGreaterThanOrEqual(0);
+            }
+          }
+        }
+      }
+    }
+  });
+  it('caps unusual charges at two and double-charge instances at one across account profiles and dates', () => {
     const categories = ['dining', 'groceries', 'entertainment', 'travel', 'shopping', 'gas', 'bills', 'other'] as const;
     for (const type of ['Checking', 'Savings', 'Credit Card'] as const) {
       for (let index = 0; index < 1000; index++) {
@@ -18,8 +40,8 @@ describe('sample transaction history', () => {
         const posted = history.filter((item) => item.kind === 'withdrawal')
           .flatMap((item, id) => toTransaction({ ...item, _id: String(id) }, 'withdrawal') ?? []);
         const context = `${type} account ${index} on ${asOf.toISOString()}`;
-        expect(detectOutliers(posted, asOf).length, context).toBeLessThanOrEqual(4);
-        expect(detectDuplicateCharges(posted), context).toHaveLength(2);
+        expect(detectOutliers(posted, asOf).length, context).toBeLessThanOrEqual(2);
+        expect(detectDuplicateCharges(posted), context).toHaveLength(1);
         expect(buildDemoTransactions(type, `limited-anomalies-${index}`, asOf, preferences)).toEqual(history);
       }
     }
@@ -47,8 +69,8 @@ describe('sample transaction history', () => {
       expect(history.filter((item) => demoTransactionImpact(item.description) === 'non-green')).toHaveLength(5);
       const posted = history.filter((item) => item.kind === 'withdrawal').map((item, index) => toTransaction({ ...item, _id: String(index) }, 'withdrawal')).filter((item) => item !== null);
       const duplicates = detectDuplicateCharges(posted);
-      expect(duplicates).toHaveLength(2);
-      expect(duplicates.map((item) => item.description)).toEqual(expect.arrayContaining(['NETFLIX', 'LOCAL BOOKSTORE']));
+      expect(duplicates).toHaveLength(1);
+      expect(duplicates.map((item) => item.description)).toEqual(['NETFLIX']);
       const suspicious = detectOutliers(posted, now).filter((finding) =>
         posted.some((item) => item.id !== finding._id && item.description === finding.description && item.amount < 100 && item.amount * 4 < finding.amount));
       expect(suspicious).toHaveLength(2);
@@ -67,7 +89,7 @@ describe('sample transaction history', () => {
         const history = buildDemoTransactions(type, `varied-account-${index}`, now, [categories[index % categories.length]]);
         const posted = history.filter((item) => item.kind === 'withdrawal').map((item, index) => toTransaction({ ...item, _id: String(index) }, 'withdrawal')).filter((item) => item !== null);
         const outliers = detectOutliers(posted, now);
-        expect(outliers.length, `${type} account ${index} unusual charges`).toBeLessThanOrEqual(4);
+        expect(outliers.length, `${type} account ${index} unusual charges`).toBeLessThanOrEqual(2);
         const suspicious = outliers.filter((finding) =>
           posted.some((item) => item.id !== finding._id && item.description === finding.description && item.amount < 100 && item.amount * 4 < finding.amount));
         expect(suspicious, `${type} account ${index}`).toHaveLength(2);
@@ -79,7 +101,7 @@ describe('sample transaction history', () => {
           if (item.status === 'completed') postedBalance += (item.kind === 'withdrawal' ? -1 : 1) * item.amount * (type === 'Credit Card' ? -1 : 1);
           expect(postedBalance, `${type} account ${index} running balance`).toBeGreaterThanOrEqual(0);
         }
-        expect(detectDuplicateCharges(posted), `${type} account ${index} double charges`).toHaveLength(2);
+        expect(detectDuplicateCharges(posted), `${type} account ${index} double charges`).toHaveLength(1);
       }
     }
     expect(merchantPairs.size).toBeGreaterThan(10);

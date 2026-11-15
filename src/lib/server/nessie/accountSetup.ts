@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { RuntimeEnv } from '../env';
 import type { SpendingCategory } from '../../spending';
 import { NessieClient, type FetchLike } from './client';
-import { buildDemoTransactions, demoAccountTotals, type DemoAccountType } from './seedTransactions';
+import { buildDemoTransactions, demoAccountTotals, type DemoAccountType, type DemoAnomalyLimits } from './seedTransactions';
 import { buildDemoObligations } from './seedObligations';
 
 type Runtime = Pick<RuntimeEnv, 'NESSIE_API_KEY' | 'NESSIE_BASE_URL'>;
@@ -12,6 +12,7 @@ export interface AccountSetupPlan {
   seed: string;
   date: string;
   categories: SpendingCategory[];
+  anomalyLimits?: DemoAnomalyLimits;
 }
 interface Setup { customerId: string; plans: AccountSetupPlan[]; expires: number }
 export class AccountSetupError extends Error {}
@@ -70,7 +71,7 @@ export async function continueAccountSetup(token: string, runtime: Runtime, fetc
   const client = new NessieClient({ apiKey: runtime.NESSIE_API_KEY, baseUrl: runtime.NESSIE_BASE_URL, fetchImpl });
   const prefix = `/accounts/${encodeURIComponent(plan.accountId)}`;
   try {
-    const transactions = buildDemoTransactions(plan.type, plan.seed, new Date(plan.date), plan.categories);
+    const transactions = buildDemoTransactions(plan.type, plan.seed, new Date(plan.date), plan.categories, plan.anomalyLimits);
     const writes: { path: string; body: object }[] = [];
     // Fund deposit accounts before withdrawals; cards start with purchases.
     for (const kind of plan.type === 'Credit Card' ? ['withdrawal', 'deposit'] as const : ['deposit', 'withdrawal'] as const) {

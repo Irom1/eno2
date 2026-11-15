@@ -7,6 +7,8 @@ import { NessieClient, type FetchLike } from './client';
 import { isClosedProfile } from './closeProfile';
 import { createNessieAccounts } from './createAccounts';
 import { combineAccountSetups } from './accountSetup';
+import { DEMO_CARD_ANOMALY_LIMITS, DEMO_PROFILE_ANOMALY_LIMITS } from './seedTransactions';
+import { detectDuplicateCharges, detectOutliers, toTransaction } from './tools/insights';
 
 type Runtime = Pick<RuntimeEnv, 'NESSIE_API_KEY' | 'NESSIE_BASE_URL'>;
 export class AccountOpeningError extends Error {
@@ -28,6 +30,25 @@ export async function readAccountOpeningState(customerId: string, runtime: Runti
 }
 
 type State = Awaited<ReturnType<typeof readAccountOpeningState>>;
+async function remainingAnomalyBudget(accounts: State['accounts'], runtime: Runtime, fetchImpl: FetchLike) {
+  const client = new NessieClient({ apiKey: runtime.NESSIE_API_KEY, baseUrl: runtime.NESSIE_BASE_URL, fetchImpl });
+  const used = await Promise.all(accounts.map(async (account) => {
+    const rows = await client.get<unknown>(`/accounts/${encodeURIComponent(account.id)}/withdrawals`);
+    if (!Array.isArray(rows)) throw new Error('Could not check existing sample activity');
+    const posted = rows.flatMap((row) => toTransaction(row, 'withdrawal') ?? []);
+    // Unfinished histories may still have a signed setup in progress. Reserve
+    // their full per-card allowance so later additions cannot spend it twice.
+    const incomplete = rows.length < 50;
+    return {
+      outliers: Math.max(detectOutliers(posted, new Date()).length, incomplete ? DEMO_CARD_ANOMALY_LIMITS.outliers : 0),
+      duplicates: Math.max(detectDuplicateCharges(posted).length, incomplete ? DEMO_CARD_ANOMALY_LIMITS.duplicates : 0)
+    };
+  }));
+  return used.reduce((remaining, counts) => ({
+    outliers: Math.max(0, remaining.outliers - counts.outliers),
+    duplicates: Math.max(0, remaining.duplicates - counts.duplicates)
+  }), { ...DEMO_PROFILE_ANOMALY_LIMITS });
+}
 type Outcome = { customerId: string; accounts?: State['accounts']; accountError?: string; setupToken?: string };
 const attempts = new Map<string, { fingerprint: string; createdAt: number; result: Promise<Outcome> }>();
 const activeCustomers = new Set<string>();
@@ -57,12 +78,19 @@ export async function openExistingAccounts(customerId: string, ids: AccountProdu
       }
       let accountError: string | undefined;
       const setupTokens: string[] = [];
+      const remaining = await remainingAnomalyBudget(before.accounts, runtime, fetchImpl);
       for (const id of ids) {
         const product = openingProducts.find((option) => option.id === id)!;
         const card = id === 'checking' || id === 'savings' ? null : demoCard(id, product.description);
         const categories: SpendingCategory[] = id === 'venture' ? ['travel'] : id === 'savor' ? ['dining', 'groceries', 'entertainment'] : ['other'];
+        const anomalyLimits = {
+          outliers: Math.min(DEMO_CARD_ANOMALY_LIMITS.outliers, remaining.outliers),
+          duplicates: Math.min(DEMO_CARD_ANOMALY_LIMITS.duplicates, remaining.duplicates)
+        };
+        remaining.outliers -= anomalyLimits.outliers;
+        remaining.duplicates -= anomalyLimits.duplicates;
         let outcome;
-        try { outcome = await createNessieAccounts(customerId, [product.type], runtime, fetchImpl, { card, categories }); }
+        try { outcome = await createNessieAccounts(customerId, [product.type], runtime, fetchImpl, { card, categories, anomalyLimits }); }
         catch { accountError = 'I couldn’t confirm the account request. Check your dashboard before opening another account.'; break; }
         if (outcome.setupToken) setupTokens.push(outcome.setupToken);
         if (outcome.accountError) { accountError = outcome.accountError; break; }
