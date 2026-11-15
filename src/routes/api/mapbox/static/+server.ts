@@ -44,7 +44,8 @@ export async function GET({ url, platform }: RequestEvent): Promise<Response> {
     return new Response('Invalid map coordinates', { status: 400 });
   }
 
-  const target = mapboxStaticUrl(runtime.MAPBOX_API_KEY, lat, lng, zoom);
+  const theme = url.searchParams.get('theme') === 'light' ? 'light' : 'dark';
+  const target = mapboxStaticUrl(runtime.MAPBOX_API_KEY, lat, lng, zoom, theme);
   if (!target) {
     return new Response('Invalid map coordinates', { status: 400 });
   }
