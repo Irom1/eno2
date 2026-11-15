@@ -27,7 +27,7 @@ export function recommendDemoCard(preferences: SpendingPreferences): DemoCard | 
   return demoCard('quicksilver', 'Quicksilver is your all-around match for everyday spending.');
 }
 
-function demoCard(id: CreditProduct, reason: string): DemoCard {
+export function demoCard(id: CreditProduct, reason: string): DemoCard {
   const { name, url } = products[id];
   return { id, name, url, nickname: `${name} · Eno demo`, reason };
 }
