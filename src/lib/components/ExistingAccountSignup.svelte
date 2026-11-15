@@ -177,19 +177,33 @@
             <div class="bubble"><p>{message.text}</p>
               {#if index === 0 && !failed && available.length}
                 <details open>
-                  <summary>Choose accounts <span>{selected.length} selected</span></summary>
+                  <summary>
+                    <span class="summary-title">Choose accounts</span>
+                    <span class="count" class:has-selection={selected.length > 0} aria-live="polite">{selected.length} selected</span>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                  </summary>
                   <fieldset disabled={busy || locked} aria-label="Available accounts">
                     <legend class="sr-only">Accounts you don’t already have</legend>
                     {#each available as option (option.id)}
-                      <label style:background={option.gradient} style:color={option.ink}>
+                      <label class="product">
+                        <span class="swatch" style:--product-gradient={option.gradient} style:--product-ink={option.ink}>
+                          {#if option.type === 'Credit Card'}
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3" /><path d="M2.5 9.5h19" /></svg>
+                          {:else}
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 9 9-5 9 5" /><path d="M5 9v9m4.5-9v9m5-9v9m4.5-9v9M3 20h18" /></svg>
+                          {/if}
+                        </span>
+                        <span class="copy"><span class="name">{option.label}</span><small>{option.description}</small></span>
                         <input type="checkbox" checked={selected.includes(option.id)} onchange={(event) => toggle(option.id, event.currentTarget.checked)} />
-                        <span>{option.label}<small>{option.description}</small></span>
+                        <span class="check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg></span>
                       </label>
                     {/each}
                   </fieldset>
                 </details>
-                <p class="hint">Only products you don’t already have are shown. Each new account includes 100 sample transactions, bills, and a loan.</p>
-                <button class="setup-action" disabled={busy || locked || !selected.length} onclick={openSelected}>Open selected accounts <span aria-hidden="true">→</span></button>
+                <div class="card-footer">
+                  <p class="hint">Only products you don’t already have are shown. Each new account includes 100 sample transactions, bills, and a loan.</p>
+                  <button class="setup-action" disabled={busy || locked || !selected.length} onclick={openSelected}>Open selected accounts <span aria-hidden="true">→</span></button>
+                </div>
               {/if}
             </div>
             <span class="sender">{message.role === 'eno' ? 'Eno' : 'You'}{#if message.role === 'eno' && speechSupported}<button class="read" aria-label="Read Eno message aloud" onclick={() => speak(message.text)}>{@render speaker()}</button>{/if}</span>
@@ -228,8 +242,36 @@
   .sender { grid-column: -2 / -1; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; margin: 5px 0 0 2px; } .read { display: grid; place-items: center; padding: 1px; background: transparent; border: 0; } .read svg { width: 13px; height: 13px; }
   .bubble { padding: 17px 20px; border: 1px solid var(--border); border-radius: var(--bubble-radius) var(--bubble-radius) var(--bubble-radius) 0; background: var(--surface); } .bubble > p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .from-you { grid-template-columns: minmax(0, 1fr); align-self: flex-end; max-width: 80%; } .from-you .sender { justify-content: flex-end; } .from-you .bubble { border-radius: var(--bubble-radius) var(--bubble-radius) 0 var(--bubble-radius); }
-  details { margin-top: 20px; border-top: 1px solid var(--border); } summary { display: list-item; padding: 12px 0; cursor: pointer; font-size: 13px; font-weight: 600; } summary > span { float: right; margin-left: 20px; font-weight: 400; color: var(--muted); }
-  fieldset { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; gap: 8px; } label { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; } label:has(input:checked) { outline: 2px solid var(--link); outline-offset: 1px; } label > span { font-size: 13px; font-weight: 600; line-height: 1.5; } small { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; } input[type='checkbox'] { width: 18px; height: 18px; margin: 0; flex: none; } fieldset:disabled label { opacity: .6; cursor: default; }
-  .bubble > .hint { margin: 12px 0; color: var(--muted); font-size: 11px; } .progress { margin: 0 0 0 52px; font-size: 12px; color: var(--muted); }
-  @media (max-width: 600px) { header { width: calc(100% - 36px); padding: 18px 0; } .brand :global(svg) { width: 94px; height: 34px; } .actions { gap: 10px; } .messages { padding: 18px 16px 28px; gap: 22px; } .message { max-width: 100%; column-gap: 8px; } .bubble { padding: 14px; font-size: 14px; } label { padding: 12px; } }
+  details { margin-top: 20px; border-top: 1px solid var(--border); }
+  summary { display: flex; align-items: center; gap: 8px; padding: 12px 0; list-style: none; cursor: pointer; }
+  summary::-webkit-details-marker { display: none; }
+  .summary-title { min-width: 0; font-size: 13px; font-weight: 650; line-height: 1.4; }
+  .count { flex: none; display: inline-flex; align-items: center; min-height: 22px; padding: 0 9px; border: 1px solid var(--border); border-radius: 999px; background: color-mix(in srgb, var(--page) 70%, var(--surface)); color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap; }
+  .count.has-selection { border-color: color-mix(in srgb, var(--link) 35%, var(--border)); background: var(--reply); color: var(--link); }
+  .chevron { flex: none; width: 18px; height: 18px; margin-left: auto; color: var(--muted); transition: transform .18s ease; }
+  details[open] .chevron { transform: rotate(180deg); }
+  fieldset { min-width: 0; margin: 0; padding: 0 0 14px; border: 0; display: grid; gap: 8px; }
+  .product { position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 62px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+  .product:hover { background: color-mix(in srgb, var(--message-accent) 6%, var(--surface)); border-color: color-mix(in srgb, var(--muted) 45%, var(--border)); }
+  .product:has(input:checked) { background: var(--reply); border-color: color-mix(in srgb, var(--link) 40%, var(--border)); }
+  .product:has(input:checked):hover { background: color-mix(in srgb, var(--message-accent) 18%, var(--surface)); }
+  .product:has(input:focus-visible) { outline: 2px solid var(--link); outline-offset: 2px; }
+  .swatch { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: var(--product-gradient); color: var(--product-ink); }
+  .swatch svg { width: 20px; height: 20px; }
+  .copy { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+  .name { font-size: 13px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+  small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; }
+  .product input[type='checkbox'] { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; opacity: 0; pointer-events: none; }
+  .check { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid color-mix(in srgb, var(--muted) 50%, var(--border)); border-radius: 50%; background: var(--surface); color: var(--message-accent-ink); transition: background .15s ease, border-color .15s ease; }
+  .check svg { width: 12px; height: 12px; opacity: 0; transform: scale(.5); transition: opacity .15s ease, transform .15s ease; }
+  .product:has(input:checked) .check { border-color: var(--link); background: var(--link); }
+  .product:has(input:checked) .check svg { opacity: 1; transform: scale(1); }
+  fieldset:disabled .product { opacity: .6; cursor: default; }
+  fieldset:disabled .product:hover:not(:has(input:checked)) { background: var(--surface); border-color: var(--border); }
+  .card-footer { padding-top: 12px; border-top: 1px solid var(--border); }
+  .hint { margin: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .bubble > .card-footer .setup-action { justify-content: center; gap: 10px; width: 100%; min-height: 44px; margin: 0; padding: 10px 16px; }
+  @media (prefers-reduced-motion: reduce) { .chevron, .product, .check, .check svg { transition: none; } }
+  .progress { margin: 0 0 0 52px; font-size: 12px; color: var(--muted); }
+  @media (max-width: 600px) { header { width: calc(100% - 36px); padding: 18px 0; } .brand :global(svg) { width: 94px; height: 34px; } .actions { gap: 10px; } .messages { padding: 18px 16px 28px; gap: 22px; } .message { max-width: 100%; column-gap: 8px; } .bubble { padding: 14px; font-size: 14px; } .count { padding: 0 8px; font-size: 10.5px; } .product { gap: 10px; min-height: 60px; padding: 10px; } .swatch { width: 34px; height: 34px; border-radius: 9px; } fieldset { gap: 8px; } }
 </style>
