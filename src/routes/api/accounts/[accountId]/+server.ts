@@ -92,9 +92,10 @@ export async function DELETE({ request, url, cookies, params, platform }: Reques
     endpoint.searchParams.set('key', runtime.NESSIE_API_KEY);
     const response = await fetch(endpoint, {
       method: 'DELETE',
-      redirect: 'error',
+      redirect: 'manual',
       signal: AbortSignal.timeout(8_000)
     });
+    await response.body?.cancel();
     if (!response.ok) throw new Error('Nessie deletion failed');
 
     session.accounts = session.accounts.filter((account) => account.id !== accountId);

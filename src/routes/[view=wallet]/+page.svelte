@@ -268,7 +268,7 @@
       const payload = (await response.json()) as { customers?: Customer[] };
       const list = Array.isArray(payload.customers) ? payload.customers : [];
       const currentSession = sessionResponse?.ok
-        ? await sessionResponse.json() as { customer?: Customer }
+        ? await sessionResponse.json() as { customer?: Customer; accounts?: { id: string }[] }
         : null;
       if (seq !== customersSeq || guestChat) return;
       const sessionCustomerId = currentSession?.customer?.id;
@@ -287,6 +287,15 @@
       const preferred =
         customers.find((customer) => customer.id === requestedCustomerId) ?? customers[0];
       if (preferred) {
+        // Another tab or an account-opening flow may have changed this wallet
+        // while its short-lived snapshot still looks fresh. Refresh the wallet
+        // and ClimateWise together when the session's account list differs.
+        if (currentSession?.customer?.id === preferred.id && Array.isArray(currentSession.accounts)) {
+          const key = snapshotCacheKey(preferred.id);
+          const cached = readWalletCache<AccountsSnapshot>(key, FRESH_MS);
+          const signature = (accounts: { id: string }[]) => JSON.stringify(accounts.map((account) => account.id).sort());
+          if (cached && signature(cached.accounts ?? []) !== signature(currentSession.accounts)) writeWalletCache(key, null);
+        }
         activateCustomer(preferred.id);
         if (page.url.searchParams.get('customer') !== preferred.id) {
           await goto(customerUrl(preferred.id), { replaceState: true, noScroll: true, keepFocus: true });

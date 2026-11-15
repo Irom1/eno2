@@ -13,7 +13,7 @@ import { z } from 'zod';
 
 export const prerender = false;
 
-type Outcome = { customerId: string | null; accountError?: string };
+type Outcome = { customerId: string | null; accountError?: string; setupToken?: string };
 interface Attempt { fingerprint: string; result: Promise<Outcome>; createdAt: number }
 const attempts = new Map<string, Attempt>();
 const TTL = 30 * 60 * 1000;
@@ -43,17 +43,21 @@ export async function POST({ request, cookies, platform }: RequestEvent): Promis
       if (!created.customerId) return created;
       const card = includeCreditCard ? recommendDemoCard(spending) : null;
       const types: DemoAccountType[] = [...accountTypesFor(accountChoice), ...(card ? ['Credit Card' as const] : [])];
-      return { ...created, ...await createNessieAccounts(created.customerId, types, runtime, undefined, { card, categories: spending.categories }) };
+      try {
+        return { ...created, ...await createNessieAccounts(created.customerId, types, runtime, undefined, { card, categories: spending.categories }) };
+      } catch {
+        return { ...created, accountError: 'Your profile is ready, but I couldn’t finish setting up the accounts. Let’s check your dashboard before trying again.' };
+      }
     })();
     attempt = { fingerprint, result, createdAt: now };
     attempts.set(key, attempt);
   }
   try {
-    const { customerId, accountError } = await attempt.result;
+    const { customerId, accountError, setupToken } = await attempt.result;
     if (!customerId) return json({ created: true, error: 'Your profile was created, but I couldn’t open it yet. Go to Sign in and choose your name.' }, { status: 202 });
     const session = createSession({ id: customerId, firstName: input.first_name, lastName: input.last_name }, []);
     cookies.set(SESSION_COOKIE, session.id, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 1800, secure: new URL(request.url).protocol === 'https:' });
-    return json({ customerId, created: true, ...(accountError ? { accountError } : {}) }, { status: 201 });
+    return json({ customerId, created: true, ...(setupToken ? { setupToken } : {}), ...(accountError ? { accountError } : {}) }, { status: 201 });
   } catch (error) {
     if (error instanceof AddressValidationError) {
       attempts.delete(key);

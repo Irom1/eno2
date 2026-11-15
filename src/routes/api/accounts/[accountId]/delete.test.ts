@@ -45,7 +45,7 @@ it('only removes the account from the session after Nessie confirms deletion', a
   expect(session.accounts).toEqual([]);
   expect(transport).toHaveBeenLastCalledWith(
     new URL('https://nessie.example/accounts/account-1?key=test-key'),
-    expect.objectContaining({ method: 'DELETE', redirect: 'error' })
+    expect.objectContaining({ method: 'DELETE', redirect: 'manual' })
   );
   expect((await DELETE(event())).status).toBe(404);
   expect(transport).toHaveBeenCalledTimes(2);

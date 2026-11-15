@@ -35,6 +35,12 @@ Address autocomplete uses [Photon/OpenStreetMap](https://github.com/komoot/photo
 
 Signup stays on personal details while an address is incomplete, unmatched, unavailable, or awaiting the user's confirmation. The server does not advance its stage or accept stale checklist submissions in those states. The client also hides later checklists and review controls, including after restoring a draft; only the current unanswered checklist is interactive and visible.
 
+Account creation returns the confirmed profile and accounts before seeding sample activity. Both signup and existing-profile account opening then call `/api/accounts/setup` in batches of at most 20 writes, below Cloudflare Workers Free’s 50-subrequest limit. Signed continuations work across Worker isolates, retain the seed date, and read saved Nessie records before each batch to avoid repeating confirmed activity. A failed batch offers the dashboard instead of claiming the profile was not created or blindly repeating writes.
+
+All Nessie writes use `redirect: 'manual'` and reject non-success responses: Cloudflare Workers does not support Node’s `redirect: 'error'`. The read client shares concurrent requests within each server request to stay within the Worker budget. ClimateWise and account/card opening recover expired or evicted sessions; network failures during writes are never automatically replayed.
+
+Run `npm run test:worker` for local workerd regression coverage of signup, card/account setup, ClimateWise, overview/bills, and profile changes. It uses only a fake Nessie service, persists sample records across requests, and enforces a 50-subrequest budget.
+
 Onboarding drafts stay in the current browser tab’s session storage until completion. Use the speaker button on an Eno message to hear it read aloud. Run `npm run test:e2e -- e2e/landing.spec.ts e2e/signup.spec.ts` against the dev server on port 5184 for the landing and sign-up browser checks.
 
 ## Deploy to Cloudflare Workers

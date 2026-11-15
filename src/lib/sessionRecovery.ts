@@ -116,8 +116,8 @@ export async function recoverSession(customerId?: string): Promise<boolean> {
 }
 
 /**
- * `fetch` for session-backed endpoints. A 401 (or a dropped connection) triggers
- * one recovery + retry when a customer id is available. Other errors pass
+ * `fetch` for session-backed endpoints. A 401 triggers one recovery + retry.
+ * Dropped reads can be retried; uncertain writes must never be replayed. Other errors pass
  * through untouched, and `/api/session` itself is never retried.
  */
 export async function fetchWithSession(
@@ -133,6 +133,8 @@ export async function fetchWithSession(
     response = await fetch(input, init);
   } catch (error) {
     if (!canRecover) throw error;
+    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    if (!['GET', 'HEAD'].includes(method) || init?.signal?.aborted || (input instanceof Request && input.signal.aborted)) throw error;
     const customer = resolveCustomer(customerId);
     if (!customer || !(await recoverSession(customer))) throw error;
     return fetch(retryInput, init);

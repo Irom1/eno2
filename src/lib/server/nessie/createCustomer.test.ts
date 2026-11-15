@@ -27,7 +27,7 @@ describe('Nessie signup', () => {
     expect(new URL(String(url)).pathname).toBe('/customers');
     expect(options?.method).toBe('POST');
     expect(JSON.parse(String(options?.body))).toEqual(input);
-    expect(options?.redirect).toBe('error');
+    expect(options?.redirect).toBe('manual');
   });
 
   it('finds the newly created ID after a text-only acknowledgement, even with an older namesake', async () => {
@@ -47,6 +47,13 @@ describe('Nessie signup', () => {
     });
     try { await createNessieCustomer(input, runtime, transport); throw new Error('Expected failure'); }
     catch (error) { expect(error).toMatchObject({ mayBeCreated: true }); expect(String(error)).not.toContain('test-secret'); }
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a redirect without following it or claiming the profile was created', async () => {
+    const transport = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
+      ? new Response(null, { status: 307, headers: { location: 'https://other.test/customers' } }) : Response.json([]));
+    await expect(createNessieCustomer(input, runtime, transport)).rejects.toMatchObject({ mayBeCreated: false });
     expect(transport).toHaveBeenCalledTimes(2);
   });
 });

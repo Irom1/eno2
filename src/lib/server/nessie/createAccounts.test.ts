@@ -1,8 +1,34 @@
 import { expect, it, vi } from 'vitest';
-import { createNessieAccounts } from './createAccounts';
+import { createNessieAccounts as beginNessieAccounts } from './createAccounts';
+import { continueAccountSetup } from './accountSetup';
 import { recommendDemoCard } from '../../spending';
 import { detectDuplicateCharges, detectOutliers, toTransaction } from './tools/insights';
 const runtime = { NESSIE_API_KEY: 'secret', NESSIE_BASE_URL: 'https://nessie.test' };
+
+// Model separate HTTP invocations and persist records between them. Every
+// invocation gets the same hard 50-subrequest budget as Workers Free.
+async function createNessieAccounts(...args: Parameters<typeof beginNessieAccounts>) {
+  const original = args[3]!;
+  const saved = new Map<string, object[]>();
+  let requests = 0;
+  const transport: typeof fetch = async (url, init) => {
+    if (++requests > 50) throw new Error('Too many subrequests');
+    const path = new URL(String(url)).pathname;
+    if (init?.method !== 'POST' && path.startsWith('/accounts/')) return Response.json(saved.get(path) ?? []);
+    const response = await original(url, init);
+    if (init?.method === 'POST' && path.startsWith('/accounts/') && response.ok) {
+      saved.set(path, [...saved.get(path) ?? [], JSON.parse(String(init.body))]);
+    }
+    return response;
+  };
+  let result = await beginNessieAccounts(args[0], args[1], args[2], transport, args[4]);
+  for (let step = 0; result.setupToken && step < 60; step++) {
+    requests = 0;
+    result = await continueAccountSetup(result.setupToken, args[2], transport);
+  }
+  expect(result.setupToken).toBeUndefined();
+  return result.accountError ? { accountError: result.accountError } : {};
+}
 
 function expectReviewableCharges(bodies: unknown[]) {
   const posted = bodies.map((body, index) => toTransaction({ ...body as object, _id: String(index) }, 'withdrawal')).filter((item) => item !== null);

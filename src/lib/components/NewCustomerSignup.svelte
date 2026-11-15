@@ -3,6 +3,7 @@
   import { readAloud, stopReadAloud, supportsReadAloud } from '$lib/chat/readAloud';
   import ReadAloudButton from '$lib/components/ReadAloudButton.svelte';
   import { createConversationPacer } from '$lib/conversationPacing';
+  import { finishAccountSetup } from '$lib/accountSetup';
   import { asksToConfirmAddress, isAffirmative, reviewFingerprint as profileFingerprint } from '$lib/signupConfirmation';
   import { goto } from '$app/navigation';
   import { onMount, tick } from 'svelte';
@@ -250,7 +251,7 @@
     try {
       if (!createdCustomerId) {
         const response = await fetch('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': attemptKey }, body: JSON.stringify({ ...customerFromAnswers(answers), accountChoice, spending, includeCreditCard }) });
-        const result = await response.json() as { customerId?: string; error?: string; created?: boolean; accountError?: string; addressCheck?: AddressCheck };
+        let result = await response.json() as { customerId?: string; error?: string; created?: boolean; accountError?: string; setupToken?: string; addressCheck?: AddressCheck };
         if (!response.ok && result.addressCheck) {
           currentStage = 'details'; latestChoiceId = 0; latestReviewId = 0;
           pendingAddress = result.addressCheck.status === 'correction' && result.addressCheck.candidates?.length === 1 ? result.addressCheck.candidates[0].address : undefined;
@@ -262,6 +263,7 @@
         if (result.created && !result.customerId) { recovery = true; await addEno(result.error || 'Your profile was created, but I couldn’t open it yet. Head back to Sign in and choose your name.', { recovery: true }); return; }
         if (!response.ok || !result.customerId) { await addEno(result.error || 'That hit a little bump. Your details are still here. Want to try again?', { retry: 'signup' }); return; }
         createdCustomerId = result.customerId;
+        result = await finishAccountSetup(result);
         if (result.accountError) { await addEno(result.accountError, { dashboard: `/dashboard?customer=${encodeURIComponent(createdCustomerId)}` }); return; }
       }
       completed = true;

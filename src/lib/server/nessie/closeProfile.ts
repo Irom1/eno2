@@ -22,7 +22,7 @@ export async function closeNessieProfile(customerId: string, runtime: RuntimeEnv
     return url;
   }
 
-  const options = { redirect: 'error' as const, signal: AbortSignal.timeout(12_000) };
+  const options = { redirect: 'manual' as const, signal: AbortSignal.timeout(12_000) };
   const customerPath = `/customers/${customerId}`;
   const list = await fetch(endpoint(`${customerPath}/accounts`), options);
   if (!list.ok) throw new Error('Could not list accounts');
@@ -36,6 +36,7 @@ export async function closeNessieProfile(customerId: string, runtime: RuntimeEnv
   // A retry starts with a fresh list, so it can finish after a partial closure.
   const results = await Promise.allSettled(accounts.map(async (account) => {
     const response = await fetch(endpoint(`/accounts/${account._id}`), { ...options, method: 'DELETE' });
+    await response.body?.cancel();
     if (!response.ok && response.status !== 404) throw new Error('Could not delete account');
   }));
   if (results.some((result) => result.status === 'rejected')) throw new Error('Could not delete all accounts');
@@ -54,6 +55,7 @@ export async function closeNessieProfile(customerId: string, runtime: RuntimeEnv
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ first_name: CLOSED_FIRST_NAME, last_name: CLOSED_LAST_NAME, address })
   });
+  await update.body?.cancel();
   if (!update.ok) throw new Error('Could not close profile');
 
   const verification = await fetch(customer, options);

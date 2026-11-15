@@ -10,6 +10,11 @@ async function fixtures(page: Page, initial = [checking, venture], mode: 'succes
   const submissions: { customerId: string; products: AccountProductId[] }[] = [];
   const keys: string[] = [];
   let addressCalls = 0, signupCalls = 0;
+  const setupTokens: string[] = [];
+  await page.route('**/api/accounts/setup', (route) => {
+    setupTokens.push(route.request().postDataJSON().token);
+    return route.fulfill({ status: setupTokens.length % 2 ? 202 : 200, json: { customerId: customer.id, ...(setupTokens.length % 2 ? { setupToken: 'second-batch' } : {}) } });
+  });
   await page.route('**/api/customers*', (route) => route.fulfill({ json: { customers: [customer] } }));
   await page.route('**/api/session', (route) => route.fulfill({ json: { customer, accounts } }));
   await page.route('**/api/accounts', (route) => route.fulfill({ json: { customer, accounts, bills: [], loans: [], recentActivity: [] } }));
@@ -31,9 +36,9 @@ async function fixtures(page: Page, initial = [checking, venture], mode: 'succes
       const option = openingProducts.find((product) => product.id === id)!;
       accounts.push({ id: `new-${id}`, type: option.type, nickname: option.name, accountNumber: '7890', balance: 800, rewards: 100 });
     }
-    return route.fulfill({ status: mode === 'partial' ? 202 : 201, json: { customerId: customer.id, ...(mode === 'partial' ? { accountError: 'Your account is ready, but only some of its sample activity could be confirmed.' } : {}) } });
+    return route.fulfill({ status: 202, json: { customerId: customer.id, setupToken: 'first-batch', ...(mode === 'partial' ? { accountError: 'Your account is ready, but only some of its sample activity could be confirmed.' } : {}) } });
   });
-  return { submissions, keys, noOnboardingCalls: () => expect({ addressCalls, signupCalls }).toEqual({ addressCalls: 0, signupCalls: 0 }) };
+  return { submissions, keys, setupTokens, noOnboardingCalls: () => expect({ addressCalls, signupCalls }).toEqual({ addressCalls: 0, signupCalls: 0 }) };
 }
 
 test('dashboard opens a personalized account dropdown without repeating signup and redirects with new products', async ({ page }) => {
@@ -55,6 +60,7 @@ test('dashboard opens a personalized account dropdown without repeating signup a
   await expect(page.locator('article.account')).toHaveCount(5);
   expect(state.submissions).toEqual([{ customerId: customer.id, products: ['savings', 'savor', 'quicksilver'] }]);
   expect(state.keys[0]).toMatch(/^[a-z0-9-]{20,80}$/i);
+  expect(state.setupTokens).toEqual(['first-batch', 'second-batch']);
   state.noOnboardingCalls();
   // Reopening the flow reflects the expanded wallet, rather than cached choices.
   await page.getByRole('link', { name: 'Open a new account', exact: true }).click();
@@ -72,6 +78,29 @@ test('empty profiles can open accounts and the button submits once', async ({ pa
   await page.getByRole('button', { name: /Open selected accounts/ }).click();
   await expect(page).toHaveURL(`/dashboard?customer=${customer.id}`);
   expect(state.submissions).toHaveLength(1);
+});
+
+test('recovers a lost Worker session while loading choices and adding a card', async ({ page }) => {
+  const state = await fixtures(page, []);
+  let expiredChoices = false, expiredSubmission = false;
+  await page.route('**/api/accounts/open*', (route) => {
+    if (route.request().method() === 'GET' && !expiredChoices) {
+      expiredChoices = true;
+      return route.fulfill({ status: 401, json: { error: 'Session evicted' } });
+    }
+    if (route.request().method() === 'POST' && !expiredSubmission) {
+      expiredSubmission = true;
+      return route.fulfill({ status: 401, json: { error: 'Session evicted' } });
+    }
+    return route.fallback();
+  });
+  await page.goto(`/setup?customer=${customer.id}&mode=accounts`);
+  await page.getByRole('checkbox', { name: /Capital One Savor/ }).check();
+  await page.getByRole('button', { name: /Open selected accounts/ }).click();
+  await expect(page).toHaveURL(`/dashboard?customer=${customer.id}`);
+  expect(expiredChoices && expiredSubmission).toBe(true);
+  expect(state.submissions).toHaveLength(1);
+  expect(state.setupTokens).toEqual(['first-batch', 'second-batch']);
 });
 
 test('all products owned gives a dashboard exit with no empty selection to submit', async ({ page }) => {

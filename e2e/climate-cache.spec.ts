@@ -70,7 +70,9 @@ test('cached LORAX score survives closing chat, browser refresh, and the full re
   await page.reload();
   await expect(score(page)).toBeVisible();
   expect(state.calls).toEqual(['ada']);
-  await page.getByRole('link', { name: 'Check your LORAXⓇ Score' }).click();
+  // The dashboard starter opens the ClimateWise chat card. Open the standalone
+  // report explicitly to check cache reuse across the full page as well.
+  await page.goto('/climatewise?customer=ada');
   await expect(page).toHaveURL(/\/climatewise\?customer=ada$/);
   await expect(page.getByRole('region', { name: 'Footprint' })).toBeVisible();
   await expect(page.getByText('Loading your report…', { exact: true })).toHaveCount(0);
@@ -114,9 +116,9 @@ test('adding or removing an account refreshes the score instead of keeping an ol
   state.accountIds.ada.push('new-savings');
   await page.reload();
   await expect(score(page)).toBeVisible();
-  expect(state.calls).toHaveLength(2);
+  await expect.poll(() => state.calls.length).toBe(2);
   state.accountIds.ada = ['new-savings'];
   await page.reload();
   await expect(score(page)).toBeVisible();
-  expect(state.calls).toHaveLength(3);
+  await expect.poll(() => state.calls.length).toBe(3);
 });
