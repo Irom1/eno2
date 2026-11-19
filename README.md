@@ -1,6 +1,5 @@
 Check out more details on DevPost: https://devpost.com/software/eno-2-0-the-future-of-banking-with-capital-one-0glkva
 
----
 
 ## Inspiration
 
